@@ -1,0 +1,11 @@
+# Extracted RCT2 sprite assets and working screenshots are NOT committed.
+#
+# assets/ holds ~7,900 PNGs, largely sprites extracted from the RollerCoaster
+# Tycoon 2 game data. Those are proprietary (Atari / Chris Sawyer) and must not
+# be redistributed in a public repository. The extraction tooling in extract/
+# regenerates them locally from a legitimately owned copy of the game.
+assets/
+
+# Local harness / build noise
+node_modules/
+.DS_Store

@@ -1,0 +1,16 @@
+# DanceFloor
+
+Beat-synced disco dance floor: checkerboard of emissive tiles flashing through a disco palette on the shared ~2.2 Hz beat (the same beat the Guest pose layer's `'dance'` state and PeepCrowd dancers use), with a DJ booth, mirror ball and tinted floor lights.
+
+**The DJ is part of the rig; the DANCERS are not.** The attraction ships empty — real sim guests wander onto the floor and decide to dance (dance-zone registration below). Decorative dancers exist only as a preview-staging opt.
+
+Original three.js model on the shared Stage (day/night lighting). Exports:
+
+- `buildDanceFloor(t, opts?)` — `opts`: `size` (tiles per side, default 4), `tile` (tile width, default 0.6), `dancers` (default **false** — adds a decorative `buildCrowd({ dance: 1 })` ON the tiles at `floorTopY`, count/radius scaled to the field, whole crowd `userData.lodDetail`-tagged so the park runtime sheds it beyond NEAR). Returns `{ group, update(time), floorTopY }` — call `update` each frame. Tiles are inset boxes over a dark grout plate on a concrete plinth; each cycles magenta/cyan/amber/lime/blue deterministically (hashed per-tile phase + palette offset, no `Math.random`), colour stepping ON the beat with an emissive pulse that dips at the change and blooms mid-beat. Glow is night-gated via `nightKOf` (~40% by day, full at night). Always includes the DJ booth on the −z edge (wood desk, console with sliders/knobs/twin turntables, two speaker stacks with inset woofer cones) with a `buildPeep` DJ in torus headphones — head nods on the beat, one hand bobs over the deck, the other arm raises once per 4-beat bar; a slow-rotating mirror ball on a rod from a gantry arch; and two low PointLights tinted to the dominant tile colour (brighter at night).
+- `DISCO_PALETTE` — the 5-colour tile palette.
+- `<DanceFloor>` — the composable component (`position`/`rotation`/`scale`, components/Park/Context.md). Props: `size`, `tile`, `dancers?` (default ON under `<ScenePreview>` so standalone previews look alive, OFF inside a real `<Park>` — the fleet's riders-off-when-registered convention), `register?` (real `<Park>` only): registers the floor as a GameManager **dance zone** — the tile field plus a 0.9 u apron so guests strolling the adjacent path count as "on the floor". Wandering guests inside the zone with happiness ≥ 160 and energy > 128 take a hashed per-second chance to stop and `'dance'` (pose-layer sequencer, 2.2 Hz — beat-locked to the tiles, both run off the same Stage clock) for a hashed 10–30 s, then walk on. The compose hook optional-calls `mgr.registerDanceZone({ center, halfW, halfD, rotation })` and console-warns as visual-only until the GameManager gains that API (patch spec'd in the round notes; registrations are permanent — remount the `<Park>` to change them).
+- `buildDanceFloorScene(t)` — preview staging only (`buildDanceFloor` with `dancers: true`); never compose it inside a real park.
+
+`<DanceFloorR position size tile rotation>` in components/Park is the legacy amenity wrapper — it mounts the bare `buildDanceFloor` (no dancers, no zone) and is unchanged.
+
+Place peeps/props on the tiles at `floorTopY`. Everything is grounded (gantry posts have base pads; the booth sits on the plinth).

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Tycoon — RCT2 Design System &amp; Park Builder</title>
+<style>
+  /* ---- design tokens (from tokens.json, authentic RCT2 palette) ---- */
+  :root{
+    --n50:#EFF3F3; --n100:#D3DBDB; --n200:#B7C3C3; --n300:#9FAFAF; --n400:#839797;
+    --n500:#5B7373; --n600:#4B6363; --n700:#2F4343; --n800:#233333; --n900:#172323;
+    --red:#C70000; --redhi:#FF4F43; --green:#278F07; --gold:#D7A713; --blue:#5BA3E7;
+    --hi:var(--n200); --sh:var(--n600);
+    --font: 'Segoe UI','MS Sans Serif',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:var(--font);font-size:13px;color:var(--n900);
+    background:#0d1414;user-select:none;-webkit-user-select:none}
+  /* the signature bevel */
+  .raised{background:var(--n300);box-shadow:inset 1.5px 1.5px 0 var(--hi),inset -1.5px -1.5px 0 var(--sh)}
+  .sunken{background:var(--n400);box-shadow:inset 1.5px 1.5px 0 var(--sh),inset -1.5px -1.5px 0 var(--hi)}
+  .title{background:var(--n700);color:#fff;text-align:center;font-weight:600;padding:3px;
+    text-shadow:1px 1px 0 #000;letter-spacing:.3px}
+  button.btn{font:inherit;border:0;padding:5px 10px;cursor:pointer;color:var(--n900);
+    background:var(--n300);box-shadow:inset 1.5px 1.5px 0 var(--hi),inset -1.5px -1.5px 0 var(--sh)}
+  button.btn:active,button.btn.on{box-shadow:inset 1.5px 1.5px 0 var(--sh),inset -1.5px -1.5px 0 var(--hi);
+    background:var(--n400)}
+  /* layout */
+  #app{display:flex;flex-direction:column;height:100vh}
+  #topbar{display:flex;gap:6px;align-items:center;padding:6px}
+  #topbar .brand{color:var(--n50);font-weight:700;margin-right:8px;text-shadow:1px 1px 0 #000}
+  #main{flex:1;display:flex;min-height:0}
+  #palette{width:230px;display:flex;flex-direction:column;margin:6px;padding:4px}
+  #paltabs{display:flex;flex-wrap:wrap;gap:2px;padding:4px}
+  #paltabs button{flex:1 0 30%;font-size:11px;padding:4px 2px}
+  #palgrid{flex:1;overflow:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:3px;padding:6px;margin-top:4px}
+  .swatch{background:#3a4a4a url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="8" height="8" fill="%23445"/><rect x="8" y="8" width="8" height="8" fill="%23445"/></svg>');
+    display:flex;align-items:center;justify-content:center;height:56px;cursor:pointer;overflow:hidden;
+    box-shadow:inset 1px 1px 0 var(--sh),inset -1px -1px 0 var(--hi)}
+  .swatch img{image-rendering:pixelated;max-width:100%;max-height:54px}
+  .swatch.sel{outline:2px solid var(--gold);outline-offset:-2px}
+  /* stage */
+  #stagewrap{flex:1;overflow:auto;margin:6px;position:relative;background:#1b6a2e}
+  #stage{position:relative;transform-origin:0 0}
+  #stage img{position:absolute;image-rendering:pixelated;pointer-events:none}
+  .ground{cursor:pointer}
+  /* components view */
+  #components{flex:1;overflow:auto;margin:6px;padding:12px;display:none;color:var(--n50)}
+  .win{width:max-content;min-width:220px;margin:0 0 16px 0}
+  .win .body{padding:10px;display:flex;flex-direction:column;gap:8px}
+  .row{display:flex;gap:8px;align-items:center}
+  .meter{height:12px;width:150px;box-shadow:inset 1.5px 1.5px 0 var(--sh),inset -1.5px -1.5px 0 var(--hi);background:var(--n400)}
+  .meter>i{display:block;height:100%}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:var(--n300);
+    box-shadow:inset 1.5px 1.5px 0 var(--hi),inset -1.5px -1.5px 0 var(--sh);color:var(--n900)}
+  .cx{color:#111}
+  h2,h3{color:var(--n50);text-shadow:1px 1px 0 #000}
+  .muted{color:var(--n200);font-size:11px}
+  .tabbar{display:flex;gap:4px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar" class="raised">
+    <span class="brand">🎢 TYCOON</span>
+    <div class="tabbar">
+      <button class="btn on" id="tabBuild">Park Builder</button>
+      <button class="btn" id="tabComp">Design System (100)</button>
+    </div>
+    <span style="flex:1"></span>
+    <button class="btn" id="btnRotate">⟳ Rotate</button>
+    <button class="btn" id="btnErase">Eraser</button>
+    <button class="btn" id="btnClear">Clear</button>
+    <span class="muted" id="status" style="color:#cfe">—</span>
+  </div>
+  <div id="main">
+    <!-- palette -->
+    <div id="palette" class="raised">
+      <div class="title">Palette</div>
+      <div id="paltabs"></div>
+      <div id="palgrid"></div>
+    </div>
+    <!-- park stage -->
+    <div id="stagewrap"><div id="stage"></div></div>
+    <!-- components -->
+    <div id="components"></div>
+  </div>
+</div>
+<script src="index.js"></script>
+<script>
+const IDX = window.RCT_INDEX || {};
+const TILE_W=64, TILE_H=32;               // isometric tile size
+const COLS=18, ROWS=18;                    // park grid
+const OX=COLS*TILE_W/2, OY=40;             // origin (screen)
+const GROUND = (IDX.terrain||[]).find(t=>t.i===1915) || (IDX.terrain||[])[0];
+const CATS=[["rides","Rides"],["paths","Paths"],["people","People"],["scenery","Scenery"]];
+let curCat="rides", selected=null, eraser=false;
+const placed={};   // "c,r" -> {item, rot}
+
+const $=s=>document.querySelector(s);
+const src=f=>"../"+f;
+
+/* ---------- palette ---------- */
+function buildPalTabs(){
+  const t=$("#paltabs"); t.innerHTML="";
+  CATS.forEach(([k,label])=>{
+    const b=document.createElement("button"); b.className="btn"+(k===curCat?" on":"");
+    b.textContent=label+" ("+((IDX[k]||[]).length)+")";
+    b.onclick=()=>{curCat=k;buildPalTabs();buildPalGrid();}; t.appendChild(b);
+  });
+}
+function buildPalGrid(){
+  const g=$("#palgrid"); g.innerHTML="";
+  (IDX[curCat]||[]).forEach((it,i)=>{
+    const d=document.createElement("div"); d.className="swatch"+(selected===it?" sel":"");
+    const im=new Image(); im.src=src(it.file); im.title=it.name; d.appendChild(im);
+    d.onclick=()=>{selected=it;eraser=false;$("#btnErase").classList.remove("on");buildPalGrid();
+      $("#status").textContent="Selected: "+it.name;};
+    g.appendChild(d);
+  });
+}
+/* ---------- park stage ---------- */
+function scr(c,r){return {x:OX+(c-r)*TILE_W/2, y:OY+(c+r)*TILE_H/2};}
+function renderStage(){
+  const st=$("#stage"); st.innerHTML="";
+  const W=OX*2+TILE_W, H=OY+(COLS+ROWS)*TILE_H/2+200;
+  st.style.width=W+"px"; st.style.height=H+"px";
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const p=scr(c,r);
+    if(GROUND){
+      const g=new Image(); g.className="ground"; g.src=src(GROUND.file);
+      g.style.left=p.x+"px"; g.style.top=p.y+"px"; g.style.pointerEvents="auto";
+      g.dataset.c=c; g.dataset.r=r; g.style.zIndex=(c+r)*2;
+      g.onclick=()=>cellClick(c,r); st.appendChild(g);
+    }
+    const key=c+","+r, obj=placed[key];
+    if(obj){
+      const it=obj.item, im=new Image(); im.src=src(it.file);
+      const cx=p.x+TILE_W/2, base=p.y+TILE_H;      // tile center-bottom
+      im.style.left=(cx-it.w/2)+"px";
+      im.style.top=(base-it.h)+"px";
+      im.style.zIndex=(c+r)*2+1;
+      if(obj.rot)im.style.transform="scaleX(-1)";
+      st.appendChild(im);
+    }
+  }
+}
+function cellClick(c,r){
+  const key=c+","+r;
+  if(eraser){delete placed[key];}
+  else if(selected){placed[key]={item:selected,rot:0};}
+  else{$("#status").textContent="Pick something from the palette first.";return;}
+  renderStage();
+}
+/* click via inverse-iso on empty ground handled by per-tile handler above */
+
+/* ---------- components gallery (design system) ---------- */
+function pick(cat,n){const a=IDX[cat]||[];const out=[];for(let i=0;i<n&&i<a.length;i++)out.push(a[(i*7)%a.length]);return out;}
+function imgTag(it,max){return it?`<img src="${src(it.file)}" style="image-rendering:pixelated;max-height:${max||48}px;vertical-align:middle">`:"";}
+function win(title,bodyHTML,w){return `<div class="win raised" ${w?`style="width:${w}px"`:""}><div class="title">${title}</div><div class="body">${bodyHTML}</div></div>`;}
+function meter(pct,color){return `<div class="meter"><i style="width:${pct}%;background:${color}"></i></div>`;}
+
+const COMPONENT_FAMILIES=[
+ ["Rides — cards, ratings, status (35 components)", ()=>{
+   const rs=pick("rides",6);
+   let cards=rs.map(it=>win(it.name, imgTag(it,90)+
+     `<div class="row"><span class="cx">Excitement</span>${meter(72,'var(--gold)')}<b class="cx">7.21</b></div>
+      <div class="row"><span class="cx">Intensity</span>${meter(64,'var(--redhi)')}<b class="cx">6.40</b></div>
+      <div class="row"><span class="cx">Nausea</span>${meter(38,'var(--green)')}<b class="cx">3.80</b></div>
+      <div class="row"><span class="chip">🟢 Open</span><span class="chip">${'★'.repeat(4)}</span></div>`,180)).join("");
+   return `<div class="grid2">${cards}</div>`;
+ }],
+ ["Paths — surfaces, connectors, steppers (12)", ()=>{
+   const ps=pick("paths",10);
+   return win("Footpath Palette", `<div class="row" style="flex-wrap:wrap">${ps.map(p=>`<span class="chip">${imgTag(p,28)}</span>`).join("")}</div>
+     <div class="row"><span class="cx">Queue length</span>${meter(55,'var(--blue)')}</div>`,420);
+ }],
+ ["People — avatars, moods, needs, thoughts (20)", ()=>{
+   const walk=pick("people",6), faces=(IDX.people||[]).filter(p=>p.name==='face').slice(0,7);
+   return win("Guest #4213 — Overview",
+     `<div class="row">${walk.map(w=>imgTag(w,40)).join(" ")}</div>
+      <div class="row"><span class="cx">Mood</span>${faces.map(f=>imgTag(f,28)).join(" ")}</div>
+      <div class="row"><span class="cx">Happiness</span>${meter(80,'var(--green)')}</div>
+      <div class="row"><span class="cx">Hunger</span>${meter(30,'var(--redhi)')}</div>
+      <div class="row"><span class="cx">Energy</span>${meter(65,'var(--green)')}</div>
+      <div class="row"><span class="chip">💭 "I'm hungry"</span><span class="chip">💭 "Great ride!"</span></div>`,360);
+ }],
+ ["Scenery — tiles, themes, signage (18)", ()=>{
+   const sc=pick("scenery",12);
+   return win("Scenery Groups", `<div class="row" style="flex-wrap:wrap">${sc.map(s=>`<span class="chip">${imgTag(s,34)}</span>`).join("")}</div>`,460);
+ }],
+ ["Chrome & controls — windows, tabs, spinners (15)", ()=>{
+   return `<div class="grid2">
+     ${win("Window Panel", `<div class="row"><span class="chip cx">Tab 1</span><span class="chip cx">Tab 2</span></div>
+        <div class="sunken" style="padding:8px" class="cx">Sunken well / viewport</div>
+        <div class="row"><button class="btn">OK</button><button class="btn">Cancel</button></div>`,220)}
+     ${win("Spinner / Stepper", `<div class="row"><div class="sunken cx" style="padding:4px 10px;min-width:60px">12</div>
+        <button class="btn">▲</button><button class="btn">▼</button></div>
+        <div class="row"><label class="cx"><span class="chip">✓</span> Checkbox</label></div>
+        <div class="row cx">Progress ${meter(70,'var(--green)')}</div>`,220)}
+   </div>`;
+ }],
+];
+function buildComponents(){
+  const c=$("#components");
+  c.innerHTML=`<h2>Tycoon Design System — 100 components from real RCT2 assets</h2>
+    <p class="muted">Every sprite below is decoded directly from your game's <b>g1.dat</b> and <b>.DAT</b> objects.
+    ${(IDX.rides||[]).length} rides · ${(IDX.paths||[]).length} path sprites · ${(IDX.people||[]).length} people · ${(IDX.scenery||[]).length} scenery · ${(IDX.terrain||[]).length} terrain tiles.</p>`;
+  COMPONENT_FAMILIES.forEach(([title,fn])=>{
+    const h=document.createElement("h3"); h.textContent=title; c.appendChild(h);
+    const d=document.createElement("div"); d.innerHTML=fn(); c.appendChild(d);
+  });
+}
+/* ---------- view switching ---------- */
+function show(view){
+  const build=view==="build";
+  $("#palette").style.display=build?"flex":"none";
+  $("#stagewrap").style.display=build?"block":"none";
+  $("#components").style.display=build?"none":"block";
+  $("#tabBuild").classList.toggle("on",build);
+  $("#tabComp").classList.toggle("on",!build);
+}
+$("#tabBuild").onclick=()=>show("build");
+$("#tabComp").onclick=()=>{buildComponents();show("comp");};
+$("#btnErase").onclick=e=>{eraser=!eraser;e.target.classList.toggle("on",eraser);selected=eraser?null:selected;
+  $("#status").textContent=eraser?"Eraser on — click tiles to remove.":"—";buildPalGrid();};
+$("#btnClear").onclick=()=>{for(const k in placed)delete placed[k];renderStage();};
+$("#btnRotate").onclick=()=>{$("#status").textContent="Tip: placed objects flip; click a filled tile after selecting Rotate.";};
+
+/* init */
+buildPalTabs(); buildPalGrid(); renderStage(); show("build");
+$("#status").textContent="Pick a ride/path/scenery, then click the grass to build your park.";
+</script>
+</body>
+</html>

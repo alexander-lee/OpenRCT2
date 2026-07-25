@@ -1,0 +1,14 @@
+# SwingingInverterShip
+
+Inverter ship thrill ride: a single golden gondola rigidly bolted to a massive steel arm slung between two royal-blue lattice A-towers, with a heavy counterweight disc on the short end. Two facing rows of riders under over-shoulder restraints pump up through pendulum swings, roll through five full 360° inversions, then decay back to rest — one velocity-continuous deterministic cycle (26 s). Optional ColorKit `scheme` prop recolours towers/arm/gondola. Night: amber accent bulbs up the tower legs, pulsing strip lights down the arm, two real PointLights at the bearings + platform up-wash (nightK-gated). Modelled on the RCT2 Inverter Ship silhouette.
+
+Fully composable ride on the `<ConfigurableRide>` chassis (FerrisWheel pattern):
+
+- `<SwingingInverterShip position rotation scale scheme riders register name capacity rideDuration price intensity queue>` — inside a `<Park>` with `register` it wires the full GameManager ride: queue HEAD 3.0 out the local +z front (past the boarding-platform steps at z ±1.73; the loops sweep ±x, z within ±0.95; lane tail at `3.0 + laneLenOf(capacity) + 0.35` — plant it on/near a street node), exit hut at local `[-1.6, 1.8]` (clear of the tower footings). REAL guests ride the 6-seat gondola through the inversions (`seatWorld`); the cycle runs on its own integrated clock so a breakdown freezes it in place, RCT2-style, and the repair eases it back up (`onStateChange`); clicking opens the RideViewer (gondola onboard cam). `riders` (decorative peeps, `lodDetail`-tagged) defaults true standalone / false when registered. Defaults: capacity 6, duration 8, intensity 9, price 4.
+- `buildSwingingInverterShipScene(t, { scheme?, riders? }) → { group, update, seatWorld(seat), vehicle, onStateChange }` — the imperative builder.
+
+Previews wrap it in `<ScenePreview distance={9.5} targetY={2.5}>`.
+
+## RCT2 station behaviour (motion gate) + real seats
+
+Capacity **6** = 2 facing rows × 3 seats. REAL GameManager guests board DISTINCT live seat anchors via `seatWorld` (decorative riders default true standalone / **false when registered** — unfilled seats read visibly EMPTY). The built `update` is wrapped in `createMotionGate` (GameManager): a registered ride sits **PARKED** through `waitingForPassengers`/`waitingToDepart`/`unloadingPassengers`, eases 0→1 into motion on `departing` (~0.8 s) and eases back to rest into `arriving` — so guests board and leave a stationary vehicle, RCT2 Vehicle.cpp-style. Breakdown spin-downs compose with the gate (the FSM parks in `movingToEndOfStation` while broken). Un-registered previews are byte-identical: the gate starts UNGATED and passes raw time through until the first `onStateChange`. The arm angle follows a smoothstep of the gate speed (spinDown 0.85) — it swings back down to hang level for boarding — and every 'departing' restarts the pump-up→loops→decay cycle from zero.

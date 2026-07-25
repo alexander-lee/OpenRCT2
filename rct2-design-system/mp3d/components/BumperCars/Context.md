@@ -1,0 +1,9 @@
+# BumperCars
+
+Dodgems: a fenced arena with a powered ceiling grid and four cars that ACTUALLY bump. The cars run a deterministic rink sim — hashed-sine waypoint steering, clamped-dt (≤0.1) velocity integration, wall reflection (restitution 0.55) and circle-circle impulses (radius 0.41, restitution 0.65) — so they deflect off each other with a jolt: body-tilt kick, driver whiplash, bumper-skirt + pole-contact flash. Fully composable ride: `register` inside a `<Park>` wires the GameManager (queue HEAD 2.6 out local +z, exit hut at [-2.1, 2.0]); real guests ride the bumping cars via `seatWorld` (static drivers hide, FerrisWheel-style), `vehicle` (car 0) feeds the onboard cam, and `onStateChange` glides the cars to a stop on breakdown. Ceiling string lights + two PointLights night-gate via nightK.
+
+Built with three.js on the shared Stage; modelled from the authentic RCT2 sprite.
+
+## RCT2 station behaviour (motion gate) + real seats
+
+Capacity **4** = the 4 cars (one driver each). REAL GameManager guests board DISTINCT live seat anchors via `seatWorld` (decorative riders default true standalone / **false when registered** — unfilled seats read visibly EMPTY). The built `update` is wrapped in `createMotionGate` (GameManager): a registered ride sits **PARKED** through `waitingForPassengers`/`waitingToDepart`/`unloadingPassengers`, eases 0→1 into motion on `departing` (~0.8 s) and eases back to rest into `arriving` — so guests board and leave a stationary vehicle, RCT2 Vehicle.cpp-style. Breakdown spin-downs compose with the gate (the FSM parks in `movingToEndOfStation` while broken). Un-registered previews are byte-identical: the gate starts UNGATED and passes raw time through until the first `onStateChange`. The rink sim's internal clock (already clamped-dt) is fed the GATED clock and its cruise speed target follows the gate envelope — cars sit parked while guests board and drift to a stop for unloading, unified with the breakdown drift.

@@ -1,0 +1,1238 @@
+{
+  "1920RACR": {
+    "name": "1920's Racing Cars",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "4X4": {
+    "name": "Monster Trucks",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "AML1": {
+    "name": "American Style Steam Trains",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "AMT1": {
+    "name": "Mine Train Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "ANACONDA": {
+    "name": "Anaconda Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "ARRSW1": {
+    "name": "Suspended Swinging Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "ARRSW2": {
+    "name": "Suspended Swinging Aeroplane Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "ARRT1": {
+    "name": "Corkscrew Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "ARRT2": {
+    "name": "Hypercoaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BARNSTRM": {
+    "name": "BarnStorming Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BATFL": {
+    "name": "Swinging Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BATTRRAM": {
+    "name": "Battering Ram Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BBOAT": {
+    "name": "Bumper Boats",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "BLACKCAB": {
+    "name": "London Taxi Black Cab Ride",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "BLCKDETH": {
+    "name": "Black Death Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BMAIR": {
+    "name": "Flying Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BMFL": {
+    "name": "Floorless Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BMRB": {
+    "name": "Hyper-Twister Trains (wide cars)",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BMSD": {
+    "name": "Twister Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BMSU": {
+    "name": "Stand-up Twister Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BMVD": {
+    "name": "Vertical Drop Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BMVOCTPS": {
+    "name": "Blob from Outer Space Ride",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "BOB1": {
+    "name": "Bobsleigh Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BOMERANG": {
+    "name": "Boomerang Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "BULLET": {
+    "name": "Bullet Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "CADDILAC": {
+    "name": "Limousine Rollercoaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "CAVMNCAR": {
+    "name": "Caveman Cars",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "CBOAT": {
+    "name": "Canoes",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "CLIFT1": {
+    "name": "Chairlift Cars",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "CLIFT2": {
+    "name": "Ski-lift Chairs",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "COFFEECU": {
+    "name": "Coffee Cup Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "CONDORRD": {
+    "name": "Condor Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "CONGAEEL": {
+    "name": "Conga Eel Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "CRNVBFLY": {
+    "name": "Carnival Float Ride - Butterfly Cars",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "CRNVFROG": {
+    "name": "Carnival Float Ride - Frog Cars",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "CRNVLZRD": {
+    "name": "Carnival Float Ride - Lizard Cars",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "CROCFLUM": {
+    "name": "Crocodile Ride",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "CSTBOAT": {
+    "name": "Coaster Boats",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "CTCAR": {
+    "name": "Cheshire Cats",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "CYCLOPSX": {
+    "name": "Cyclops Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "DHOWWATR": {
+    "name": "Dhow water ride",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "DIAMONDR": {
+    "name": "Diamond Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "DING1": {
+    "name": "Dinghy Slide",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "DINOEGGS": {
+    "name": "Dinosaur Egg Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "DODG1": {
+    "name": "Dodgems",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "DOLPHINR": {
+    "name": "Dolphin Ride",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "DRAGDODG": {
+    "name": "Chinese Dragonhead Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "DRAGNFLY": {
+    "name": "Dragonfly Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "DRAGON": {
+    "name": "Dragon Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "ENTERP": {
+    "name": "Enterprise",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "FABERGE": {
+    "name": "Faberge Egg Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "FIGHTKIT": {
+    "name": "Fighting Kite Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "FIGTKNIT": {
+    "name": "Fighting Knights Dodgem Cars",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "FIRECRAK": {
+    "name": "Fire Cracker Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "FLALMACE": {
+    "name": "Mace Ride",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "FLWRPOWR": {
+    "name": "Flower Power Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "FLYGBOAT": {
+    "name": "Flying Boat Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "FOOTBALL": {
+    "name": "Football Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "FSAUC": {
+    "name": "Flying Saucers",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "FWH1": {
+    "name": "Ferris Wheel",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "GANSTRCR": {
+    "name": "Gangster Car Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "GDROP1": {
+    "name": "Roto-Drop",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "GINTSPDR": {
+    "name": "B-Movie Giant Spider Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "GOLF1": {
+    "name": "Mini Golf",
+    "category": "Gentle Ride",
+    "car": 1,
+    "hero": 1
+  },
+  "GOLTR": {
+    "name": "Hyper-Twister Trains",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "GORILLA": {
+    "name": "Gorilla Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "GRATWHTE": {
+    "name": "Great White Shark Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "GTC": {
+    "name": "Ghost Train",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "HARPIESX": {
+    "name": "Harpies Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "HELICAR": {
+    "name": "Mini Helicopters",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "HHBUILD": {
+    "name": "Haunted House",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "HIPPORID": {
+    "name": "Hippo Ride",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "HMCAR": {
+    "name": "Haunted Mansion Ride",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "HOTRODXX": {
+    "name": "Hot Rod Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "HOVERBKE": {
+    "name": "Hover Bike Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "HOVERCAR": {
+    "name": "Hover Car Ride",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "HOVRBORD": {
+    "name": "Hoverboard Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "HUSKIE": {
+    "name": "Huskie Car",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "INTBOB": {
+    "name": "Flying Turns",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "INTINV": {
+    "name": "Inverted Impulse Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "INTST": {
+    "name": "Giga Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "ITALYPOR": {
+    "name": "Italian Police Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "IVMC1": {
+    "name": "Inverted Hairpin Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "JAGUARRD": {
+    "name": "Jaguar Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "JETPACKX": {
+    "name": "Jet Pack Booster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "JETPLANE": {
+    "name": "Jet Plane Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "JOUSTING": {
+    "name": "Jousting Knights Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "JSKI": {
+    "name": "Jet Skis",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "JSTAR1": {
+    "name": "Toboggan Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "JUNKSWNG": {
+    "name": "Chinese Junk Swing Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "KART1": {
+    "name": "Go Karts",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "KOLARIDE": {
+    "name": "Koala Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "LFB1": {
+    "name": "Log Flume",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "LIFT1": {
+    "name": "Elevator",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "LIONRIDE": {
+    "name": "Lion Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "LONDONBS": {
+    "name": "London Bus Tram",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "MANDARIN": {
+    "name": "Mandarin Duck Water Ride",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "MANTARAY": {
+    "name": "Manta Ray Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "MCARPET1": {
+    "name": "Magic Carpet",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "MFT": {
+    "name": "Articulated Roller Coaster Trains",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "MGR1": {
+    "name": "Merry-Go-Round",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "MGR2": {
+    "name": "Double Deck Carousel",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "MICROBUS": {
+    "name": "MicroBus Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "MINECART": {
+    "name": "Mine Cart Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "MINELIFT": {
+    "name": "Mine Lift",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "MONBK": {
+    "name": "Monorail Cycles",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "MONO1": {
+    "name": "Streamlined Monorail Trains",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "MONO2": {
+    "name": "Small Monorail Cars",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "MONO3": {
+    "name": "Retro-style Monorail Trains",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "NEMT": {
+    "name": "Inverted Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "NEPTUNEX": {
+    "name": "Neptune Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "NRL": {
+    "name": "Steam Trains",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "NRL2": {
+    "name": "Steam Trains with Covered Cars",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "OAKBAREL": {
+    "name": "Oak Barrel Ride",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "OBS1": {
+    "name": "Observation Tower",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "OBS2": {
+    "name": "Double-deck Observation Tower",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "OSTRICH": {
+    "name": "Ostrich Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "OUTRIGGR": {
+    "name": "Outrigger Ride",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "PEGASUSX": {
+    "name": "Pegasus Ride",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "PENGUINB": {
+    "name": "Penguin Bobsleigh",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "PMT1": {
+    "name": "Mine Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "POLARBER": {
+    "name": "Polar Bear Rollercoaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "POLCHASE": {
+    "name": "Police Chase Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "POLICECR": {
+    "name": "Police Car Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "PREMT1": {
+    "name": "LIM Launched Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "PTCT1": {
+    "name": "Wooden Roller Coaster Trains",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "PTCT2": {
+    "name": "Wooden Roller Coaster Trains (6 seater)",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "PTCT2R": {
+    "name": "Wooden Roller Coaster Trains (6 seater, Reversed)",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "PTERODAC": {
+    "name": "Pterodactyl Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "RAPBOAT": {
+    "name": "River Rapids",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "RAPTORXX": {
+    "name": "Raptor Racers Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "RBOAT": {
+    "name": "Rowing Boats",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "RCKC": {
+    "name": "Rocket Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "RCR": {
+    "name": "Racing Cars",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "REVCAR": {
+    "name": "Reverser Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "REVF1": {
+    "name": "Reverse Freefall Car",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "RFTBOAT": {
+    "name": "River Rafts",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "RHINORID": {
+    "name": "Rhino Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "RIVRSTYX": {
+    "name": "River Styx",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "ROCKET": {
+    "name": "1950's Rocket Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "RSSNCRRD": {
+    "name": "Russian Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SANFTRAM": {
+    "name": "San Francisco Tram",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "SBOX": {
+    "name": "Soap Box Derby Racers",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SCHOOLBS": {
+    "name": "School Bus Ride",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "SCHT1": {
+    "name": "Roller Coaster Trains",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SEALS": {
+    "name": "Seals Rollercoaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SEAPLANE": {
+    "name": "Seaplane Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SFRIC1": {
+    "name": "Wooden Side-Friction Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SIMPOD": {
+    "name": "Motion Simulator",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "SKIDOO": {
+    "name": "Skidoo Dodgems",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "SKYTR": {
+    "name": "Mini Suspended Flying Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SLCFO": {
+    "name": "Inverted Shuttle Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SLCT": {
+    "name": "Compact Inverted Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SLOTH": {
+    "name": "Sloth Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SMC1": {
+    "name": "Mouse Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SMC2": {
+    "name": "Mine Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SMONO": {
+    "name": "Suspended Monorail Trains",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "SPBOAT": {
+    "name": "Splash Boats",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "SPCAR": {
+    "name": "Sportscars",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "SPDRCR": {
+    "name": "Spiral Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SPUTNIKR": {
+    "name": "Sputnik Suspended Flying Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SRINGS": {
+    "name": "Space Rings",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "STAMPHRD": {
+    "name": "Stampeding Herd Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "STEAMTRN": {
+    "name": "Maharaja Steam Train",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "STEEP1": {
+    "name": "Steeplechase",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "STEEP2": {
+    "name": "Motorbike Races",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "STGCCSTR": {
+    "name": "Stage Coach Rollercoaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SUBMAR": {
+    "name": "Submarine Ride",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "SURFBRDC": {
+    "name": "Surfing Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "SWANS": {
+    "name": "Swans",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "SWSH1": {
+    "name": "Pirate Ship",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "SWSH2": {
+    "name": "Swinging Inverter Ship",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TAXICSTR": {
+    "name": "Yellow Taxi Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "TELEPTER": {
+    "name": "Teleporter",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TGVTRAIN": {
+    "name": "TGV Train Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "THCAR": {
+    "name": "Air Powered Vertical Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "TIGRTWST": {
+    "name": "Bengal Tiger Rollercoaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "TIMEMACH": {
+    "name": "Time Machine",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TOGST": {
+    "name": "Stand-up Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "TOMMYGUN": {
+    "name": "Tommy Gun Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TOPSP1": {
+    "name": "Top Spin",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TRAM1": {
+    "name": "Trams",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TREBUCHT": {
+    "name": "Trebuchet Ride",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TRICATOP": {
+    "name": "Triceratops Dodgem Cars",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TRIKE": {
+    "name": "Water Tricycles",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TRILOBTE": {
+    "name": "Trilobite Boats",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "TRUCK1": {
+    "name": "Pickup Trucks",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TUTLBOAT": {
+    "name": "Turtle Water Ride",
+    "category": "Water Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TWIST1": {
+    "name": "Twist",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "TWIST2": {
+    "name": "Snow Cups",
+    "category": "Thrill Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "UTCAR": {
+    "name": "Twister Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "UTCARR": {
+    "name": "Twister Cars (starting reversed)",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "VALKYRIE": {
+    "name": "Valkyries Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "VCR": {
+    "name": "Vintage Cars",
+    "category": "Gentle Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "VEKDV": {
+    "name": "Inverted Vertical Shuttle",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "VEKST": {
+    "name": "Lay-down Roller Coaster",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "VEKVAMP": {
+    "name": "Swinging Floorless Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "VREEL": {
+    "name": "Virginia Reel",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "WCATC": {
+    "name": "Automobile Cars",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "WHICGRUB": {
+    "name": "Witchity Grub Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "WMMINE": {
+    "name": "Wooden Wild Mine Ride",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "WMOUSE": {
+    "name": "Wooden Wild Mouse",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "WMSPIN": {
+    "name": "Spinning Wild Mouse",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "ZEPLELIN": {
+    "name": "Airship Themed Monorail Trains",
+    "category": "Transport Ride",
+    "car": 0,
+    "hero": 1
+  },
+  "ZLDB": {
+    "name": "Ladybird Trains",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  },
+  "ZLOG": {
+    "name": "Log Trains",
+    "category": "Roller Coaster",
+    "car": 0,
+    "hero": 1
+  }
+}
