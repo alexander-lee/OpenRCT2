@@ -44,11 +44,25 @@ Worst instance, found late: the rules pointed the agent at `DemoPark` as the can
 
 ## 4. Tooling (rebuilt after a data loss — see §8)
 
-**Persistent harness:** `/Users/alexanderlee/rct2-harness/`
+**Harness now lives IN this repo:** `rct2-design-system/harness/` (moved in-repo
+2026-07-24; previously a persistent-but-untracked home at `~/rct2-harness`,
+which still exists only as a symlink into `harness/` for old agents/docs that
+hardcode that path).
 - `mp3d-render/` — component screenshots. `node check-all.mjs` (esbuild every preview), `node render.mjs <Component> [--night] [--angle]`.
 - `park-eval/` — park scoring. `node eval.mjs <park.tsx> --name=X` → 7 PNGs (4 azimuths @34°, topdown @81°, ground @8°, night) + `console.log`; `node probe.mjs <park.tsx>` → scene-graph JSON; `RUBRIC.md`; `samples/`; `signatures/`.
 
-**NEVER put the harness in `/tmp`** — macOS purged it on reboot and destroyed 15 sample parks, all screenshots and `eval.mjs`. That is why it now lives under `~/rct2-harness`.
+**`node_modules/`, `shots/`, `out/`, `signatures/` and all image files are
+gitignored** (`harness/.gitignore`) — only the `.mjs` tools, `package.json`,
+`RUBRIC.md`, `README.md` and `samples/*.tsx` are committed, since the fork
+this repo pushes to is public. A fresh clone therefore needs, in EACH of
+`harness/park-eval/` and `harness/mp3d-render/`:
+```sh
+npm i
+npx playwright install chromium
+```
+before anything here will run.
+
+**NEVER put the harness in `/tmp`** — macOS purged it on reboot and destroyed 15 sample parks, all screenshots and `eval.mjs`. That disaster is why it was first moved to a persistent home outside the repo, and why it now lives IN the repo (git-tracked, so source can't be silently lost to a reboot again) rather than in `/tmp` or any other non-persistent location.
 
 Both use SwiftShader chromium for determinism. **Agents must READ the PNGs** — image scoring caught dozens of defects arithmetic missed.
 
