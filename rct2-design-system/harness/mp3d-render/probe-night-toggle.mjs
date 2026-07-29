@@ -3,29 +3,43 @@
 // probe-night-toggle.mjs — WHAT DOES THE DAY/NIGHT BUTTON COST?
 //
 // The user's report: "when i turn off lighting there's always a super lag with
-// large park". `probe-assembly.mjs` proved the LOAD stall is three.js
-// recompiling every shader once per distinct VISIBLE LIGHT COUNT (the light
-// count is part of a program's cache key). The same mechanism can fire on a
-// day/night TOGGLE, because `Stage/darkLights.ts` sheds/restores lights by
-// intensity threshold and a transition moves 100+ intensities through that
-// threshold at DIFFERENT frames — one recompile of the whole park per step.
+// large park". Every other perf tool here measures a SETTLED park; this one
+// measures the two seconds after a click, which is where that complaint lives.
 //
-// So this probe times the button, in both directions, and prices the two
-// candidate causes separately:
+// WHAT IT MEASURES, and nothing else:
 //
-//   * rAF GAP SERIES around the click (the freeze the user feels), with the
-//     visible light count and the shader-program cache size on every frame, so
-//     a spike is attributable rather than inferred.
-//   * A DIRECT COMPILE COUNTER: the WebGL2 context's `createProgram` /
-//     `linkProgram` / `getProgramParameter` are wrapped in the init script, so
-//     "how many programs were built and how much main-thread time went into
-//     them" is measured, not deduced from `renderer.info.programs.length` —
-//     that is a CACHE SIZE, and a light-count change frees as many programs as
-//     it creates, so the cache can churn 200 programs while its length never
-//     moves.
+//   * the rAF GAP SERIES, with the visible light count, the program-cache size
+//     and `nightK` stamped on every frame. The gap IS the user's experience: a
+//     frame that takes 900 ms is 900 ms of a stuck picture, whatever the GPU
+//     says it was doing.
+//   * FREEZE per toggle = wall clock from the click until the frame time is
+//     back inside 2x its pre-click value AND `nightK` has landed AND the light
+//     count has stopped moving. That is "when is the park usable again".
+//   * TWO CYCLES. three.js keys a program on the VISIBLE LIGHT COUNT, so the
+//     first toggle to a never-seen count compiles the whole park and later
+//     toggles to the SAME count are free. A one-cycle probe cannot tell a
+//     one-time cost from a per-click one — and the user said "always".
+//   * `--legacy` restores the pre-fix per-frame `nightK` lerp IN MEMORY at
+//     bundle time (an esbuild `onLoad` rewrite that asserts its anchor —
+//     nothing under `mp3d/` is written), so the before/after is one command.
+//
+// ---- WHY THERE ARE NO `renderer.render()` LOOPS IN HERE ---------------------
+//
+// The first three revisions of this probe timed variants the way
+// `probe-frame-cost.mjs` does — N back-to-back renders bracketed by
+// `gl.finish()`. On ANGLE Metal those numbers are FICTION and they also RUIN the
+// measurement:
+//
+//   the A/B reported 30.8 ms per render; the wall clock of the same evaluate
+//   was 20 605 ms for 25 renders = 824 ms each. `gl.finish()` returned without
+//   waiting, so every "cheap" variant was really 25 queued frames of GPU work —
+//   and the app's next rAF frame inherited the 18-20 s backlog, which the gap
+//   series then reported as a spontaneous 18-second freeze.
+//
+// So: no synthetic renders, and the honest cost of a frame here is the rAF gap.
 //
 //   node probe-night-toggle.mjs [--sample=parkA-99] [--gpu=metal|swift]
-//        [--throttle=1] [--shot=out/x.png] [--json] [--settle=45]
+//        [--legacy] [--cycles=2] [--throttle=1] [--shot=out/x.png] [--json]
 // ---------------------------------------------------------------------------
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
@@ -49,8 +63,10 @@ const exportName = arg('export', SAMPLE ? '__default__' : 'DemoPark');
 const GPU = arg('gpu', 'metal');
 const DPR = Number(arg('dpr', 2));
 const THROTTLE = Number(arg('throttle', 1));
-const SETTLE_S = Number(arg('settle', 45));
-const HOLD_S = Number(arg('hold', 10));
+const SETTLE_S = Number(arg('settle', 60));
+const CAP_S = Number(arg('cap', 45)); // per-toggle ceiling before we give up
+const CYCLES = Number(arg('cycles', 2));
+const LEGACY = process.argv.includes('--legacy');
 const SHOT = arg('shot', null);
 const JSON_OUT = process.argv.includes('--json');
 const W = Number(arg('w', 1440));
@@ -72,12 +88,31 @@ const entryPath = path.join(HARNESS, 'out', '_entry-night-toggle.tsx');
 fs.mkdirSync(path.dirname(entryPath), { recursive: true });
 fs.writeFileSync(entryPath, entrySrc);
 
-// import resolution: identical to probe-assembly.mjs (both sample dialects, one
-// copy of three)
 const tryFiles = (base) => {
   for (const cand of [base, `${base}.tsx`, `${base}.ts`, path.join(base, 'index.tsx'), path.join(base, 'index.ts')])
     if (fs.existsSync(cand) && fs.statSync(cand).isFile()) return cand;
   return null;
+};
+// ---- --legacy: THE PRE-FIX FADE, REWRITTEN IN MEMORY ------------------------
+// Same technique as `park-eval/probe-board-quiet.mjs --legacy`: the anchor is
+// asserted, so if `Stage/index.tsx` is edited in a way that moves it, the probe
+// FAILS instead of quietly measuring the new code twice.
+const LEGACY_ANCHOR = 'const nightWant = nightRef.current ? 1 : 0;';
+const legacyRewrite = {
+  name: 'legacy-night-fade',
+  setup(b) {
+    b.onLoad({ filter: /components\/Stage\/index\.tsx$/ }, async (args) => {
+      let src = await fs.promises.readFile(args.path, 'utf8');
+      if (!src.includes(LEGACY_ANCHOR)) {
+        console.error(`--legacy: anchor not found in ${args.path} — the fade has been rewritten; update LEGACY_ANCHOR.`);
+        process.exit(1);
+      }
+      const i = src.indexOf(LEGACY_ANCHOR);
+      const end = src.indexOf('sun.intensity', i);
+      src = `${src.slice(0, i)}nightK += ((nightRef.current ? 1 : 0) - nightK) * 0.06;\n      ${src.slice(end)}`;
+      return { contents: src, loader: 'tsx' };
+    });
+  },
 };
 const componentAlias = {
   name: 'mp3d-components',
@@ -101,19 +136,19 @@ const componentAlias = {
   },
 };
 
-say('[toggle] bundling…');
+say(`[toggle] bundling${LEGACY ? ' (LEGACY per-frame fade)' : ''}…`);
 const bundle = await build({
   entryPoints: [entryPath], bundle: true, write: false, format: 'iife', jsx: 'automatic',
   loader: { '.tsx': 'tsx', '.ts': 'ts' }, define: { 'process.env.NODE_ENV': '"production"' },
   nodePaths: [path.join(HARNESS, 'node_modules')], target: 'chrome120', logLevel: 'silent',
-  plugins: [componentAlias],
+  plugins: LEGACY ? [componentAlias, legacyRewrite] : [componentAlias],
 }).catch((e) => {
   console.error('esbuild failed:');
   for (const err of e.errors ?? []) console.error(` ${err.location?.file}:${err.location?.line} ${err.text}`);
   process.exit(1);
 });
 
-const htmlPath = path.join(HARNESS, 'out', `night-toggle-${GPU}.html`);
+const htmlPath = path.join(HARNESS, 'out', `night-toggle-${GPU}${LEGACY ? '-legacy' : ''}.html`);
 fs.writeFileSync(htmlPath, `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0}</style></head><body><div id="root"></div><script>${bundle.outputFiles[0].text}</script></body></html>`);
 
 const GPU_ARGS = {
@@ -130,56 +165,38 @@ await page.addInitScript(() => {
   const w = window;
   const t0 = performance.now();
   w.__nt = { t0, gaps: [], phase: 'load', marks: {} };
-  // ---- THE COMPILE COUNTER ---------------------------------------------------
-  // `renderer.info.programs.length` is a CACHE SIZE. three.js refcounts programs
-  // per material, so a light-count change releases the old program as it takes
-  // the new one and the length can be flat across hundreds of compiles. Wrap the
-  // GL entry points instead: `createProgram`/`linkProgram` count the work and
-  // `getProgramParameter` is where the driver blocks waiting for the link.
-  w.__gl = { create: 0, link: 0, del: 0, linkMs: 0, paramMs: 0, uniMs: 0 };
+  // Program counters. `renderer.info.programs.length` is a CACHE SIZE, so it
+  // cannot distinguish "11 compiled" from "11 compiled, 11 freed"; count the GL
+  // entry points instead. (`linkProgram` returns immediately on ANGLE Metal — the
+  // real compile lands at first DRAW — so treat the ms fields as a floor.)
+  w.__gl = { create: 0, link: 0, del: 0, linkMs: 0, paramMs: 0 };
   const wrap = (proto) => {
     if (!proto) return;
     const c = proto.createProgram; const l = proto.linkProgram;
     const p = proto.getProgramParameter; const d = proto.deleteProgram;
-    const u = proto.getUniformLocation;
     proto.createProgram = function (...a) { w.__gl.create += 1; return c.apply(this, a); };
     proto.deleteProgram = function (...a) { w.__gl.del += 1; return d.apply(this, a); };
     proto.linkProgram = function (...a) { const t = performance.now(); const r = l.apply(this, a); w.__gl.linkMs += performance.now() - t; w.__gl.link += 1; return r; };
     proto.getProgramParameter = function (...a) { const t = performance.now(); const r = p.apply(this, a); w.__gl.paramMs += performance.now() - t; return r; };
-    proto.getUniformLocation = function (...a) { const t = performance.now(); const r = u.apply(this, a); w.__gl.uniMs += performance.now() - t; return r; };
   };
   wrap(window.WebGL2RenderingContext && WebGL2RenderingContext.prototype);
   wrap(window.WebGLRenderingContext && WebGLRenderingContext.prototype);
 
-  // ---- SPLIT THE FRAME: renderer.render vs EVERYTHING ELSE -------------------
-  // The first two runs of this probe found rAF frames of 1500-26000 ms on a park
-  // whose explicit `renderer.render` measured 33-58 ms. A gap series cannot say
-  // which half of the Stage loop that is, so `render` is wrapped the moment the
-  // Stage publishes its api and the per-frame total is carried in the series.
-  w.__rt = { ms: 0, calls: 0 };
   let apiRef = null;
-  const hook = (api) => {
-    if (!api || api.__renderHooked) return;
-    api.__renderHooked = true;
-    const r = api.renderer; const real = r.render.bind(r);
-    r.render = (...a) => { const t = performance.now(); const out = real(...a); w.__rt.ms += performance.now() - t; w.__rt.calls += 1; return out; };
-  };
-  const snap = () => {
-    if (!apiRef) { apiRef = document.querySelector('canvas')?.__stageApi ?? null; hook(apiRef); }
-    if (!apiRef) return [0, 0, 0];
-    let lights = 0;
-    apiRef.scene.traverse((o) => { if ((o.isPointLight || o.isSpotLight || o.isDirectionalLight) && o.visible) lights += 1; });
-    const nk = (() => { let k = null; apiRef.scene.traverse((o) => { if (o.userData && typeof o.userData.nightK === 'number') k = o.userData.nightK; }); return k; })();
-    return [lights, apiRef.renderer?.info?.programs?.length ?? 0, nk];
-  };
   let prev = performance.now();
   const tick = () => {
     const now = performance.now();
-    const [lights, progs, nk] = snap();
-    // [t, gapMs, visibleLights, programCacheSize, programsCreatedSoFar, nightK,
-    //  phase, ms inside renderer.render during that gap, render calls]
-    w.__nt.gaps.push([+(now - t0).toFixed(1), +(now - prev).toFixed(1), lights, progs, w.__gl.create, nk === null ? null : +nk.toFixed(4), w.__nt.phase, +w.__rt.ms.toFixed(1), w.__rt.calls]);
-    w.__rt.ms = 0; w.__rt.calls = 0;
+    if (!apiRef) apiRef = document.querySelector('canvas')?.__stageApi ?? null;
+    let lights = 0; let nk = null;
+    if (apiRef) {
+      apiRef.scene.traverse((o) => {
+        if ((o.isPointLight || o.isSpotLight) && o.visible) lights += 1;
+        if (o.userData && typeof o.userData.nightK === 'number') nk = o.userData.nightK;
+      });
+    }
+    // [t, gapMs, visibleLights, programCache, programsCreated, nightK, phase]
+    w.__nt.gaps.push([+(now - t0).toFixed(1), +(now - prev).toFixed(1), lights,
+      apiRef?.renderer?.info?.programs?.length ?? 0, w.__gl.create, nk === null ? null : +nk.toFixed(4), w.__nt.phase]);
     prev = now;
     requestAnimationFrame(tick);
   };
@@ -195,11 +212,9 @@ const env = await page.evaluate(() => {
   const d = gl && gl.getExtension('WEBGL_debug_renderer_info');
   return { renderer: d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : 'unknown', dpr: window.devicePixelRatio };
 });
-say(`[toggle] ${env.renderer} · dpr ${env.dpr} · throttle ${THROTTLE}x · ${path.basename(parkFile)}`);
+say(`[toggle] ${env.renderer} · dpr ${env.dpr} · throttle ${THROTTLE}x · ${path.basename(parkFile)}${LEGACY ? ' · LEGACY FADE' : ''}`);
 
-// ---- wait for the park to STOP GROWING -------------------------------------
-// Same detector as probe-assembly.mjs: a flat draw count is not a settled park
-// (streamed content mounts invisible), so the node census has to be flat too.
+// ---- wait for the park to STOP GROWING (same detector as probe-assembly) ----
 let stable = 0; let lastKey = ''; let settledAt = null;
 for (let i = 0; i < Math.ceil((SETTLE_S * 1000) / 500); i += 1) {
   await page.waitForTimeout(500);
@@ -217,47 +232,16 @@ for (let i = 0; i < Math.ceil((SETTLE_S * 1000) / 500); i += 1) {
   lastKey = key;
   if (stable === 4 && settledAt === null) { settledAt = s; break; }
 }
-say(`[toggle] settled: ${settledAt ? `${(settledAt.t / 1000).toFixed(1)} s · ${settledAt.nodes} nodes · ${settledAt.draws} draws · ${settledAt.lights} visible lights · ${settledAt.culled} culled` : 'NEVER (still growing)'}`);
+say(`[toggle] settled: ${settledAt ? `${(settledAt.t / 1000).toFixed(1)} s · ${settledAt.nodes} nodes · ${settledAt.draws} draws · ${settledAt.lights} lights visible · ${settledAt.culled} culled` : 'NEVER (still growing)'}`);
 
-// EXPLICIT frame timing, the probe-frame-cost.mjs way: three warm renders, then
-// N timed ones with a gl.finish either side. Needed because the rAF gap series
-// mixes React, the sim and the recorder in with the draw.
-const frameCost = (n = 8) => page.evaluate((k) => {
-  const api = document.querySelector('canvas').__stageApi;
-  const { scene, camera, renderer } = api;
-  const gl = renderer.getContext();
-  for (let i = 0; i < 3; i += 1) renderer.render(scene, camera);
-  gl.finish();
-  const t = performance.now();
-  for (let i = 0; i < k; i += 1) renderer.render(scene, camera);
-  gl.finish();
-  return +((performance.now() - t) / k).toFixed(2);
+/** median rAF gap over the last `n` recorded frames — the honest frame time */
+const steadyMs = (n = 20) => page.evaluate((k) => {
+  const g = window.__nt.gaps.slice(-k).map((x) => x[1]).sort((a, b) => a - b);
+  return g.length ? g[Math.floor(g.length / 2)] : null;
 }, n);
 
-// ---- WAIT FOR THE TRANSITION TO FINISH, not for a fixed timeout -------------
-// `Stage`'s nightK lerp is PER FRAME (`nightK += (target - nightK) * 0.06`), so
-// the wall clock a transition takes is frames × frame time — and the frame time
-// during a night transition is itself the thing under test. A fixed wait cannot
-// measure a transition whose duration depends on how slow it is.
-const awaitTransition = async (want, capS) => {
+const clickToggle = async (phase, want, baselineMs) => {
   const t0 = Date.now();
-  for (;;) {
-    const s = await page.evaluate(() => {
-      const api = document.querySelector('canvas')?.__stageApi;
-      let nk = null; let lights = 0;
-      api.scene.traverse((o) => {
-        if (o.userData && typeof o.userData.nightK === 'number') nk = o.userData.nightK;
-        if ((o.isPointLight || o.isSpotLight) && o.visible) lights += 1;
-      });
-      return { nk, lights, frameMs: api.stats().frameMs };
-    });
-    const done = want === 1 ? s.nk > 0.99 : s.nk < 0.01;
-    if (done || Date.now() - t0 > capS * 1000) return { settleMs: Date.now() - t0, timedOut: !done, ...s };
-    await page.waitForTimeout(250);
-  }
-};
-
-const clickToggle = async (phase, want) => {
   await page.evaluate((p) => {
     window.__nt.phase = p;
     window.__nt.marks[p] = performance.now() - window.__nt.t0;
@@ -266,94 +250,52 @@ const clickToggle = async (phase, want) => {
     if (!b) throw new Error('no UIDayNight button found');
     b.click();
   }, phase);
-  const tr = await awaitTransition(want, HOLD_S);
-  const gl = await page.evaluate((p) => {
-    const g = window.__gl; const before = window.__nt[`gl_${p}`];
-    return { create: g.create - before.create, del: g.del - before.del, link: g.link - before.link, linkMs: +(g.linkMs - before.linkMs).toFixed(1), paramMs: +(g.paramMs - before.paramMs).toFixed(1), uniMs: +(g.uniMs - before.uniMs).toFixed(1) };
-  }, phase);
-  say(`[toggle] ${phase}: nightK reached ${tr.nk?.toFixed?.(3)} after ${tr.settleMs} ms${tr.timedOut ? ' (TIMED OUT — still transitioning)' : ''} · ${tr.lights} visible lights · frameMs(EMA) ${tr.frameMs}`);
-  return { gl, tr };
-};
-
-// ---- WHERE THE FRAME ACTUALLY GOES -----------------------------------------
-// The first run of this probe found a park whose rAF frames were 1600 ms while
-// an explicit `renderer.render` measured 28 ms — so the freeze was NOT the draw,
-// and no counter in this harness could say what it was. A sampling CPU profile
-// is the only thing that can, so it is part of the tool.
-const profile = async (label, secs) => {
-  if (!process.argv.includes('--profile')) return null;
-  await cdp.send('Profiler.enable');
-  await cdp.send('Profiler.setSamplingInterval', { interval: 200 });
-  await cdp.send('Profiler.start');
-  await page.waitForTimeout(secs * 1000);
-  const { profile: p } = await cdp.send('Profiler.stop');
-  const self = new Map();
-  const byId = new Map(p.nodes.map((n) => [n.id, n]));
-  const total = p.samples.length;
-  for (const id of p.samples) {
-    const n = byId.get(id);
-    if (!n) continue;
-    const f = n.callFrame;
-    const key = `${f.functionName || '(anonymous)'} @${(f.url || '').split('/').pop()}:${f.lineNumber}`;
-    self.set(key, (self.get(key) ?? 0) + 1);
+  // RECOVERED = nightK landed, the light count stopped moving for 3 polls, and
+  // the frame time is back inside 2x the pre-click baseline. All three, because
+  // any one alone can be true while the park is still unusable.
+  let quiet = 0; let last = -1; let landed = false; let recoveredMs = null;
+  for (;;) {
+    const s = await page.evaluate(() => {
+      const api = document.querySelector('canvas')?.__stageApi;
+      let nk = null; let lights = 0;
+      api.scene.traverse((o) => {
+        if (o.userData && typeof o.userData.nightK === 'number') nk = o.userData.nightK;
+        if ((o.isPointLight || o.isSpotLight) && o.visible) lights += 1;
+      });
+      const g = window.__nt.gaps.slice(-6).map((x) => x[1]).sort((a, b) => a - b);
+      return { nk, lights, frameMs: g.length ? g[Math.floor(g.length / 2)] : null };
+    });
+    landed = want === 1 ? s.nk >= 1 : s.nk <= 0;
+    quiet = s.lights === last ? quiet + 1 : 0;
+    last = s.lights;
+    const fast = s.frameMs !== null && s.frameMs <= Math.max(2 * baselineMs, baselineMs + 8);
+    if (landed && quiet >= 3 && fast) { recoveredMs = Date.now() - t0; break; }
+    if (Date.now() - t0 > CAP_S * 1000) break;
+    await page.waitForTimeout(120);
   }
-  const top = [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14)
-    .map(([k, v]) => ({ fn: k, pct: +((100 * v) / total).toFixed(1) }));
-  say(`\n[profile ${label}] ${total} samples`);
-  for (const t of top) say(`   ${String(t.pct).padStart(5)}%  ${t.fn}`);
-  return top;
+  const gl = await page.evaluate((p) => {
+    const g = window.__gl; const b = window.__nt[`gl_${p}`];
+    return { create: g.create - b.create, del: g.del - b.del };
+  }, phase);
+  const steady = await steadyMs(12);
+  const nk = await page.evaluate(() => { let k = null; document.querySelector('canvas').__stageApi.scene.traverse((o) => { if (o.userData && typeof o.userData.nightK === 'number') k = o.userData.nightK; }); return k; });
+  const verdict = recoveredMs === null ? `NOT RECOVERED in ${CAP_S} s` : `recovered in ${recoveredMs} ms`;
+  say(`[toggle] ${phase}: ${verdict} · nightK ${nk === null ? '?' : nk.toFixed(3)} · ${last} lights · frame now ${steady} ms · ${gl.create} programs compiled`);
+  return { phase, recoveredMs, timedOut: recoveredMs === null, nightK: nk, lights: last, steadyMs: steady, programs: gl.create };
 };
 
-// ---- THE DECISIVE A/B: WHAT DOES ONE LIGHT-COUNT CHANGE COST? ---------------
-// three.js puts the number of visible lights in a material's program cache key,
-// AND (WebGLRenderer.setProgram) marks every material needing lights for a
-// program re-resolve when `lights.state.version` moves. So a single light
-// flipping `visible` re-resolves EVERY material in the park and re-uploads the
-// whole point-light uniform array on every program bind. This prices it:
-//   A  plain renders                       — the settled frame
-//   B  flip one lamp's `visible` per render — one light-count change per frame
-//   C  change one lamp's `intensity`       — a uniform change, no count change
-const abLightCost = (n = 6) => page.evaluate((k) => {
-  const api = document.querySelector('canvas').__stageApi;
-  const { scene, camera, renderer } = api;
-  const gl = renderer.getContext();
-  const lamps = [];
-  scene.traverse((o) => { if (o.isPointLight) lamps.push(o); });
-  const lamp = lamps[0];
-  if (!lamp) return null;
-  const was = lamp.visible; const wasI = lamp.intensity;
-  const time = (fn) => {
-    for (let i = 0; i < 2; i += 1) { fn(i); renderer.render(scene, camera); }
-    gl.finish();
-    const t = performance.now();
-    for (let i = 0; i < k; i += 1) { fn(i); renderer.render(scene, camera); }
-    gl.finish();
-    return +((performance.now() - t) / k).toFixed(1);
-  };
-  const A = time(() => {});
-  const B = time((i) => { lamp.visible = i % 2 === 0; });
-  lamp.visible = was;
-  const C = time((i) => { lamp.intensity = wasI * (i % 2 === 0 ? 1 : 0.5); });
-  lamp.intensity = wasI;
-  return { lamps: lamps.length, plainMs: A, flipVisibleMs: B, changeIntensityMs: C };
-}, n);
-
-const dayFrame = await frameCost();
-say(`[toggle] settled DAY frame: ${dayFrame} ms`);
-const profDay = await profile('day', 5);
-const on = await clickToggle('night-on', 1);
-const nightFrame = await frameCost();
-say(`[toggle] settled NIGHT frame: ${nightFrame} ms`);
-const abNight = await abLightCost();
-if (abNight) say(`[toggle] NIGHT A/B (${abNight.lamps} point lights): plain ${abNight.plainMs} ms · flip one light's visible ${abNight.flipVisibleMs} ms · change one intensity ${abNight.changeIntensityMs} ms`);
-const profNight = await profile('night', 12);
-const off = await clickToggle('night-off', 0);
-const backFrame = await frameCost();
-say(`[toggle] settled DAY-AGAIN frame: ${backFrame} ms`);
-const glOn = on.gl; const glOff = off.gl;
+const results = [];
+for (let c = 1; c <= CYCLES; c += 1) {
+  const dayBase = await steadyMs(30);
+  say(`\n[toggle] cycle ${c}: steady DAY frame ${dayBase} ms`);
+  results.push({ cycle: c, ...await clickToggle(`c${c}-night-on`, 1, dayBase), dayBaselineMs: dayBase });
+  const nightBase = await steadyMs(12);
+  say(`[toggle] cycle ${c}: steady NIGHT frame ${nightBase} ms`);
+  // the click the user complains about: turn the lighting back OFF
+  results.push({ cycle: c, ...await clickToggle(`c${c}-night-off`, 0, dayBase), nightFrameMs: nightBase });
+}
 await page.evaluate(() => { window.__nt.phase = 'after'; });
-await page.waitForTimeout(2000);
-
+await page.waitForTimeout(1500);
 const rec = await page.evaluate(() => ({ gaps: window.__nt.gaps, marks: window.__nt.marks, gl: window.__gl }));
 
 if (SHOT) {
@@ -363,59 +305,36 @@ if (SHOT) {
   say(`[toggle] shot -> ${p}`);
 }
 
-const report = (phase, gl) => {
+const report = (phase) => {
   const g = rec.gaps.filter((x) => x[6] === phase);
   if (!g.length) return { phase, frames: 0 };
   const gapsMs = g.map((x) => x[1]);
   const over50 = gapsMs.filter((x) => x > 50);
-  const over100 = gapsMs.filter((x) => x > 100);
-  const lights = [...new Set(g.map((x) => x[2]))];
-  // the light-count STEPS: how many times the visible count changed inside the
-  // phase. Each step is a full re-compile of every material in the park.
   let steps = 0;
   for (let i = 1; i < g.length; i += 1) if (g[i][2] !== g[i - 1][2]) steps += 1;
-  // FREEZE = time in gaps beyond a 16.7 ms frame, i.e. the wall clock the user
-  // spends looking at a stuck picture. Counted over gaps > 50 ms so ordinary
-  // frame-rate variation is not billed as a freeze.
-  const freeze = over50.reduce((a, b) => a + b - 16.7, 0);
-  const t0 = g[0][0]; const tEnd = g[g.length - 1][0];
-  const renderMs = g.reduce((a, x) => a + (x[7] ?? 0), 0);
-  const totalMs = gapsMs.reduce((a, b) => a + b, 0);
   return {
-    phase, frames: g.length, spanS: +((tEnd - t0) / 1000).toFixed(1),
-    freezeMs: +freeze.toFixed(0), worstGapMs: +Math.max(...gapsMs).toFixed(0),
-    gapsOver50: over50.length, gapsOver100: over100.length,
-    lightCounts: lights.length <= 12 ? lights : `${lights.length} distinct (${Math.min(...lights)}..${Math.max(...lights)})`,
-    lightSteps: steps,
-    inRenderMs: +renderMs.toFixed(0), outsideRenderMs: +(totalMs - renderMs).toFixed(0),
-    renderCalls: g.reduce((a, x) => a + (x[8] ?? 0), 0),
-    programsCreated: gl?.create ?? null, programsDeleted: gl?.del ?? null,
-    linkMs: gl?.linkMs ?? null, linkQueryMs: gl?.paramMs ?? null, uniformQueryMs: gl?.uniMs ?? null,
-    cacheSizeStart: g[0][3], cacheSizeEnd: g[g.length - 1][3],
+    phase, frames: g.length, spanS: +((g[g.length - 1][0] - g[0][0]) / 1000).toFixed(1),
+    freezeMs: +over50.reduce((a, b) => a + b - 16.7, 0).toFixed(0),
+    worstGapMs: Math.max(...gapsMs), gapsOver50: over50.length,
+    lightCounts: [...new Set(g.map((x) => x[2]))], lightSteps: steps,
+    cacheStart: g[0][3], cacheEnd: g[g.length - 1][3],
   };
 };
-
+const phases = [...new Set(rec.gaps.map((x) => x[6]))].map(report);
 const out = {
-  park: path.basename(parkFile), gpu: GPU, throttle: THROTTLE, renderer: env.renderer,
-  settled: settledAt, phases: [report('load'), report('night-on', glOn), report('night-off', glOff), report('after')],
-  frameMs: { day: dayFrame, night: nightFrame, dayAgain: backFrame },
-  transition: { nightOn: on.tr, nightOff: off.tr },
-  totalPrograms: rec.gl.create,
-  profile: { day: profDay, night: profNight },
-  ab: { night: abNight },
-  warnings: lines.filter((l) => /warn|error|Stage:/i.test(l)).slice(0, 8),
+  park: path.basename(parkFile), gpu: GPU, dpr: DPR, throttle: THROTTLE, renderer: env.renderer,
+  legacyFade: LEGACY, settled: settledAt, toggles: results, phases,
+  totalPrograms: rec.gl.create, programsDeleted: rec.gl.del,
+  warnings: lines.filter((l) => /warn|error|Stage:/i.test(l)).slice(0, 6),
   gaps: rec.gaps,
 };
 if (JSON_OUT) console.log(JSON.stringify(out, null, 2));
 else {
-  for (const p of out.phases) {
+  console.log(`\n${'phase'.padEnd(16)} frames  span   FREEZE   worst   >50ms  light counts (steps)  programs`);
+  for (const p of phases) {
     if (!p.frames) continue;
-    console.log(`\n── ${p.phase} ──  ${p.frames} frames over ${p.spanS}s`);
-    console.log(`   FREEZE ${p.freezeMs} ms   worst gap ${p.worstGapMs} ms   gaps>50ms ${p.gapsOver50}   gaps>100ms ${p.gapsOver100}`);
-    console.log(`   inside renderer.render ${p.inRenderMs} ms (${p.renderCalls} calls)   OUTSIDE it ${p.outsideRenderMs} ms`);
-    console.log(`   visible lights: ${Array.isArray(p.lightCounts) ? p.lightCounts.join(' → ') : p.lightCounts}   (${p.lightSteps} count changes)`);
-    if (p.programsCreated !== null) console.log(`   programs created ${p.programsCreated}, deleted ${p.programsDeleted}   linkProgram ${p.linkMs} ms   LINK_STATUS query ${p.linkQueryMs} ms   getUniformLocation ${p.uniformQueryMs} ms`);
-    console.log(`   program cache ${p.cacheSizeStart} → ${p.cacheSizeEnd}`);
+    const lc = p.lightCounts.length <= 6 ? p.lightCounts.join('→') : `${p.lightCounts.length} distinct ${Math.min(...p.lightCounts)}..${Math.max(...p.lightCounts)}`;
+    console.log(`${p.phase.padEnd(16)} ${String(p.frames).padStart(6)} ${`${p.spanS}s`.padStart(6)} ${`${p.freezeMs}ms`.padStart(8)} ${`${p.worstGapMs}ms`.padStart(8)} ${String(p.gapsOver50).padStart(6)}   ${lc} (${p.lightSteps})   ${p.cacheStart}→${p.cacheEnd}`);
   }
   const save = arg('save', null);
   if (save) { fs.writeFileSync(path.isAbsolute(save) ? save : path.join(HARNESS, save), JSON.stringify(out, null, 2)); console.log(`\n[toggle] saved ${save}`); }

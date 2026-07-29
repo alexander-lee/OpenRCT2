@@ -763,6 +763,22 @@ export function Stage({
     const nightHemiGnd = new THREE.Color(0x141c14);
     const bgNow = new THREE.Color(background);
     let nightK = nightRef.current ? 1 : 0;
+    // ---- THE DAY/NIGHT CROSS-FADE IS TIMED IN SECONDS, NOT IN FRAMES ---------
+    // It used to be `nightK += (want - nightK) * 0.06` — a PER-FRAME lerp, which
+    // makes the length of the fade "however many frames it takes", not a
+    // duration. On a big park at night that is the difference between a moment
+    // and MINUTES (measured, see darkLights.ts "THE FADE WAS THE TOGGLE FREEZE"),
+    // because a night park's frame is ~100x a day park's: the fade needed ~110
+    // frames × ~1.5 s each, and every one of those frames is the SLOW kind.
+    //
+    // Linear on `dtRaw` (the UNCLAMPED delta — the clamp exists so one slow
+    // frame cannot fling PHYSICS forward, and a cross-fade is not physics) has
+    // the property the exponential lacked: it LANDS. `nightK` reaches exactly 0
+    // or exactly 1, so every night-gated intensity lands exactly at its final
+    // value and the dark-light cull sheds the whole set in ONE pass instead of a
+    // staircase. It is also self-scaling — 48 frames of fade at 60 fps, ONE
+    // frame on a park whose frames are longer than the fade itself.
+    const NIGHT_FADE_S = 0.8;
 
     // textured grass ground (optional — off for water / terrain scenes)
     if (ground) {
@@ -1205,8 +1221,13 @@ export function Stage({
       } else {
         camGroundLift = 0;
       }
-      // smooth day/night transition: sun fades to moonlight, park floods rise
-      nightK += ((nightRef.current ? 1 : 0) - nightK) * 0.06;
+      // smooth day/night transition: sun fades to moonlight, park floods rise.
+      // Timed in SECONDS and it lands exactly on 0/1 — see NIGHT_FADE_S above.
+      const nightWant = nightRef.current ? 1 : 0;
+      if (nightK !== nightWant) {
+        const step = dtRaw / NIGHT_FADE_S;
+        nightK = nightWant > nightK ? Math.min(nightWant, nightK + step) : Math.max(nightWant, nightK - step);
+      }
       sun.intensity = 1.15 * (1 - nightK) + 0.12 * nightK;
       sun.color.lerpColors(daySun, moonCol, nightK);
       hemi.intensity = 0.62 * (1 - nightK) + 0.15 * nightK;

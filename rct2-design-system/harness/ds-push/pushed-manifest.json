@@ -2,7 +2,7 @@
   "version": 1,
   "designSystemId": "ds-fbd20bf8-b16d-4cf1-8440-d20bc095fc4a",
   "note": "EMPTY BASELINE. No entry here means \"never pushed as far as this manifest knows\", so the first status run reports the whole tree. Bootstrap it ONCE, when no push is in flight, with:  node manifest.mjs reconcile --server-list=<get_design_system json> --assume-clean   (see ../README.md, FAST PUSH PROTOCOL / Bootstrapping). Thereafter only ever grow it via `commit`, after the final file-list check.",
-  "updatedAt": "2026-07-29T00:05:14.700Z",
+  "updatedAt": "2026-07-29T00:19:19.130Z",
   "files": {
     "components/AetherBalloons/AetherBalloons.previews.tsx": {
       "sha256": "f608fecc90623a3551d5eea95ea18e7012c780acbee614ad4e7b1eee201d7d8e",
@@ -1237,15 +1237,20 @@
       "bytes": 11176,
       "pushedAt": "2026-07-29T00:05:14.699Z"
     },
+    "components/OceanTunnelSlide/_zzmask.tsx": {
+      "sha256": "784b58b144ce02d7b64d66cf9710ac3f14f724cbafacdb4305dc6c0ad65c9499",
+      "bytes": 998,
+      "pushedAt": "2026-07-29T00:19:19.128Z"
+    },
     "components/OceanTunnelSlide/basin.ts": {
       "sha256": "8f60402d73f7ecb19fd2f4331cc88fb3a8d2a2b7e7e870952ea5c97a6d0aec7c",
       "bytes": 31157,
       "pushedAt": "2026-07-27T17:58:45.236Z"
     },
     "components/OceanTunnelSlide/index.tsx": {
-      "sha256": "481e2a6b92f175a0d7a1f16ec000a7cc78781b13826ff8146e87e8b52fed7e89",
-      "bytes": 73222,
-      "pushedAt": "2026-07-28T23:52:38.969Z"
+      "sha256": "aea595cd321695c490c7d1a620c8651dd2b70a90d4b08b590e8a4c109b7ab971",
+      "bytes": 76498,
+      "pushedAt": "2026-07-29T00:17:51.126Z"
     },
     "components/OceanTunnelSlide/parts.ts": {
       "sha256": "c3c695c806006617af2a70185e1aa878b1f40179d1f61ee65ef21cbbfc3a739a",
@@ -1943,9 +1948,9 @@
       "pushedAt": "2026-07-28T17:20:39.163Z"
     },
     "components/Stage/index.tsx": {
-      "sha256": "c753b1194e640555434184abc940e7a647a828292244bac6d158ed7b00e9d29a",
-      "bytes": 57656,
-      "pushedAt": "2026-07-28T00:48:20.374Z"
+      "sha256": "665bdb8bf65531add380b4f3c8d151f3b299129c7bda33612fa8a99127fea9f7",
+      "bytes": 59070,
+      "pushedAt": "2026-07-29T00:17:51.126Z"
     },
     "components/StringLights/Context.md": {
       "sha256": "71f606fedff93ba04b208a99c9e256e8827dc576fadc10e8a03b95276cb20955",

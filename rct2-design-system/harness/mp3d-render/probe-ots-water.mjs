@@ -23,6 +23,9 @@
 //     plate, per azimuth (0 = a hard cut from teal to sand)
 //   * every reef item (rock / kelp) — submerged, awash or PROUD of the water
 //   * the spit (the queue stands on it) and the trough water, against the line
+//   * THE RIDE'S OWN ACCESS ANCHORS against its own shoreline (see §8 below) —
+//     because a lagoon with the ride's queue standing in the middle of it is not
+//     a fixed lagoon, and that is exactly what the first pass shipped
 //
 //   node probe-ots-water.mjs [--json] [--rays=N] [--src=<index.tsx>]
 //
@@ -50,10 +53,20 @@ const SRC = srcArg ? path.resolve(srcArg) : path.join(REPO, 'components/OceanTun
 const suffix = srcArg ? '-alt' : '';
 
 const entry = path.join(OUT, `_probe-ots-water-entry${suffix}.ts`);
+// THE CHASSIS'S OWN ARITHMETIC, IMPORTED, NEVER RETYPED. `layout.front` is not
+// the entrance hut and it is not the exit at all: the hut stands HUT_BACK (0.62)
+// behind the queue head and the exit is DERIVED one TILE along the station face
+// by `adjacentExitCells` (`layout.exit` has been a side hint only since the RCT2
+// adjacency rework). The previous pass measured the exit at the old absolute
+// `layout.exit` offset [2.0, 2.2] — a cell the chassis has not placed a hut on
+// for two versions — and reported plan radius 0.904 for a hut that was actually
+// at 0.751. Import the real functions and the probe cannot make that mistake.
 fs.writeFileSync(
   entry,
   `export * from ${JSON.stringify(SRC)};
 export * as THREE from 'three';
+export { adjacentExitCells } from ${JSON.stringify(path.join(REPO, 'components/Park/configurableRide'))};
+export { laneLenOf, TILE } from ${JSON.stringify(path.join(REPO, 'components/ParkBuilder'))};
 `,
 );
 const bundlePath = path.join(OUT, `_probe-ots-water-bundle${suffix}.mjs`);
@@ -287,8 +300,109 @@ g.traverse((o) => {
 });
 const ribbonBB = ribbon ? new T.Box3().setFromObject(ribbon) : null;
 
+// ---------------------------------------------------------------------------
+// 8. THE RIDE'S OWN ACCESS ANCHORS, against its own shoreline.
+//
+// <ConfigurableRide> seats the queue lane and BOTH huts on the PARK's terrain
+// (configurableRide.tsx:684), not on this component's sand — so any access
+// anchor inside the lagoon is a hut standing in the ride's own hero water, and
+// the first pass had all four of them there (queue head plan radius 0.854).
+//
+// TWO CONTOURS ARE MEASURED, and the difference between them is the whole point:
+//
+//   WATERLINE  the outermost radius on the anchor's own azimuth where water
+//              actually stands over the sand. What you SEE.
+//   CLIP       the outermost radius where the shader draws the sheet AT ALL
+//              (`uRadius`, plan 1.16). Past the waterline by design, because
+//              §5b hides the overshoot UNDER proud sand — except over the spit,
+//              where the sand is at the host's level and cannot hide anything, so
+//              there the sheet is only kept off by the §5b MASK.
+//
+// An anchor outside the WATERLINE is dry in the shipped build. An anchor outside
+// the CLIP is dry NO MATTER WHAT THE MASK DOES — which is the only version of
+// this that a future edit to the water cannot silently undo.
+// ---------------------------------------------------------------------------
+const access = g.userData.access ?? null;
+const topAt = (x, z) => {
+  rc.set(new T.Vector3(x, 14, z), down);
+  const hits = rc.intersectObjects(rayTargets, true);
+  const h = hits.find((p2) => p2.point.y <= 1.4); // the deck, the track and the tube fly overhead
+  return h ? { y: h.point.y, what: sandOf(h.object) ?? 'other' } : null;
+};
+/** how many WORLD units one unit of PLAN RADIUS is worth on this azimuth — the
+ *  cove is an ellipse, so a radius margin means nothing until it is converted */
+const radialScaleAt = (az) => Math.hypot(Math.cos(az) * LA, Math.sin(az) * LB);
+const azOf = (x, z) => Math.atan2((z - LZ) / LB, (x - LX) / LA);
+const scanAz = (az) => {
+  let rWater = null;
+  let rDrawn = null;
+  for (let s = 0; s <= 480; s += 1) {
+    const r = 0.05 + (s / 480) * 1.6;
+    const x = LX + Math.cos(az) * LA * r;
+    const z = LZ + Math.sin(az) * LB * r;
+    const wy = sheetHeightAt(x, z);
+    if (wy === null) continue;
+    rDrawn = r;
+    const h = topAt(x, z);
+    if (h && h.y < wy) rWater = r;
+  }
+  return { rWater, rDrawn };
+};
+const anchors = [];
+if (access) {
+  // the probe builds the component at the ORIGIN with no rotation, so its local
+  // frame IS world here: local +z is world +z. In a park the same offsets are
+  // rotated by the mount yaw, which cannot change any radius quoted below —
+  // `front` is measured along the ride's own +z face either way.
+  const front = access.front ?? 1.8;
+  const dir = [0, 1];
+  const head = [0, front];
+  const cells = K.adjacentExitCells(head, dir, Math.sign((access.exit ?? [-1.5, 1.35])[0]) || -1);
+  // the entrance hut is the MIDPOINT of the two candidate exit cells (they sit
+  // one tile either side of it) — derived, so HUT_BACK is never retyped here
+  const ehut = [(cells[0].cell[0] + cells[1].cell[0]) / 2, (cells[0].cell[1] + cells[1].cell[1]) / 2];
+  const laneLen = K.laneLenOf(access.defaults?.capacity ?? 4);
+  const pts = [
+    ['queue head', head],
+    ['entrance hut', ehut],
+    [`exit cell ${cells[0].side > 0 ? '-x' : '+x'} (hinted)`, cells[0].cell],
+    [`exit cell ${cells[1].side > 0 ? '-x' : '+x'} (alt)`, cells[1].cell],
+    ['lane mid', [head[0] + dir[0] * laneLen * 0.5, head[1] + dir[1] * laneLen * 0.5]],
+    ['lane tail', [head[0] + dir[0] * laneLen, head[1] + dir[1] * laneLen]],
+  ];
+  for (const [label, p] of pts) {
+    const [x, z] = p;
+    const r = sheetR(x, z);
+    const az = azOf(x, z);
+    const sc = radialScaleAt(az);
+    const { rWater, rDrawn } = scanAz(az);
+    const wy = sheetHeightAt(x, z);
+    const h = topAt(x, z);
+    anchors.push({
+      label,
+      x: +x.toFixed(2),
+      z: +z.toFixed(2),
+      r: +r.toFixed(3),
+      rWater: rWater === null ? null : +rWater.toFixed(3),
+      rClip: rDrawn === null ? null : +rDrawn.toFixed(3),
+      marginWaterU: rWater === null ? null : +((r - rWater) * sc).toFixed(2),
+      marginClipU: rDrawn === null ? null : +((r - rDrawn) * sc).toFixed(2),
+      sheetDrawn: wy !== null,
+      // POSITIVE = water standing over this anchor, which is the defect
+      waterDepth: wy === null || h === null ? null : +(wy - h.y).toFixed(3),
+      standsOn: h ? h.what : null,
+      // the huts are seated on the PARK's terrain: sand ABOVE the host's ground
+      // here is sand the hut is BURIED in (the reason `front` cannot just keep
+      // growing — past the spit the apron crest climbs to SEA + 0.055)
+      sandTop: h ? +(h.y - HOST_GROUND).toFixed(3) : null,
+    });
+  }
+}
+
 const out = {
   plan,
+  access,
+  anchors,
   sheet: {
     plane_y: sheetY,
     clipA,
@@ -399,4 +513,22 @@ if (asJson) {
     p(`  ${s.kind.padEnd(5)} at (${s.x}, ${s.z}) r ${s.r}  seat ${s.seatY}  top ${s.top}  ${s.top >= sheetY + 0.06 ? 'PROUD' : s.top >= sheetY - 0.04 ? 'awash' : 'under'}`);
   if (ribbonBB) p('');
   if (ribbonBB) p(`trough water y ${out.troughWater.y_min} .. ${out.troughWater.y_max}   (sheet ${sheetY.toFixed(4)})`);
+  p('');
+  if (!access) {
+    p('ACCESS ANCHORS: the build published no `userData.access` — cannot check the huts against the water');
+  } else {
+    p(
+      `ACCESS ANCHORS (layout: front ${access.front}, exit hint [${access.exit}], board [${access.board}], capacity ${access.defaults?.capacity}):`,
+    );
+    for (const a of anchors)
+      p(
+        `  ${a.label.padEnd(22)} (${String(a.x).padStart(5)}, ${String(a.z).padStart(5)})  plan r ${a.r.toFixed(3)}` +
+          `  | waterline ${a.rWater === null ? ' none' : a.rWater.toFixed(3)} -> ${a.marginWaterU === null ? 'n/a' : `${a.marginWaterU > 0 ? '+' : ''}${a.marginWaterU.toFixed(2)} u`}` +
+          `  | clip ${a.rClip === null ? ' none' : a.rClip.toFixed(3)} -> ${a.marginClipU === null ? 'n/a' : `${a.marginClipU > 0 ? '+' : ''}${a.marginClipU.toFixed(2)} u`}` +
+          `  | ${a.waterDepth !== null && a.waterDepth > 0 ? `UNDER ${a.waterDepth.toFixed(3)} OF WATER` : 'dry'}` +
+          `  on ${String(a.standsOn).padEnd(5)} at ${a.sandTop === null ? 'n/a' : `${a.sandTop >= 0 ? '+' : ''}${a.sandTop.toFixed(3)}`} vs host`,
+      );
+    p('  (margins are WORLD units out along each anchor\'s own azimuth: waterline = what you see,');
+    p('   clip = the radius past which no water can be drawn at all, i.e. dry whatever the spit mask does)');
+  }
 }

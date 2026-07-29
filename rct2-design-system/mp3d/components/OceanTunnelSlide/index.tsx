@@ -109,6 +109,55 @@ const START: [number, number, number] = [0, 4.95, 0];
 const FALL = 4.4;
 
 /**
+ * THE RIDE'S OWN ACCESS GEOMETRY — the offsets `composableRide()` hands
+ * <ConfigurableRide> at the foot of this file, hoisted to a named const so the
+ * build can PUBLISH them on the group (`userData.access`, beside
+ * `userData.lagoon`). This ride's access has to be checked AGAINST ITS OWN
+ * WATER, and a probe that re-types these three numbers is a probe that measures
+ * a ride nobody shipped the day one of them moves
+ * (`harness/mp3d-render/probe-ots-water.mjs --access` reads this).
+ *
+ * ⚠️⚠️ WHY `front` IS 7.0 WHERE THE CATALOG RUNS 2.1–4.4. Because this ride
+ * BRINGS ITS OWN SEA, and <ConfigurableRide> seats the queue lane and both huts
+ * on the PARK's terrain (`configurableRide.tsx:684` — `max(groundAt,
+ * WATER_LEVEL + 0.3)`), never on this component's sand. So every point the
+ * chassis places has to stand OUTSIDE the lagoon — and the contour it has to
+ * clear is not the visible waterline but the SHEET'S OWN CLIP ELLIPSE (plan
+ * radius 1.16, §5b), because that is the last radius at which a fragment of
+ * water can be drawn at all.
+ *
+ * At `front: 2.4` none of them did. Measured on the shipped component: queue
+ * head at plan radius **0.854**, entrance hut 0.790, the two candidate exit
+ * cells 0.751 and 0.834 — every one of them 3.4–4.5 u INSIDE the sheet, i.e.
+ * standing in 0.57 of the ride's HERO WATER, with nothing but the §5b spit mask
+ * keeping them dry. A hole punched in the water is not a station.
+ *
+ * `front` is the only lever, and both exit cells have to clear: `layout.exit` is
+ * a SIDE HINT since the RCT2 adjacency rework (`configurableRide.tsx:1007`) and
+ * the exit is DERIVED one 1.2 u tile along the station face from the entrance
+ * hut, on whichever side the park's streets favour — so the number is set by the
+ * −x cell, the deeper of the two into the cove. At 7.0 (probe, plan radii):
+ * head 1.372, entrance hut 1.300, exit cells 1.276 / 1.327, so the worst of them
+ * is **1.07 u outside the clip ellipse and 3.49 u outside the waterline**, and
+ * the lane (laneLenOf(4) = 3.34) runs out to 1.769.
+ *
+ * AND ALL OF IT STAYS ON THE SPIT. The dry rectangle (`inSpit`, z ≤ 9.0) is the
+ * one sand level pinned to the host's ground; outside it the apron crest climbs
+ * to `SEA + 0.055` and would bury a hut seated on the park's terrain up to its
+ * windows. `front` cannot be pushed past ~8.5 for that reason either.
+ */
+const ACCESS = {
+  // the station is the TOWER HEAD, so `board` is 5.0 up; the queue lane and
+  // both huts stay on the ground out the local +z face (every compiled point
+  // has z ≤ 0). GameManager seats guests AT boardPoint — they never walk to it
+  // — so an elevated boarding anchor is legal.
+  front: 7.0,
+  exit: [2.0, 2.2] as [number, number],
+  board: [-1.3, 5.0, 0] as [number, number, number],
+  defaults: { name: 'Deepwater Chute', capacity: 4, rideDuration: 45, intensity: 6, price: 5 },
+};
+
+/**
  * "Deepwater Chute" — the shipped layout. An out-and-back, because a slide is
  * one long plunge and a way back up:
  *   station (the LAUNCH DECK, y 4.95) · lead-in · THE TUBE (4.4 u at 31.8°)
@@ -336,9 +385,12 @@ export function buildOceanTunnelSlideScene(three: typeof THREE, opts: OceanTunne
         //     between that ellipse and the wobbled sand contour.
         //   * THE SHEET WAS PAINTED OVER THE RIDE'S OWN DRY LAND: 579 cells of
         //     the station SPIT (median depth 0.568) and 187 of the dry apron.
-        //     The queue head sits at plan radius 0.854 and the exit hut at
-        //     0.904 — both INSIDE the ellipse — so in a park the entrance hut and
-        //     the queue lane stood under 0.57 of water.
+        //     The ride's ACCESS was inside its own cove too — queue head at plan
+        //     radius 0.854, entrance hut 0.790, both candidate exit cells 0.751
+        //     and 0.834 — so in a park the huts and the queue lane stood under
+        //     0.57 of water. That one is fixed where it was caused, in the
+        //     component's own `layout` (`front` 2.4 → 7.0, see ACCESS at the top
+        //     of this file); it is NOT what the §5b spit mask is for.
         //   * 8 of 24 reef items stood PROUD of the surface (kelp tops to 1.25
         //     against a 0.62 waterline) because they were seated on `groundAt`
         //     while the water was 0.62 above it.
@@ -430,6 +482,11 @@ export function buildOceanTunnelSlideScene(three: typeof THREE, opts: OceanTunne
           lipY: lipTopAt(LX + LA, LZ),
           spitY: groundAt(LX, LZ) + 0.012,
         };
+        // THE ACCESS OFFSETS, published for the same reason: "is this ride's own
+        // queue standing in this ride's own sea" is then a READ off one built
+        // group, not two files' arithmetic compared by hand (which is how the
+        // 0.854 defect survived a whole water rebuild). See ACCESS at the top.
+        g.userData.access = ACCESS;
 
         // ---- 5. THE SAND: the ride brings its own ground ------------------
         // Built BEFORE the water, because the water is CUT TO IT (§5b).
@@ -1348,16 +1405,10 @@ const OceanTunnelSlideBase = composableRide<OceanTunnelSlideOpts & { register?: 
       phase0: props.phase0,
       riders: props.riders ?? !props.register,
     }),
-  {
-    // the station is the TOWER HEAD, so `board` is 5.0 up; the queue lane and
-    // both huts stay on the ground at the tower's foot, out the local +z face
-    // (every compiled point has z ≤ 0). GameManager seats guests AT boardPoint
-    // — they never walk to it — so an elevated boarding anchor is legal.
-    front: 2.4,
-    exit: [2.0, 2.2],
-    board: [-1.3, 5.0, 0],
-    defaults: { name: 'Deepwater Chute', capacity: 4, rideDuration: 45, intensity: 6, price: 5 },
-  },
+  // ACCESS (declared at the top of this file, with the measurements that set
+  // `front`): the queue head, both huts and the lane stand OUT PAST THE
+  // SHORELINE of the ride's own lagoon, on the dry spit.
+  ACCESS,
 );
 
 /** <OceanTunnelSlide> — Tidewater Hollow's raft slide as a composable ride
