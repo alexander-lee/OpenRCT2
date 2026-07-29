@@ -10,12 +10,25 @@
 // createGameManager.
 // ---------------------------------------------------------------------------
 
-import { clamp255, TOILET_SEEK, LAST_RIDE_TIMEOUT } from './types';
+import { clamp255, TOILET_SEEK, LAST_RIDE_TIMEOUT, SIT_DROP } from './types';
 import type { SimGuest, RideRec, StallRec } from './types';
 import type { Sim } from './sim';
 
+/** how readily a guest heads for a ride they have NOT been on yet, per aimless
+ *  node arrival … */
+const RIDE_SEEK_NEW = 0.45;
+/** …and once they have ridden everything reachable. Roughly the old flat rate,
+ *  so a park settles instead of every guest riding for ever. */
+const RIDE_SEEK_REPEAT = 0.12;
+/** energy at or below which a guest starts actively hunting for a bench */
+const REST_SEEK = 110;
+/** …and the impulse budget that hunt gets on the arrival roll. The plain whim
+ *  owns p < 0.16; a tired guest keeps looking all the way to 0.30, which eats
+ *  into the watch/balloon whims exactly as a worn-out guest's priorities do. */
+const REST_SEEK_P = 0.3;
+
 export function createNavigation(s: Sim) {
-  const { routing, walkY, groundAt, nodeXZ, rides, stalls, restrooms, rideAt, stallAt, restroomAt } = s;
+  const { routing, walkY, groundAt, nodeXZ, rides, stalls, restrooms, rideAt, stationAt, stallAt, restroomAt } = s;
 
   // ---- network locomotion -------------------------------------------------------
   const chooseNext = (g: SimGuest, prev: number) => {
@@ -31,10 +44,69 @@ export function createNavigation(s: Sim) {
         g.toNode = g.path.shift()!;
         return;
       }
-      g.goal = null; // unreachable — give up
+      // unreachable — give up, and SAY SO: RCT2's guest heading for a ride it
+      // cannot route to thinks "I can't find <ride>" (Guest.cpp:1456, the
+      // thought carries guestHeadingToRideId)
+      const lost = g.goal.ride?.cfg.name ?? g.goal.stall?.cfg.name ?? null;
+      if (lost) s.fx.pushThought(g, 'cantFind', lost);
+      g.goal = null;
     }
     g.toNode = routing.wanderNext(prev, g.fromNode, g.idx * 131.7 + g.decN * 23.9);
     g.decN += 1;
+  };
+
+  /**
+   * RIDE APPETITE — NOVELTY FIRST.
+   *
+   * The old rule was one 10 % roll that picked a SINGLE ride uniformly at
+   * random and then discarded the whole roll if that ride happened to be
+   * crashed, broken, unreachable or the one the guest had just got off. A park's
+   * roster therefore got sampled with replacement at ~10 % per junction, so the
+   * two attractions nearest the gate were ridden over and over while the far
+   * half of a big park was barely touched — and a guest who had done everything
+   * nearby was as likely to re-pick it as to walk to something new.
+   *
+   * Three changes, all aimed at COVERAGE:
+   *
+   *  1. Build the ELIGIBLE list first and pick from that, so an ineligible ride
+   *     never wastes the decision.
+   *  2. Split it into rides the guest has NOT been on (`g.riddenIds`) and ones
+   *     they have, and draw from the unridden pool whenever it is non-empty.
+   *     This is the whole "try all the rides" behaviour.
+   *  3. Want it MORE: a guest with something new to try heads for a ride on
+   *     `RIDE_SEEK_NEW`; once they have done everything reachable the appetite
+   *     drops to `RIDE_SEEK_REPEAT`, which is roughly the old rate — so a park
+   *     still settles down instead of every guest riding forever.
+   */
+  const seekRide = (g: SimGuest) => {
+    if (!rides.length) return;
+    const fresh: RideRec[] = [];
+    const again: RideRec[] = [];
+    for (const r of rides) {
+      if (r.state === 'crashed' || r.brokenAt >= 0) continue; // closed: not a candidate
+      if (g.lastRide === r && s.simTime - g.lastRideT < LAST_RIDE_TIMEOUT) continue; // RCT2 previous_ride_time_out
+      if (!r.stations.some((st) => st.queueAttach)) continue; // no reachable platform
+      (g.riddenIds.has(r.idx) ? again : fresh).push(r);
+    }
+    const pool = fresh.length ? fresh : again;
+    if (!pool.length) return;
+    if (s.fx.draw(g, 26) >= (fresh.length ? RIDE_SEEK_NEW : RIDE_SEEK_REPEAT)) return;
+    const r = pool[Math.floor(s.fx.draw(g, 17) * pool.length) % pool.length];
+    // MULTI-STATION: head for the NEAREST platform of that ride. A
+    // park-spanning monorail is only useful if the guest walks to the station in
+    // the district they are standing in, not always to station 0 on the far side
+    // of the park.
+    let best = null as (typeof r.stations)[number] | null;
+    let bestD = Infinity;
+    for (const st of r.stations) {
+      if (!st.queueAttach) continue;
+      const d = (st.queueAttach.x - g.x) ** 2 + (st.queueAttach.z - g.z) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = st;
+      }
+    }
+    if (best?.queueAttach) g.goal = { kind: 'ride', node: best.queueAttach.node, ride: r };
   };
 
   const arriveAtNode = (g: SimGuest) => {
@@ -95,9 +167,15 @@ export function createNavigation(s: Sim) {
       return;
     }
     const rideHere = rideAt.get(n);
-    if (rideHere && (g.goal?.ride === rideHere || (!g.goal && s.fx.draw(g, 14) < 0.5))) {
-      // guests DECIDE at the ride entrance (Guest.cpp:5774)
-      if (s.needs.tryJoinQueue(g, rideHere)) return;
+    // WALKING PAST A QUEUE. A guest standing on a ride's own tail node used to
+    // step up on a flat coin-flip whatever the ride was; they now step up far
+    // more readily for one they have NOT been on, which is the same
+    // novelty-first rule seekRide applies when choosing where to walk.
+    const walkUpP = rideHere && !g.riddenIds.has(rideHere.idx) ? 0.9 : 0.5;
+    if (rideHere && (g.goal?.ride === rideHere || (!g.goal && s.fx.draw(g, 14) < walkUpP))) {
+      // guests DECIDE at the ride entrance (Guest.cpp:5774). On a multi-station
+      // transport ride the node also names WHICH platform they walked up to.
+      if (s.needs.tryJoinQueue(g, rideHere, stationAt.get(n) ?? rideHere.stations[0])) return;
       chooseNext(g, prev);
       return;
     }
@@ -106,9 +184,13 @@ export function createNavigation(s: Sim) {
     // guests with a balloon already rarely step up again, and a guest whose
     // hands are BOTH full still occasionally tries (and is refused with the
     // visible "my hands are full" thought at the counter)
+    // The consumable gates are RCT2's OWN counter thresholds (DecideAndBuyItem
+    // refuses food above hunger 75 and drink above thirst 75, Guest.cpp:1574,
+    // 1580) — walking up with hunger 80 only ever earned an "I'm not hungry"
+    // refusal, which is a wasted trip and a wasted thought slot. Was < 90.
     const stallImpulse = (st: StallRec): boolean => {
-      if (st.cfg.item === 'food') return g.hunger < 90 && s.fx.draw(g, 15) < 0.35;
-      if (st.cfg.item === 'drink') return g.thirst < 90 && s.fx.draw(g, 15) < 0.35;
+      if (st.cfg.item === 'food') return g.hunger <= 75 && s.fx.draw(g, 15) < 0.35;
+      if (st.cfg.item === 'drink') return g.thirst <= 75 && s.fx.draw(g, 15) < 0.35;
       return s.fx.draw(g, 15) < (g.balloons.left || g.balloons.right ? 0.06 : 0.3); // accessory (repeat joy buys are rare)
     };
     if (stallHere && (g.goal?.stall === stallHere || (!g.goal && stallImpulse(stallHere)))) {
@@ -131,18 +213,42 @@ export function createNavigation(s: Sim) {
         const st = s.needs.nearestStall(g, 'drink');
         if (st && st.attach) g.goal = { kind: 'stall', node: st.attach.node, stall: st };
       } else {
-        const p = s.fx.draw(g, 16);
-        if (p < 0.1 && rides.length) {
-          // head for a ride's queue (full checks happen at the entrance)
-          const r = rides[Math.floor(s.fx.draw(g, 17) * rides.length) % rides.length];
-          if (r.state !== 'crashed' && r.brokenAt < 0 && r.queueAttach && !(g.lastRide === r && s.simTime - g.lastRideT < LAST_RIDE_TIMEOUT)) {
-            g.goal = { kind: 'ride', node: r.queueAttach.node, ride: r };
+        // RIDES ARE SOUGHT FIRST, off their OWN draw (see seekRide) — a guest who
+        // wants a ride should not be competing with the sit/watch/balloon whims
+        // for the same slice of one random number.
+        seekRide(g);
+        const p = g.goal ? 1 : s.fx.draw(g, 16);
+        // The non-ride whims keep their ORIGINAL windows: rides used to own
+        // p < 0.10 and each impulse below sat in the band above it, so the bands
+        // are still gated on their own lower bound and p < 0.10 now simply falls
+        // through to plain wandering. Moving rides onto a separate draw without
+        // this would have handed their 10 % to the REST branch and made guests
+        // sit down more, which is the opposite of the point.
+        if ((p >= 0.1 && p < 0.16) || (g.energy <= REST_SEEK && p < REST_SEEK_P)) {
+          // REST STOP (RCT2 PeepState::Sitting). Two ways in: the standing 16 %
+          // whim anyone takes, and a WORN-OUT guest actively looking for a seat
+          // — RCT2 makes a tired peep far likelier to sit (Guest.cpp:2790), and
+          // without that second door a park's benches went unused because the
+          // guests who most needed them were no likelier to find one.
+          const seat = s.needs.claimBench(g);
+          if (seat) {
+            // walk the last couple of metres off the network onto the seat.
+            // `resume` is the edge position to step back onto afterwards, the
+            // same detour bookkeeping the litter-bin walk uses.
+            g.resume = { from: g.fromNode, to: g.toNode, u: g.u };
+            g.state = 'sitting';
+            g.timer = -1; // armed when the walk to the seat completes
+            g.path = [];
+            g.toNode = -1;
+            g.waypoints = [{ x: seat.x, z: seat.z, y: seat.y - SIT_DROP }];
+            return;
           }
-        } else if (p < 0.16) {
-          g.state = 'sitting'; // rest stop (RCT2 PeepState::Sitting)
+          // no bench within reach (or a park with none registered at all): the
+          // original in-place pause, unchanged
+          g.state = 'sitting';
           g.timer = 3 + s.fx.draw(g, 18) * 3;
           return;
-        } else if (p < 0.24) {
+        } else if (p >= 0.16 && p < 0.24) {
           // watch a nearby ride (RCT2 PeepState::Watching)
           let watch: RideRec | null = null;
           for (const r of rides) if (Math.hypot(r.cfg.boardPoint[0] - g.x, r.cfg.boardPoint[2] - g.z) < 5) watch = r;
@@ -152,9 +258,15 @@ export function createNavigation(s: Sim) {
             g.yaw = Math.atan2(watch.cfg.boardPoint[0] - g.x, watch.cfg.boardPoint[2] - g.z);
             return;
           }
-        } else if (p < 0.3 && !g.balloons.left && !g.balloons.right) {
+        } else if (p >= 0.24 && p < 0.3 && !g.balloons.left && !g.balloons.right) {
           // fancy a balloon: seek the nearest accessory stall (joy buy)
           const st = s.needs.nearestStall(g, 'balloon');
+          if (st && st.attach) g.goal = { kind: 'stall', node: st.attach.node, stall: st };
+        } else if (p >= 0.3 && p < 0.34 && !g.worn) {
+          // fancy something to WEAR (goggles, a hat): the same joy-buy roll,
+          // one head only. Parks with no 'wearable' stall registered find
+          // nothing here and fall through to plain wandering exactly as before.
+          const st = s.needs.nearestStall(g, 'wearable');
           if (st && st.attach) g.goal = { kind: 'stall', node: st.attach.node, stall: st };
         }
       }

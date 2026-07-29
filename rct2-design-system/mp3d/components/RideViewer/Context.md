@@ -1,5 +1,9 @@
 # RideViewer
 
+**CANONICAL IMPORT — copy exactly:** `import { RideViewer } from './components/RideViewer';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 The RCT2 **Ride window** composed on `UIWindow` chrome (never custom chrome —
 `rules/ui.md`): colour-coded status line, queue length, riders/capacity, total
 customers, and the RCT2 viewport tab reborn as a **live camera inset** — a

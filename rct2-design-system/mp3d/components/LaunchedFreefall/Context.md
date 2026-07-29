@@ -1,5 +1,9 @@
 # LaunchedFreefall
 
+**CANONICAL IMPORT — copy exactly:** `import { LaunchedFreefall } from './components/LaunchedFreefall';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Launched freefall tower: a tall pale square lattice tower (red diagonal chords, hex cap cone, head bearing drum) over a concrete base station with a compressed-air launch plant — three domed tanks with pressure bands, a manifold, feed pipes, compressor skid and gauge. The 4-seat ring car (collar frame, canopy plate, guide bushes) launches up hard on a ParticleKit air-blast burst, floats weightless at the apex — riders' arms rise and wave — then glides down; deterministic 12 s cycle. Seats have blue cushions + headrests with over-shoulder restraints, chest pads and lap bars; legs dangle. Optional ColorKit `scheme` recolours tower/accents/car. Night: pulsing red aviation beacon, warm under-car light and one station mast light (3 real PointLights), plus tower marker bulbs.
 
 Built with three.js on the shared Stage; modelled on the RCT2 Launched Freefall silhouette.

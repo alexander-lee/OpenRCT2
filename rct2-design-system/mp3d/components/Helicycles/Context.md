@@ -1,5 +1,9 @@
 # Helicycles
 
+**CANONICAL IMPORT — copy exactly:** `import { Helicycles } from './components/Helicycles';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Helicycles: single-seat helicopters circling a concrete ride pad (HELICAR).
 
 Original three.js model on the shared Stage (day/night lighting); proportions and palette referenced from the RCT2 asset library.

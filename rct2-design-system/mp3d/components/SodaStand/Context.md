@@ -1,5 +1,9 @@
 # SodaStand
 
+**CANONICAL IMPORT — copy exactly:** `import { SodaStand } from './components/SodaStand';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Soda stand: a cluster of giant soda cans with a serving hatch and a bendy straw (DRNKS). The cans use REAL can proportions — height ≈ 1.85× diameter — with a neck taper into the rim, a bottom inset over a dark foot ring, a crisp silver top (seam torus + dished lid, LOW metalness: the Stage has no envmap, so high metalness renders black) with an offset stay-tab, and a printed-label read: white main band + dark accent band + thin stripe (stepped radii, nothing coplanar) + a geometric disc-and-bar logo mark embedded into each label's outward face. Semi-gloss plastic texture, low bump.
 
 Composable stall on the BurgerShop pattern (components/Park/Context.md → "The composable convention"). Exports:
@@ -18,3 +22,7 @@ Top-level `name`/`price`/`value` props still work and WIN over the object's fiel
 
 
 Original three.js model on the shared Stage (day/night lighting); proportions and palette referenced from the RCT2 asset library.
+
+## The HELD soda (`buildHeldSoda`)
+
+`buildHeldSoda(t) → THREE.Group` is the stand's own 3D drink — a miniature of the giant cans the stall is built from (red body, printed white label band with the dark accent stripe, neck taper, crisp silver lid, white straw) — registered on the stall descriptor as GameManager's `StallConfig.heldItem`, so buyers sip a can rather than the manager's generic red cup. Peep-local units, fist-to-head sized; drinks sit slightly nearer the fist (arm-local z 0.115) and the manager clones the recipe per purchase onto that hold spot. Override per placement with `register={{ heldItem }}`. See components/GameManager/Context.md → "Per-stall held items".

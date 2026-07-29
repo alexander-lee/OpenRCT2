@@ -5,6 +5,7 @@ import type { MergedBoxSpec } from '../Stage';
 import { buildCoasterCar, gateCarLights } from '../CoasterCar';
 import { TrackScheme, rideColourPreset, shade } from '../ColorKit';
 import { composableRide } from '../Park';
+import { buildLiftChain } from './liftChain';
 
 // ---------------------------------------------------------------------------
 // SplineCoaster — freeform coaster, a sibling of TrackKit. Where TrackKit
@@ -20,6 +21,12 @@ import { composableRide } from '../Park';
 // the ground (steel columns + concrete footers, or splayed wooden trestle
 // bents with ledgers and X-bracing). The train is energy-paced: fast in the
 // valleys, slow over the crests, constant crawl on the lift chain.
+//
+// On top of the derived roll there is an explicit ROLL CHANNEL (`roll`) for
+// INVERSIONS — corkscrews and barrel rolls, which no set of control points can
+// ask for, because a barrel roll's path is a straight line. It is STEEL ONLY.
+// See the long note above `SplineRoll` for the API, the RCT2 element it maps
+// onto, and how it interacts with the loop-closure twist correction.
 //
 // The spline math (frames / banking / lift detection / supports) is exported
 // piecemeal so SplineRideKit can compose flumes, rapids and bobsled chutes
@@ -62,6 +69,9 @@ export interface SplineCoasterOpts {
   supportEvery?: number;
   /** ground height sampler so supports land on terrain (default flat y=0) */
   groundAt?: (x: number, z: number) => number;
+  /** inverting roll elements — corkscrews / barrel rolls. STEEL ONLY: dropped
+   *  with a warning on a wooden build (see the gate in buildSplineCoaster). */
+  roll?: SplineRoll[];
 }
 
 export interface RunOpts {
@@ -108,11 +118,92 @@ export function barBetween(
   return m;
 }
 
+// ---------------------------------------------------------------------------
+// THE ROLL CHANNEL — how a corkscrew / barrel roll becomes expressible.
+//
+// Everything else in this module derives the frame from the control points
+// alone: parallel transport fixes the up-vector up to one degree of freedom
+// (the roll about the tangent) and curvature banking spends that freedom on
+// leaning into turns. A full 360° roll is therefore NOT expressible — no set
+// of control points can ask for it, because the path a barrel roll follows is
+// a plain straight line. The one missing channel is roll itself.
+//
+// RCT2 SAYS THE SAME THING, and it is the reason this is a separate channel
+// rather than more control points. The game's barrel roll is
+// `TrackElemType::leftBarrelRollUpToDown = 174` and its three siblings
+// (ride/ted/TrackElemType.h:192-195); its descriptor is
+// `TrackData.cpp:8633`, and read the `.definition` field:
+//
+//     { TrackGroup::barrelRoll, TrackPitch::none, TrackPitch::none,
+//       TrackRoll::upsideDown, TrackRoll::none, 0 }
+//
+// pitch NONE at both ends, no curve in the chain, `pieceLength = 96` = three
+// 32-unit tiles — a straight, level, un-turned element whose ONLY change is
+// roll, none → upsideDown (`…DownToUp`) and back (`…UpToDown`). So a full
+// barrel roll is 6 tiles = 7.2 units at this kit's 1.2 units/tile, which is
+// the default `span` below. Its forces are pre-baked constants
+// (`verticalFactor EvaluatorConst<170>`, `lateralFactor EvaluatorConst<115>`),
+// which is the same reason SplineRideKit's `inversionWindow` exempts inversion
+// elements from the curvature-derived sweeps.
+//
+// WHY THIS SHAPE OF API, and what was rejected:
+//   · a 4th component on the control points — rejected: it would change the
+//     type of the exported SPLINE_COASTER_LAYOUT, and roll would then be tied
+//     to point SPACING (a long straight has few points and could not roll).
+//   · a raw `roll: (u) => number` callback — rejected: nothing can then check
+//     the closure constraint below, and it is not serialisable.
+//   · a declarative ELEMENT list, chosen: it mirrors RCT2's fixed-element
+//     model, it is data (so a park can round-trip it), and it makes the one
+//     hard constraint checkable — see next paragraph.
+//
+// THE INTERACTION WITH THE LOOP-CLOSURE TWIST CORRECTION. The correction
+// transports the last frame onto the first, measures the residual twist `err`
+// and spreads it as `err·i/(N−1)`; it reads the PURE transported ups, before
+// banking. Roll is applied at the same point banking is, and both are
+// rotations about the SAME axis T[i], so they commute and simply add to the
+// frame's roll angle: the correction is untouched, bit for bit. What the roll
+// channel DOES owe the closure is PERIODICITY. `frameAt` interpolates the
+// sampled ups cyclically (i1 = (i0+1) % N), so the roll profile must satisfy
+// roll(N−1) ≡ roll(0) (mod 2π) or the frame jumps at the seam. Each element
+// here ramps from 0 to 2π·turns and then HOLDS — so the requirement collapses
+// to: the signed turns must SUM TO AN INTEGER around the circuit. That is
+// checked, and a non-integer total is refused with a warning rather than
+// silently tearing the seam (a half roll is not a legal circuit on its own;
+// RCT2's own element table only offers …DownToUp and …UpToDown as a pair).
+//
+// ROLL AND CURVATURE BANK ADD. They are the same degree of freedom, so a roll
+// element belongs on STRAIGHT track — exactly where RCT2 puts its own, whose
+// descriptor is straight and level by construction. Put one in a turn and the
+// auto-bank will lean the barrel.
+// ---------------------------------------------------------------------------
+
+/** one inverting roll element — see the note above. */
+export interface SplineRoll {
+  /** element CENTRE as a fractional CONTROL-POINT index. Preferred: it moves
+   *  with the layout, and it is how an author reads their own points array
+   *  ("roll across points 10-13" → `atPoint: 11.5`). */
+  atPoint?: number;
+  /** element centre as a loop parameter u ∈ [0,1) — for callers that only
+   *  have arc fractions (a compiler, a saved design). `atPoint` wins. */
+  at?: number;
+  /** roll in TURNS (1 = a full 360° barrel roll). The signed total over all
+   *  elements MUST be an integer — see the closure note. Default 1. */
+  turns?: number;
+  /** which way the train rolls; 'R' (default) = clockwise seen from behind */
+  dir?: 'L' | 'R';
+  /** element arc length in world units. Default 7.2·|turns| — RCT2's own
+   *  barrel roll is 3 tiles per 180° (TrackData.cpp:8633, pieceLength 96). */
+  span?: number;
+}
+
 export interface SplineFramesOpts {
   /** max bank angle in radians (default 0.7 ≈ 40°) */
   bank?: number;
   /** horizontal-curvature → bank-angle gain (default 1.9) */
   bankGain?: number;
+  /** explicit ROLL elements — corkscrews / barrel rolls. Omitted or empty:
+   *  output is bit-identical to a build with no roll channel at all. */
+  roll?: SplineRoll[];
 }
 
 export interface SplineFrames {
@@ -129,10 +220,88 @@ export interface SplineFrames {
 }
 
 /**
+ * Compile a roll-element list into a per-sample roll angle, or `null` when the
+ * list cannot be honoured (see the closure note above). Pure; exported so a
+ * probe can read the profile without rebuilding a coaster.
+ *
+ * The ramp is a SMOOTHSTEP in arc length — zero roll RATE at both ends, so the
+ * element welds onto un-rolled track without a roll-rate step — and it HOLDS
+ * at 2π·turns afterwards, which is a no-op rotation exactly when the total is
+ * an integer. Distances are measured cyclically, so an element may straddle
+ * u = 0. Peak rate is 1.5·2π·turns/span (1.31 rad/unit at the RCT2 default),
+ * which is why the whole element must sit inside SplineRideKit's
+ * `inversionWindow` exemption — it does: the window grows from the inverted
+ * samples until the track is level and upright again.
+ *
+ * `anchor`/`P` are used only to resolve `atPoint` to an arc fraction, by
+ * nearest uniform sample. Deliberately NOT via `curve.getUtoTmapping`: that
+ * would rebuild `cacheArcLengths` at a different division count and silently
+ * change every later `curve.getPointAt` — including `validateSpline`'s.
+ */
+export function rollProfile(
+  roll: SplineRoll[],
+  anchor: THREE.Vector3[],
+  P: THREE.Vector3[],
+  total: number,
+): number[] | null {
+  const N = P.length;
+  const signed = (r: SplineRoll) => (r.dir === 'L' ? -1 : 1) * (r.turns ?? 1);
+  const net = roll.reduce((s, r) => s + signed(r), 0);
+  if (Math.abs(net - Math.round(net)) > 1e-9) {
+    console.warn(
+      `[SplineCoaster] roll channel IGNORED: the signed turns sum to ${net.toFixed(3)}, which is not a whole number of rotations — ` +
+        `the circuit would not close (u=1 must meet u=0). RCT2's barrel roll ships as a PAIR of elements (…DownToUp + …UpToDown, ` +
+        `TrackElemType.h:192-195) for exactly this reason; pair your half rolls, or use turns: 1.`,
+    );
+    return null;
+  }
+  /** arc fraction of a fractional control-point index, by nearest sample */
+  const uOfPoint = (k: number): number => {
+    const nearest = (j: number): number => {
+      const a = anchor[((j % anchor.length) + anchor.length) % anchor.length];
+      let bi = 0;
+      let bd = Infinity;
+      for (let i = 0; i < N; i++) {
+        const d = P[i].distanceToSquared(a);
+        if (d < bd) {
+          bd = d;
+          bi = i;
+        }
+      }
+      return bi / N;
+    };
+    const k0 = Math.floor(k);
+    const fr = k - k0;
+    const u0 = nearest(k0);
+    if (fr < 1e-9) return u0;
+    let u1 = nearest(k0 + 1);
+    if (u1 < u0) u1 += 1; // the pair straddles u = 0
+    return (u0 + (u1 - u0) * fr) % 1;
+  };
+
+  const ds = total / N;
+  const out = new Array<number>(N).fill(0);
+  for (const r of roll) {
+    const turns = signed(r);
+    const span = Math.max(1e-3, r.span ?? 7.2 * Math.abs(turns));
+    const uc = r.atPoint !== undefined ? uOfPoint(r.atPoint) : (((r.at ?? 0) % 1) + 1) % 1;
+    const sc = uc * total;
+    for (let i = 0; i < N; i++) {
+      let d = i * ds - sc;
+      d -= total * Math.round(d / total); // signed cyclic arc distance from the centre
+      const sig = Math.min(1, Math.max(0, d / span + 0.5));
+      out[i] += turns * 2 * Math.PI * sig * sig * (3 - 2 * sig);
+    }
+  }
+  return out;
+}
+
+/**
  * Shared spline core: closed centripetal Catmull-Rom through the control
- * points, parallel-transport frames with loop-closure twist correction, and
- * curvature-based banking (clamped to `bank`, box-smoothed). Every spline
- * ride (coaster, flume, rapids, bobsled) is built on these frames.
+ * points, parallel-transport frames with loop-closure twist correction,
+ * curvature-based banking (clamped to `bank`, box-smoothed) and the optional
+ * explicit ROLL channel. Every spline ride (coaster, flume, rapids, bobsled)
+ * is built on these frames.
  */
 export function computeSplineFrames(
   t: typeof THREE,
@@ -197,7 +366,16 @@ export function computeSplineFrames(
     for (let k = -R; k <= R; k++) s += rawBank[(i + k + N) % N];
     bankAt[i] = s / (2 * R + 1);
   }
-  for (let i = 0; i < N; i++) ups[i].applyAxisAngle(T[i], bankAt[i]).normalize();
+  // ---- the explicit ROLL channel, added to the bank about the SAME axis ----
+  // `null` when there is no channel (or it was refused), and the branch then
+  // evaluates the byte-for-byte ORIGINAL expression rather than `bankAt[i] + 0`
+  // — so "no roll spec ⇒ identical output" is structural instead of something
+  // that merely happens to hold. (Measured: on the three shipped layouts the
+  // naive `+ 0` is in fact bit-identical too, because no bankAt entry lands on
+  // −0; the branch is what makes it true for every layout.)
+  const rollAt = opts.roll?.length ? rollProfile(opts.roll, anchor, P, total) : null;
+  for (let i = 0; i < N; i++)
+    ups[i].applyAxisAngle(T[i], rollAt ? bankAt[i] + rollAt[i] : bankAt[i]).normalize();
 
   // ---- frame query (interpolates the pre-sampled frames) ----
   const frameAt = (u: number): SplineFrame => {
@@ -248,6 +426,15 @@ export function detectLiftHill(P: THREE.Vector3[]): {
   return { imax, liftStart, liftLen, onLift };
 }
 
+// ---------------------------------------------------------------------------
+// CHAIN LIFT — `buildLiftChain` and `LiftChainOpts` LIVE IN ./liftChain.ts
+// (split out for file size only — see that file's header). Re-exported here so
+// the module's public surface is unchanged: SplineRideKit and everything else
+// keep importing them from '../SplineCoaster'.
+// ---------------------------------------------------------------------------
+export { buildLiftChain };
+export type { LiftChainOpts } from './liftChain';
+
 export interface SplineSupportOpts {
   /** sample stride between supports (default 9) */
   supportEvery?: number;
@@ -291,7 +478,14 @@ export function addSplineSupports(
     const topY = f.p.y - 0.16;
     const gC = groundAt(f.p.x, f.p.z);
     if (topY - gC < 0.3) continue; // track is near the ground
-    if (Math.abs(f.up.y) < 0.5) continue; // too banked to land a column here
+    // Only UPRIGHT track takes a column. This was `Math.abs(f.up.y) < 0.5`,
+    // which passes an INVERTED frame (up.y = −1 → abs 1) just as readily as an
+    // upright one — so the top of every vertical loop grew a steel column that
+    // dropped straight down THROUGH THE INSIDE OF THE LOOP to the ground. It is
+    // the vertical bar visible up the middle of the teardrop in
+    // `harness/mp3d-render/shot-loop.mjs`. A loop hangs off its entry and exit;
+    // nothing holds it up from the middle.
+    if (f.up.y < 0.5) continue; // inverted or too banked to land a column here
     const ln = Math.hypot(f.side.x, f.side.z) || 1;
     const lx = f.side.x / ln;
     const lz = f.side.z / ln; // horizontal lateral direction for bents
@@ -378,9 +572,29 @@ export function buildSplineCoaster(
   frameAt: (u: number) => SplineFrame;
   run: (cars: THREE.Group[], runOpts?: RunOpts) => (time: number) => void;
 } {
-  const { curve, total, N, P, frames, frameAt } = computeSplineFrames(t, controlPoints, { bank: opts.bank });
   // 'wooden' type implies wood construction unless explicitly overridden
   const wood = opts.wood ?? opts.type === 'wooden';
+  // ---- INVERSIONS ARE STEEL ONLY -------------------------------------------
+  // The wooden RTD's `enabledTrackGroups` (ride/rtd/coaster/WoodenRollerCoaster.h:26)
+  // lists `TrackGroup::verticalLoop` but NEITHER `TrackGroup::corkscrew` NOR
+  // `TrackGroup::barrelRoll` — both of which the steel tables do carry
+  // (TwisterRollerCoaster.h:27, plus Corkscrew/Looping/Giga/Hyper/…), so there
+  // is no wooden element that rolls the track past vertical. The roll is
+  // DROPPED rather than built-and-flagged: the frames this returns are the same
+  // frames `checkCoasterDesign` and the crash physics read, and a legal-looking
+  // build is worth more than an illegal one carrying a console warning. The
+  // rule lives here, not in `computeSplineFrames`, because the leaf knows
+  // nothing about coaster TYPES — SplineRideKit owns the rule tables.
+  let roll = opts.roll;
+  if (roll?.length && (wood || opts.type === 'wooden')) {
+    console.warn(
+      `[SplineCoaster] ${roll.length} roll element(s) DROPPED: inversions are steel only. RCT2's wooden track table ` +
+        `(WoodenRollerCoaster.h:26) has no TrackGroup::corkscrew and no TrackGroup::barrelRoll — only the steel tables do ` +
+        `(TwisterRollerCoaster.h:27). Build this layout with type: 'steel'.`,
+    );
+    roll = undefined;
+  }
+  const { curve, total, N, P, frames, frameAt } = computeSplineFrames(t, controlPoints, { bank: opts.bank, roll });
 
   // ---- meshes ----
   // RCT2 TrackColour mapping (ride/RideColour.h:19-24): rails = main,
@@ -432,21 +646,28 @@ export function buildSplineCoaster(
     group.add(mergedBoxes(t, tieSpecs, TIE ?? (wood ? 0x6b4626 : 0x4a4e55), { tex: wood ? 'wood' : 'metal', rough: 0.9 }));
   }
 
-  // ---- lift hill: longest climb up to the highest point gets a chain strip ----
+  // ---- lift hill: the MECHANISED chain lift up the longest climb ----------
+  // Same driven-strand line and thickness as the old smooth tube (centreline,
+  // up +0.02, r 0.035) — everything else is added around it inside the
+  // CoasterCar's measured envelope (floor 0.335 on the centreline, 0.86 at
+  // |x| 0.16, wheel bogies down to 0.045 only in the |x| 0.26-0.34 band, half
+  // width 0.335). See buildLiftChain.
   const { liftStart, liftLen, onLift } = detectLiftHill(P);
   if (liftLen >= 8) {
-    const chainPts: THREE.Vector3[] = [];
-    for (let k = 0; k <= liftLen; k++) {
-      const i = (liftStart + k) % N;
-      chainPts.push(frames[i].p.clone().addScaledVector(frames[i].up, 0.02));
-    }
-    const chainCurve = new t.CatmullRomCurve3(chainPts, false);
-    const chain = new t.Mesh(
-      new t.TubeGeometry(chainCurve, liftLen * 2, 0.035, 6, false),
-      mat(t, 0x3a3d42, { tex: 'metal', repeat: [1, 24], metal: 0.6, rough: 0.5 }),
+    group.add(
+      buildLiftChain(t, frames, {
+        liftStart,
+        liftLen,
+        sides: [0],
+        h: 0.02,
+        r: 0.035,
+        rackX: 0.155, // rack teeth top out at +0.073; the tub floor there is +0.86
+        sprocketR: 0.08,
+        motorX: 0.62, // clear of the 0.335 half-width car and the 0.48-wide ties
+        catwalkX: 0.7,
+        colour: opts.colours?.supports,
+      }),
     );
-    chain.castShadow = true;
-    group.add(chain);
   }
 
   // ---- supports dropped onto the ground ----
@@ -527,6 +748,9 @@ export interface SplineCoasterOpts {
   bank?: number;
   /** ColorKit seed for the steel scheme (default 22) */
   seed?: number;
+  /** (declared on the builder interface above — `roll?: SplineRoll[]`, the
+   *  inverting corkscrew / barrel-roll elements; the two SplineCoasterOpts
+   *  declarations in this module MERGE, so the prop is on the component too) */
 }
 
 export function buildSplineCoasterScene(
@@ -538,7 +762,19 @@ export function buildSplineCoasterScene(
   const update =
     ((t: typeof THREE, g: THREE.Group) => {
         const scheme = rideColourPreset(opts.seed ?? 22, 'steel'); // deterministic: darkGreen main / mossGreen ties / darkBrown supports
-        const coaster = buildSplineCoaster(t, opts.points ?? LAYOUT, { bank: opts.bank ?? 0.55, colours: scheme.track });
+        // This scene is STEEL by construction — its colours come from
+        // rideColourPreset(seed, 'steel') on the line above, and `type`/`wood`
+        // have never been forwarded from the props. Declaring `type: 'steel'`
+        // states that instead of leaving it to the `wood` default, and is a
+        // provable no-op (buildSplineCoaster reads `type` only for
+        // `wood = opts.wood ?? opts.type === 'wooden'` and for the roll gate).
+        // The stock circuit carries NO roll — an inversion is opt-in per layout.
+        const coaster = buildSplineCoaster(t, opts.points ?? LAYOUT, {
+          bank: opts.bank ?? 0.55,
+          colours: scheme.track,
+          type: 'steel',
+          roll: opts.roll,
+        });
         g.add(coaster.group);
 
         // station platform beside the first straight: steel-legged concrete

@@ -1,5 +1,9 @@
 # ParkInfo
 
+**CANONICAL IMPORT — copy exactly:** `import { ParkInfo } from './components/ParkInfo';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 The park-wide ride roster on `UIWindow` chrome — anchored
 **`corner="bottom-right"` and `collapsible`, both hardcoded** because
 `rules/ui.md` mandates them for the Park Info window. Each registered ride

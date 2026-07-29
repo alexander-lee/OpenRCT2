@@ -10,13 +10,16 @@ import { fileURLToPath } from 'node:url';
 const HARNESS = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HARNESS, '..', '..', 'mp3d');
 
+// which park to validate — `node validate-react-park.mjs DistrictPark` runs the
+// canonical size-48 composition instead of the compact demo. Default unchanged.
+const PARK = process.argv[2] || 'DemoPark';
 const entrySrc = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { DemoPark } from ${JSON.stringify(path.join(REPO, 'components/Park/Park.previews.tsx'))};
-createRoot(document.getElementById('root')).render(React.createElement(DemoPark));
+import { ${PARK} } from ${JSON.stringify(path.join(REPO, 'components/Park/Park.previews.tsx'))};
+createRoot(document.getElementById('root')).render(React.createElement(${PARK}));
 `;
-const entryPath = path.join(HARNESS, 'out', '_entry-react-park.tsx');
+const entryPath = path.join(HARNESS, 'out', `_entry-react-park-${PARK}.tsx`);
 fs.mkdirSync(path.dirname(entryPath), { recursive: true });
 fs.writeFileSync(entryPath, entrySrc);
 
@@ -30,7 +33,7 @@ const bundle = await build({
   process.exit(1);
 });
 
-const htmlPath = path.join(HARNESS, 'out', 'react-park.html');
+const htmlPath = path.join(HARNESS, 'out', `react-park-${PARK}.html`);
 fs.writeFileSync(htmlPath, `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0}</style></head><body><div id="root"></div><script>${bundle.outputFiles[0].text}</script></body></html>`);
 
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--disable-gpu-driver-bug-workarounds'] });

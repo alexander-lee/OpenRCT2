@@ -11,7 +11,8 @@ import { HERE } from './paths.mjs';
 import { layoutMetrics, sigDistance } from './layout.mjs';
 import { scoreLayout } from './score-layout.mjs';
 import { CONTROLS, rawFromParkSource } from './fixtures.mjs';
-import { layoutNovelty, saveSignature, loadCorpus } from './corpus.mjs';
+import { layoutNovelty, saveSignature, loadCorpus, underusedPresets } from './corpus.mjs';
+import { scoreWorlds } from './score-worlds.mjs';
 
 const matrix = process.argv.includes('--matrix');
 const entries = [];
@@ -90,6 +91,105 @@ for (const e of entries) {
   console.log(`${pad(e.name, 16)} ${num(p.antiLattice)} + ${num(p.districts)} + ${num(p.plazaVariety)} + ${num(p.novelty)} = ${num(e.score.total)}`);
   console.log(`${' '.repeat(17)}grid ${p.antiLatticeTerms.gridRegularity} len ${p.antiLatticeTerms.lengthVariety} block ${p.antiLatticeTerms.blockIrregularity} | sep ${p.districtTerms.separation} plot ${p.districtTerms.plotUtilisation}`);
   e.score.notes.forEach((n) => console.log(`${' '.repeat(17)}· ${n}`));
+}
+
+// ---- WORLDS (axis 16) ------------------------------------------------------
+// Two sources, in order:
+//   1. `signatures/<name>.json`'s `worlds` block, written by a real probe run —
+//      the authoritative numbers (they come from the design system's own
+//      `auditWorldThemes`).
+//   2. a STATIC read of the park source when there is no probed record. A park
+//      whose source never mounts `<World` cannot have a declared world, so the
+//      axis is 0 BY CONSTRUCTION — which is exactly the pre-worlds corpus, and
+//      is provable without a browser.
+{
+  const sigs = loadCorpus();
+  const byName = Object.fromEntries(sigs.map((s) => [s.name, s]));
+  // the WORLDS axis covers EVERY park in the corpus, not just the ones whose
+  // street net `rawFromParkSource` can parse statically: a `buildParkNet` park
+  // (which is every worlds park — §3.1 mandates it) is skipped by the layout
+  // fixture parser, and skipping it here would hide the one park that HAS worlds
+  // axis 16's world-CHOICE split, computed from the corpus on disk (see corpus.mjs)
+  const PRESET_USAGE = underusedPresets(sigs);
+  const names = [...new Set([...entries.map((e) => e.name), ...sigs.map((s) => s.name), ...(fs.existsSync(sampleDir) ? fs.readdirSync(sampleDir).filter((f) => f.endsWith('.tsx')).map((f) => f.replace(/\.tsx$/, '')) : [])])].sort();
+  const rows = [];
+  for (const e of names.map((name) => ({ name }))) {
+    const rec = byName[e.name];
+    if (rec && rec.worlds && rec.worlds.declared > 0) {
+      const w = rec.worlds;
+      // RE-SCORE from the signature's own fields rather than printing the
+      // `score` it was written with (2026-07-26): a signature carries whatever
+      // scorer version last probed it, and axis 16's world-CHOICE term is
+      // CORPUS-RELATIVE — it moves as parks are added, so a stored number is
+      // stale by construction. `presetUsage` is recomputed here from the corpus
+      // on disk, which is what makes this table reproducible.
+      // ONLY the variety term is recomputed. `buildOut`, `separation` and
+      // `coherence` are kept from the stored `parts` — a signature does not
+      // carry the per-world build-out list, so re-deriving them from
+      // `builtPresets` would silently pay every park with an unbuilt world a
+      // full 1.0 for build-out. (That bug was caught here: it moved `r14b`
+      // 3.92 -> 4.25 and `voltmoor` 3.42 -> 4.0 before being fixed.)
+      const built = w.builtPresets && w.builtPresets.length ? w.builtPresets : w.presets || [];
+      const varietyOnly = scoreWorlds({
+        declared: w.declared,
+        presets: w.presets || [],
+        unusedPresets: w.unusedPresets || [],
+        presetUsage: PRESET_USAGE,
+        worlds: built.map((t, i) => ({ id: `w${i}`, themeId: t, built: true, rideCount: 1, stallCount: 1, sceneryCount: 1, setPieceCount: 0 })),
+        crossTheme: [], crossThemeCount: 0, unplacedThemed: [],
+        separation: {},
+      });
+      const kept = w.parts || {};
+      const parts = {
+        variety: varietyOnly.parts.variety,
+        buildOut: kept.buildOut ?? 0,
+        separation: kept.separation ?? 0,
+        coherence: kept.coherence ?? 0,
+      };
+      const total = Math.round((parts.variety + parts.buildOut + parts.separation + parts.coherence) * 100) / 100;
+      rows.push({
+        name: e.name,
+        declared: w.declared,
+        presets: built.join('+'),
+        xt: w.crossThemeCount,
+        sep: w.minCentreSeparation,
+        floor: w.separationFloor,
+        score: total,
+        parts,
+        varietyTerms: varietyOnly.varietyTerms,
+        stored: w.score,
+        why: total === w.score ? 'probed' : `probed — variety RE-SCORED vs corpus ${PRESET_USAGE.corpusSize} (stored ${w.score} -> ${total})`,
+      });
+      continue;
+    }
+    let src = '';
+    const f = path.join(sampleDir, `${e.name}.tsx`);
+    try { src = fs.readFileSync(f, 'utf8'); } catch { /* a control fixture has no source */ }
+    const declares = /<World[\s/>]|worldPlan\s*\(/.test(src);
+    rows.push({
+      name: e.name,
+      declared: declares ? '?' : 0,
+      presets: '-',
+      xt: declares ? '?' : 0,
+      sep: null,
+      floor: null,
+      score: declares ? null : 0,
+      parts: null,
+      why: declares ? 'declares <World> but never probed — run probe.mjs' : src ? 'no <World> in source' : 'control fixture (no source)',
+    });
+  }
+  console.log('\n\nWORLDS (axis 16, max 5) — calibration\n');
+  console.log(pad('park', 16), num('decl', 5), pad('presets', 26), num('xTheme', 7), num('minSep', 7), num('floor', 6), num('SCORE', 6));
+  console.log('-'.repeat(80));
+  for (const r of rows.sort((a, b) => (b.score ?? -1) - (a.score ?? -1)))
+    console.log(pad(r.name, 16), num(r.declared, 5), pad(r.presets, 26), num(r.xt, 7), num(r.sep, 7), num(r.floor, 6), num(r.score, 6));
+  console.log('\nper-park breakdown (variety/1.5 + buildOut/1 + separation/1 + coherence/1.5):\n');
+  for (const r of rows) {
+    if (r.parts)
+      console.log(`${pad(r.name, 16)} ${num(r.parts.variety)} + ${num(r.parts.buildOut)} + ${num(r.parts.separation)} + ${num(r.parts.coherence)} = ${num(r.score)}   (${r.why})`);
+    else console.log(`${pad(r.name, 16)} ${num(r.score, 5)}   — ${r.why}`);
+  }
+  fs.writeFileSync(path.join(HERE, 'out', 'worlds-calibration.json'), JSON.stringify(rows, null, 2));
 }
 
 if (matrix) {

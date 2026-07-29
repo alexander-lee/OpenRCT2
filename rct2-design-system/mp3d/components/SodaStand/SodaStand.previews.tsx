@@ -2,7 +2,7 @@ import React from 'react';
 import { ScenePreview } from '../Park';
 import { buildPathNetwork } from '../PathNetwork';
 import { createGameManager } from '../GameManager';
-import { SodaStand } from './index';
+import { SodaStand, buildHeldSoda } from './index';
 
 // The stand sells REAL sodas through the GameManager consumable flow (the
 // same live-sim vignette as the BalloonStand preview): a ScenePreview `dress`
@@ -38,17 +38,36 @@ function SodaStandDemo() {
         // registration hook, so the demo registers the sale itself. Anchor is
         // pushed +z so the serving front (anchor + 0.72·dir) lands at z 0.97 —
         // just clear of the counter slab edge (z 0.82), no clipping.
-        mgr.registerStall({ name: 'Soda Stand', item: 'drink', price: 2, value: 4, anchor: [0, 0, 0.25], dir: [0, 1] });
-        mgr.spawnGuests(8);
-        // pre-warm (fixed 1/30 substeps, deterministic): guests are spread
-        // around the loop with the purchase/drink cycle in full swing — the
-        // drink chain lasts ~6.4 sim-s, so fresh buys land on-screen quickly
+        // ...with the stand's OWN held mini can (StallConfig.heldItem), exactly
+        // as <SodaStand register> wires it inside a real <Park>
+        mgr.registerStall({ name: 'Soda Stand', item: 'drink', price: 2, value: 4, anchor: [0, 0, 0.25], dir: [0, 1], heldItem: buildHeldSoda });
+        // ...and the cohort is spawned ALREADY THIRSTY. A fresh RCT2
+        // arrival is watered — thirst spawns at 177-255 on the INVERTED 0-255
+        // scale — and the counter refuses a drink above thirst 75 (RCT2's own
+        // DecideAndBuyItem gate), which on the RCT2-faithful 512-tick needs
+        // clock is ~163 sim-s of walking before anyone may buy at all: longer
+        // than this whole vignette, so the stand stood idle. The needs RATES are
+        // correct and deliberately untouched; a STAGED vignette seeds the state
+        // it exists to demonstrate. The band is wide on purpose — the driest
+        // guests buy during the pre-warm and are already sipping on frame 1, the
+        // watered end of it crosses the seek threshold while the preview plays,
+        // so fresh sales keep landing on screen.
+        mgr.spawnGuests(8, undefined, { thirst: [4, 48] });
+        // pre-warm (fixed 1/30 substeps, deterministic): 32 sim-s is enough for
+        // the thirstiest of the staged cohort to have bought and be sipping on
+        // frame 1, with the rest still working their way to the counter, so the
+        // sales keep coming while the preview plays
         const WARM = 32;
         let simT = 0;
         while (simT < WARM) {
           simT += 1 / 30;
           mgr.update(simT, 1 / 30);
         }
+        // HARNESS PROBE (never called by the page, no visual cost): the live
+        // stall roster + guest records, so a headless run can ASSERT this
+        // vignette actually trades (sold > 0, items in hands) instead of
+        // eyeballing a screenshot.
+        g.userData.stallProbe = () => ({ simT, stalls: mgr.stalls(), guests: mgr.guests() });
         // then run at 2x in fixed substeps — a full walk-up -> buy -> drink ->
         // bin/litter cycle fits one viewing without rushing the walk cycles
         let last = 0;

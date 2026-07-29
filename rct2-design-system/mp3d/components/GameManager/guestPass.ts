@@ -15,20 +15,33 @@
 
 import type * as THREE from 'three';
 import { cadenceForSpeed } from '../Guest';
-import { hash01, clamp255, smoothK, SPACING, GUEST_SCALE, NEEDS_TICK, QUEUE_BALK_AT } from './types';
+import { hash01, clamp255, smoothK, SPACING, GUEST_SCALE, NEEDS_TICK, QUEUE_BALK_AT, SIT_DROP } from './types';
 import type { SimGuest, HandSlot } from './types';
 import { armOf } from './guestFx';
 import { slotPos } from './access';
 import { inDanceZone } from './registry';
 import type { Sim } from './sim';
 
+/** energy at or below which a guest will take a seat they happen to walk past */
+const BENCH_TIRED = 130;
+/** …and how long after getting off one before they will take another */
+const BENCH_COOLDOWN = 25;
+
 export function createGuestPass(s: Sim) {
-  const { t, walkY, nodeXZ, guests, bins, danceZones, routing } = s;
+  const { t, walkY, nodeXZ, guests, bins, benches, danceZones, routing } = s;
   const _hand = new t.Vector3();
 
   // ---- guest per-frame ------------------------------------------------------------
   const updateGuest = (g: SimGuest, time: number, dt: number) => {
-    if (g.gone) return;
+    if (g.gone) {
+      s.needs.releaseBench(g); // a despawned guest never keeps a seat occupied
+      return;
+    }
+    // BENCH INVARIANT. A seat is held for exactly as long as its guest is in
+    // the 'sitting' state; anything that yanks them out of it (a maxed toilet,
+    // beginLeaving, a crash drain) frees the seat here rather than needing to
+    // remember to. Without this a park slowly runs out of benches.
+    if (g.bench && g.state !== 'sitting') s.needs.releaseBench(g);
     if (g.entryDelay > 0) {
       // staggered park-gate arrival — not in the world yet
       g.entryDelay -= dt;
@@ -89,16 +102,61 @@ export function createGuestPass(s: Sim) {
         const near = guests.some((o) => o !== g && !o.gone && !o.hidden && o.state === 'walking' && Math.hypot(o.x - g.x, o.z - g.z) < 1.0);
         if (near && hash01(g.idx * 19.1 + sec * 5.9) < 0.1) g.action = { kind: 'dance', until: s.simTime + 2.4 };
       }
-      // dance-floor interlude: a wanderer whose path crosses a registered
-      // dance zone (<DanceFloor register>) stops and dances for a hashed
-      // 10-30 s — happy (≥160) + energetic (>128) guests only, hashed
-      // per-second chance so a crossing usually latches within ~2-3 s. The
-      // pose path below (action.kind 'dance') already beat-locks to the
-      // floor tiles: both run 2.2 Hz off the same Stage clock.
-      if (g.state === 'walking' && !g.action && g.happiness >= 160 && g.energy > 128 && danceZones.length) {
-        if (danceZones.some((z) => inDanceZone(z, g.x, g.z)) && hash01(g.idx * 31.3 + sec * 13.7) < 0.35) {
-          g.action = { kind: 'dance', until: s.simTime + 10 + hash01(g.idx * 5.7 + sec * 3.1) * 20 };
-          g.happinessTarget = clamp255(g.happinessTarget + 6); // dancing is fun
+      // ATTENTION-ZONE interlude: a wanderer whose path crosses a registered
+      // zone (registerDanceZone / registerWatchZone) stops there for a hashed
+      // dwell — 0.35/s coin, so a crossing usually latches within ~2-3 s.
+      //   dance zone (<DanceFloor register>): action 'dance', 10-30 s, happy
+      //     (≥160) + energetic (>128) guests only. The pose path below beat-
+      //     locks to the floor tiles — both run 2.2 Hz off the same Stage clock.
+      //   watch zone (scenery to LOOK at): state 'watching', 4-10 s, facing the
+      //     zone's `faceAt` — the same three fields navigation.ts's "watch a
+      //     nearby ride" sets, so no new pose/dispatch plumbing is needed.
+      // THE COOLDOWN: `z.ready` bars this zone from re-latching the SAME guest
+      // until `cooldown` s after their dwell ended. Without it the latch simply
+      // re-fires on a guest still standing inside and the zone becomes a
+      // permanent stop (registry.ts documents the measurement).
+      // The 0.35 coin is deliberately the SAME hash expression for every zone —
+      // a guest is normally inside at most one, and sharing it keeps the
+      // single-dance-zone case bit-for-bit identical to the pre-cooldown code.
+      if (g.state === 'walking' && !g.action && danceZones.length && hash01(g.idx * 31.3 + sec * 13.7) < 0.35) {
+        for (const z of danceZones) {
+          if (g.happiness < z.minHappiness || g.energy < z.minEnergy) continue;
+          // THE COOLDOWN MUST BE ON THE SAME CLOCK AS THE DWELL IT PROTECTS.
+          // A dance dwell is `action.until`, tested against `simTime`; a watch
+          // dwell is `g.timer`, counted down by the CLAMPED frame dt. Storing
+          // both bars on `simTime` meant that on a slow page (SwiftShader runs
+          // this at ~1.3 fps) a watch cooldown expired ~12x early — measured on
+          // the Pulse District zone probe — so the bar that stops a guest being
+          // re-latched barely applied, which is the exact failure the cooldown
+          // was added to fix.
+          //
+          // MEASURED, A/B on the same tree (`/tmp/mp3d-render/zoneclock-probe`,
+          // identical clamped dt, absolute clock 13x faster): re-latches on the
+          // slow clock were **8.38x** the fast-clock count before this line and
+          // are **1.14x** after it.
+          //
+          // The residual 1.14x is NOT this bar — it is `sec` above, which is
+          // `Math.floor(s.simTime)`, so a slow page gets more per-second coin
+          // flips per unit of simulated walking and therefore more latch
+          // OPPORTUNITIES. That coupling is shared by every per-second hashed
+          // event here (vomit, stagger, queue fidget, spontaneous dance) and
+          // moving it would change all of their behaviour and break the
+          // bit-for-bit guarantee the needs retune preserved, so it is left
+          // alone deliberately rather than overlooked.
+          const zclock = z.mode === 'dance' ? s.simTime : s.walkClock;
+          if (zclock < (z.ready.get(g.idx) ?? -Infinity)) continue; // cooling down
+          if (!inDanceZone(z, g.x, g.z)) continue;
+          const dwell = z.minLinger + hash01(g.idx * 5.7 + sec * 3.1) * (z.maxLinger - z.minLinger);
+          if (z.mode === 'dance') {
+            g.action = { kind: 'dance', until: s.simTime + dwell };
+            g.happinessTarget = clamp255(g.happinessTarget + 6); // dancing is fun
+          } else {
+            g.state = 'watching'; // RCT2 PeepState::Watching — stand and look
+            g.timer = dwell;
+            if (z.faceAt) g.yaw = Math.atan2(z.faceAt[0] - g.x, z.faceAt[1] - g.z);
+          }
+          z.ready.set(g.idx, zclock + dwell + z.cooldown);
+          break;
         }
       }
     }
@@ -134,6 +192,41 @@ export function createGuestPass(s: Sim) {
           }
         }
       }
+      // BENCHES: a worn-out guest who walks PAST a free seat sits on it.
+      //
+      // This is the litter-bin check's sibling and it lives here for the same
+      // reason RCT2 puts it in `Guest::UpdateWalking` (entity/Guest.cpp:
+      // 2790-2860) rather than in a junction decision: it tests the tile the
+      // peep is STANDING ON. The rest impulse on arriving at a node (see
+      // navigation.ts) cannot find a bench on most lattices, because verge
+      // furniture is planted at interval CENTRES and deliberately kept 0.85
+      // clear of the junction pads — measured on r16a, 0 of 7 rests over 300
+      // sim-seconds landed on a seat with 194 of them in the park. Walking past
+      // one is how a guest actually meets a bench.
+      //
+      // Reach 1.25: a seat sits `width/2 + 0.34` (≈ 0.89 on a 1.1 street) off
+      // the centreline the guest walks, so anything tighter can never trigger.
+      if (
+        !g.gone &&
+        !g.hidden &&
+        !paused &&
+        !g.fling &&
+        g.state === 'walking' &&
+        !g.waypoints.length &&
+        benches.length &&
+        g.energy <= BENCH_TIRED &&
+        s.simTime - g.benchT > BENCH_COOLDOWN &&
+        hash01(g.idx * 17.3 + Math.floor(s.simTime)) < 0.35
+      ) {
+        const seat = s.needs.claimBench(g, 1.25);
+        if (seat) {
+          g.resume = { from: g.fromNode, to: g.toNode, u: g.u };
+          g.state = 'sitting';
+          g.timer = -1; // armed when the short walk onto the seat completes
+          g.path = [];
+          g.waypoints = [{ x: seat.x, z: seat.z, y: seat.y - SIT_DROP }];
+        }
+      }
       // container patience cap: ~30-45 hashed s after finishing the meal a
       // guest who never crossed a free bin (the 6 %/edge litter roll can miss
       // for minutes) just throws the rubbish at the next stride — RCT2 guests
@@ -152,11 +245,14 @@ export function createGuestPass(s: Sim) {
       }
     } else if (g.state === 'queuing' || g.state === 'queuingFront') {
       const r = g.ride!;
-      const i = r.queue.indexOf(g);
+      // the PLATFORM this guest queued at (multi-station transport rides have
+      // one lane per station; `stations[0]` is the ordinary single lane)
+      const st = g.station ?? r.stations[0];
+      const i = st.queue.indexOf(g);
       if (i < 0) {
         g.state = 'walking'; // safety: fell out of the queue array
       } else {
-        const slot = slotPos(r, i);
+        const slot = slotPos(st, i);
         const jp = g.waypoints[0];
         if (jp && Math.hypot(g.x - slot.x, g.z - slot.z) > SPACING * 1.5) {
           g.moving = !s.loco.moveToward(g, jp.x, jp.z, s.loco.speedOf(g), dt);
@@ -168,14 +264,18 @@ export function createGuestPass(s: Sim) {
           // single-file: advance only when the slot ahead has freed
           let mayMove = true;
           if (i > 0) {
-            const ahead = r.queue[i - 1];
-            const aheadSlot = slotPos(r, i - 1);
+            const ahead = st.queue[i - 1];
+            const aheadSlot = slotPos(st, i - 1);
             mayMove = Math.hypot(ahead.x - aheadSlot.x, ahead.z - aheadSlot.z) < 0.16;
           }
           const dSlot = Math.hypot(g.x - slot.x, g.z - slot.z);
           if (dSlot >= 0.03 && mayMove) g.moving = !s.loco.moveToward(g, slot.x, slot.z, s.loco.speedOf(g), dt);
-          if (dSlot < 0.03) g.yaw += (Math.atan2(-r.dir[0], -r.dir[1]) - g.yaw) * Math.min(1, dt * 6);
-          if (dSlot < 0.6) g.baseY += (r.laneY - g.baseY) * Math.min(1, dt * 8);
+          if (dSlot < 0.03) g.yaw += (Math.atan2(-st.dir[0], -st.dir[1]) - g.yaw) * Math.min(1, dt * 6);
+          // the lane RAMPS from the ride down to the street (access.ts), so the
+          // slot's own height is the one to settle on — `st.laneY` alone put
+          // every guest in the queue at the HEAD's level and floated the ones
+          // near the tail
+          if (dSlot < 0.6) g.baseY += (slot.y - g.baseY) * Math.min(1, dt * 8);
           g.state = i === 0 && dSlot < 0.1 ? 'queuingFront' : 'queuing';
         }
         g.timeInQueue += dt;
@@ -192,8 +292,9 @@ export function createGuestPass(s: Sim) {
           // the ride seats them: re-appear ON the vehicle (never walking there)
           const r = g.ride!;
           g.state = 'onRide';
-          const k = r.entering.indexOf(g);
-          if (k >= 0) r.entering.splice(k, 1);
+          const est = g.station ?? r.stations[0];
+          const k = est.entering.indexOf(g);
+          if (k >= 0) est.entering.splice(k, 1);
           r.riders.push(g);
         }
       }
@@ -211,10 +312,13 @@ export function createGuestPass(s: Sim) {
         g.z = seat[2];
         g.yaw = seat[3];
       } else {
+        // the vehicle is AT a platform (RCT2 `Vehicle::current_station`), so
+        // seated riders ride at THAT platform's boardPoint
+        const bp = r.stations[r.atStation]?.boardPoint ?? r.cfg.boardPoint;
         const a = (k / Math.max(1, r.cfg.capacity)) * Math.PI * 2;
-        g.x = r.cfg.boardPoint[0] + Math.sin(a) * 0.3;
-        g.z = r.cfg.boardPoint[2] + Math.cos(a) * 0.3;
-        g.baseY = r.cfg.boardPoint[1] - 0.12; // sunk: lower legs sit inside the vehicle body
+        g.x = bp[0] + Math.sin(a) * 0.3;
+        g.z = bp[2] + Math.cos(a) * 0.3;
+        g.baseY = bp[1] - 0.12; // sunk: lower legs sit inside the vehicle body
         g.yaw = a; // ring faces outward
       }
     } else if (g.state === 'leavingRide') {
@@ -311,6 +415,51 @@ export function createGuestPass(s: Sim) {
           }
         }
       }
+    } else if (g.state === 'sitting' && g.bench) {
+      // ON A BENCH (RCT2 PeepState::Sitting, Guest.cpp:2900-2990): walk the last
+      // couple of metres onto the seat, sit out a longer dwell than a standing
+      // pause, RECOVER energy while sat, and then step back onto the edge the
+      // detour left from (the litter-bin `resume` bookkeeping).
+      if (s.loco.followWaypoints(g, dt)) {
+        const b = g.bench;
+        if (g.timer < 0) g.timer = 7 + s.fx.draw(g, 18) * 7; // a real sit-down, not a pause
+        g.timer -= dt;
+        // settle exactly on the seat, facing the way the bench faces
+        g.x += (b.x - g.x) * Math.min(1, dt * 8);
+        g.z += (b.z - g.z) * Math.min(1, dt * 8);
+        g.baseY += (b.y - SIT_DROP - g.baseY) * Math.min(1, dt * 6);
+        let dyaw = b.yaw - g.yaw;
+        while (dyaw > Math.PI) dyaw -= 2 * Math.PI;
+        while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
+        g.yaw += dyaw * Math.min(1, dt * 5);
+        // resting is what a bench is FOR: energy climbs back while sat
+        // (UpdateSitting's energy recovery), and getting off one is a small
+        // mood lift
+        g.energyTarget = clamp255(g.energyTarget + 9 * dt);
+        if (g.timer <= 0) {
+          b.uses += 1;
+          s.needs.releaseBench(g);
+          g.benchT = s.simTime; // the cooldown before they take another seat
+          g.happinessTarget = clamp255(g.happinessTarget + 4); // rested
+          const res = g.resume;
+          g.resume = null;
+          if (routing && res) {
+            const [ax, az] = nodeXZ(res.from);
+            if (res.to >= 0) {
+              const [bx, bz] = nodeXZ(res.to);
+              g.waypoints = [
+                { x: ax + (bx - ax) * res.u, z: az + (bz - az) * res.u, y: walkY(ax + (bx - ax) * res.u, az + (bz - az) * res.u) },
+              ];
+            } else {
+              g.waypoints = [{ x: ax, z: az, y: walkY(ax, az) }];
+            }
+            g.fromNode = res.from;
+            g.toNode = res.to;
+            g.u = res.u;
+          }
+          g.state = 'walking';
+        }
+      }
     } else if (g.state === 'sitting' || g.state === 'watching') {
       g.timer -= dt;
       if (g.timer <= 0) g.state = 'walking';
@@ -379,6 +528,19 @@ export function createGuestPass(s: Sim) {
       if (limbs.armL) limbs.armL.rotation.x += (-1.1 - limbs.armL.rotation.x) * g.lapW;
       if (limbs.armR) limbs.armR.rotation.x += (-1.1 - limbs.armR.rotation.x) * g.lapW;
     }
+    // BENCH SIT: the same eased fold, on the LEGS. `buildPeep({ seated: true })`
+    // is the static build pose the Guest preview uses; a sim guest is built
+    // standing and has to get there and back, so the angles ride an envelope
+    // that only closes once the walk to the seat has finished.
+    g.sitW = Math.max(0, Math.min(1, g.sitW + (g.state === 'sitting' && g.bench && g.waypoints.length === 0 ? 1 : -1) * dt * 3));
+    if (g.sitW > 0) {
+      const limbs = g.peep as unknown as { armL?: THREE.Group; armR?: THREE.Group; legL?: THREE.Group; legR?: THREE.Group };
+      if (limbs.legL) limbs.legL.rotation.x += (-1.5 - limbs.legL.rotation.x) * g.sitW;
+      if (limbs.legR) limbs.legR.rotation.x += (-1.5 - limbs.legR.rotation.x) * g.sitW;
+      if (limbs.armL) limbs.armL.rotation.x += (-1.1 - limbs.armL.rotation.x) * g.sitW;
+      if (limbs.armR) limbs.armR.rotation.x += (-1.1 - limbs.armR.rotation.x) * g.sitW;
+      pg.position.y *= 1 - g.sitW * 0.85; // the idle bob damps out once seated
+    }
 
     // head + shoulders carry the mood (Guest.cpp:6960)
     let tilt = 0;
@@ -406,16 +568,25 @@ export function createGuestPass(s: Sim) {
 
     // ---- held item + eat/drink cycles (meshes live on the eat-hand's arm
     // pivot — built once at purchase; here they are only shown/hidden/posed) --
+    // a PER-STALL themed item (StallConfig.heldItem) stands in for the generic
+    // food/drink mesh while the meal lasts, then leaves the hand at the
+    // CONTAINER stage — from there the generic crumpled container drives the
+    // untouched bin / litter lifecycle.
+    const themed = g.heldCustom != null;
+    if (themed) {
+      if (g.holding === 'food' || g.holding === 'drink') g.heldCustom!.visible = true;
+      else s.fx.detachStallItem(g);
+    }
     if (g.held) {
       const r = g.eatHand === 'right' ? g.holding : null;
-      g.held.food.visible = r === 'food';
-      g.held.drink.visible = r === 'drink';
+      g.held.food.visible = !themed && r === 'food';
+      g.held.drink.visible = !themed && r === 'drink';
       g.held.container.visible = r === 'container';
     }
     if (g.heldL) {
       const l = g.eatHand === 'left' ? g.holding : null;
-      g.heldL.food.visible = l === 'food';
-      g.heldL.drink.visible = l === 'drink';
+      g.heldL.food.visible = !themed && l === 'food';
+      g.heldL.drink.visible = !themed && l === 'drink';
       g.heldL.container.visible = l === 'container';
     }
     // the overlay rides an eased envelope (g.eatK chases the raw cycle at a

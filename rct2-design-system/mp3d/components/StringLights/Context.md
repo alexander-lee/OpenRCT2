@@ -1,5 +1,9 @@
 # StringLights
 
+**CANONICAL IMPORT — copy exactly:** `import { StringLights } from './components/StringLights';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Festival string lights: parabolic-sag cables of warm emissive bulbs zig-zagging between dark iron poles over a concrete plaza.
 
 Original three.js model on the shared Stage (day/night lighting). Exports:

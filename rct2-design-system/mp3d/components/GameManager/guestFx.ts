@@ -1,9 +1,10 @@
 // ---------------------------------------------------------------------------
 // GUEST FX + CARRIED THINGS — the pooled world litter/vomit/poop meshes, the
 // thought ring, the deterministic per-guest decision draw, the two-hand held
-// item registry (food / drink / container) and the balloon rigs (held +
-// flown), plus their per-frame tweens (thrown-litter arcs, airborne balloons,
-// the shared vomit emitter).
+// item registry (generic food / drink / container PLUS the per-stall themed
+// `heldItem` clones), the head slot's worn accessories and the balloon rigs
+// (held + flown), plus their per-frame tweens (thrown-litter arcs, airborne
+// balloons, the shared vomit emitter).
 //
 // Every pool is CAPPED with oldest-slot reuse, exactly as RCT2 recycles its
 // litter/vomit entities, and every random choice is a hashed draw, so the
@@ -14,8 +15,8 @@ import type * as THREE from 'three';
 import { box, cyl, ball } from '../Stage';
 import { buildEmitter } from '../ParticleKit';
 import { BALLOON_COLS } from '../BalloonStand';
-import { hash01, clamp255, LITTER_CAP, POOP_CAP, THOUGHT_TEXT } from './types';
-import type { ThoughtType, HandSlot, HeldItemKind, SimGuest, LitterFlight, BalloonHold } from './types';
+import { hash01, clamp255, LITTER_CAP, POOP_CAP, thoughtText, thoughtNamesSubject } from './types';
+import type { ThoughtType, HandSlot, HeldItemKind, SimGuest, LitterFlight, BalloonHold, WornItem, StallRec } from './types';
 import type { Sim } from './sim';
 
 // ---- hand-slot registry: two hands, at most ONE item per hand -------------
@@ -71,12 +72,29 @@ export function createGuestFx(s: Sim) {
   // thoughts (ride reactions, purchases, sickness, leaving...) still append
   // immediately, but they too reset the gate so the ring never churns faster
   // than one thought per THOUGHT_GAP under ambient pressure.
+  // THE SUBJECT: every thought carries the RCT2 thought ARGUMENT — the ride,
+  // stall or held item it names (Guest::insertNewThought's RideId / ShopItem
+  // overloads, Guest.cpp:7077-7098). It is substituted into the template's `{}`
+  // slot at push time, so `Thought.text` is the finished line every window
+  // draws ("Wyrm's Hollow was great!") and `Thought.subject` keeps the raw name
+  // for anything that wants to group or link by ride.
+  //
+  // The freshness gate keys on (type, subject) — RCT2's own duplicate check
+  // compares the argument too (Guest.cpp:7109-7127 walks the ring on type AND
+  // item) — so "Wyrm's Hollow was great!" never suppresses "Moonlit Barge was
+  // great!" 20 s later, which is exactly the case a subjectless table could not
+  // express.
   const THOUGHT_GAP = 20;
-  const AMBIENT_THOUGHTS = new Set<ThoughtType>(['hungry', 'thirsty', 'toilet', 'queuingAges', 'badLitter']);
-  const pushThought = (g: SimGuest, type: ThoughtType) => {
-    if (g.thoughts.some((th) => th.type === type && s.simTime - th.t < 20)) return;
+  const AMBIENT_THOUGHTS = new Set<ThoughtType>(['hungry', 'thirsty', 'toilet', 'tired', 'queuingAges', 'badLitter']);
+  const pushThought = (g: SimGuest, type: ThoughtType, subject?: string | null) => {
+    // a thought whose RCT2 string has no argument slot carries NO subject, even
+    // if the caller offered one (RCT2's spentMoney / notHungry / sick are pushed
+    // through the no-argument overload, Guest.cpp:7077) — so `thoughtSubjects`
+    // never claims a name the text does not show
+    const subj = thoughtNamesSubject(type) ? subject ?? null : null;
+    if (g.thoughts.some((th) => th.type === type && th.subject === subj && s.simTime - th.t < 20)) return;
     if (AMBIENT_THOUGHTS.has(type) && s.simTime - g.lastThoughtAt < THOUGHT_GAP) return;
-    g.thoughts.unshift({ type, text: THOUGHT_TEXT[type], t: s.simTime });
+    g.thoughts.unshift({ type, text: thoughtText(type, subj), subject: subj, t: s.simTime });
     if (g.thoughts.length > 5) g.thoughts.pop(); // kPeepMaxThoughts = 5
     g.lastThoughtAt = s.simTime;
   };
@@ -209,11 +227,21 @@ export function createGuestFx(s: Sim) {
   // box (z ±0.055) or torso at any point of the carry/bite cycle, yet hugs
   // the fingers at full lift; items are fist-to-head sized (head r 0.12) so
   // they read at park zoom on 0.5-scaled guests, like RCT2's sprites --------
+  // the ONE definition of the corrected hand hold transform — arm-local
+  // (±0.03, −0.37, 0.15), drinks pulled in to z 0.115 (slimmer, so they sit
+  // nearer the fist) and the crumpled container to (…, −0.345, 0.1). Both the
+  // generic meshes below and the per-stall `heldItem` clones are placed by it,
+  // so a stall's themed item lands exactly where the tuned burger did.
+  const holdSpot = (m: THREE.Object3D, hand: HandSlot, kind: 'food' | 'drink' | 'container') => {
+    const side = hand === 'right' ? 1 : -1; // outboard nudge mirrors per hand
+    m.position.set(side * 0.03, kind === 'container' ? -0.345 : -0.37, kind === 'food' ? 0.15 : kind === 'drink' ? 0.115 : 0.1);
+    return m;
+  };
+
   const ensureHeld = (g: SimGuest, hand: HandSlot) => {
     if (hand === 'right' ? g.held : g.heldL) return;
-    const side = hand === 'right' ? 1 : -1; // outboard nudge mirrors per hand
-    const hold = (m: THREE.Group) => {
-      m.position.set(side * 0.03, -0.37, 0.15);
+    const hold = (m: THREE.Group, kind: 'food' | 'drink' | 'container' = 'food') => {
+      holdSpot(m, hand, kind);
       m.visible = false;
       armOf(g, hand).add(m);
       return m;
@@ -225,22 +253,84 @@ export function createGuestFx(s: Sim) {
     food.add(bun);
     food.add(cyl(t, 0.098, 0.098, 0.035, 0x7a4a22, [0, 0, 0], { rough: 0.9, seg: 12 })); // patty
     food.add(cyl(t, 0.088, 0.092, 0.032, 0xe2b26a, [0, -0.028, 0], { rough: 0.85, seg: 12 })); // base bun
-    const drink = hold(new t.Group()); // red cup + straw stub
+    const drink = hold(new t.Group(), 'drink'); // red cup + straw stub
     drink.name = 'heldDrink';
-    drink.position.z = 0.115; // slimmer than the burger — sits nearer the fist
     drink.add(cyl(t, 0.06, 0.048, 0.165, 0xc23028, [0, 0, 0], { rough: 0.6, seg: 12 }));
     drink.add(cyl(t, 0.01, 0.01, 0.095, 0xf0f0e8, [0.022, 0.115, 0], { rough: 0.7, seg: 6 }));
-    const container = hold(new t.Group()); // crumpled leftovers: smaller, grey
-    container.name = 'heldContainer';
     // the container is much smaller than the burger, so the shared z 0.15
-    // hold spot leaves a visible air gap ahead of the fist — pull it in to
-    // z 0.1 / y up to the hand-ball line so the crumpled box sits IN the
-    // grip (its rotated half-depth ~0.063 overlaps the fist front at 0.05)
-    container.position.z = 0.1;
-    container.position.y = -0.345;
+    // hold spot would leave a visible air gap ahead of the fist — its
+    // holdSpot() case pulls it in to z 0.1 / y up to the hand-ball line so the
+    // crumpled box sits IN the grip (rotated half-depth ~0.063 overlaps the
+    // fist front at 0.05)
+    const container = hold(new t.Group(), 'container'); // crumpled leftovers: smaller, grey
+    container.name = 'heldContainer';
     container.add(box(t, [0.1, 0.075, 0.088], 0x9c9c94, [0, 0, 0], { rough: 0.95, rotY: 0.5 }));
     if (hand === 'right') g.held = { food, drink, container };
     else g.heldL = { food, drink, container };
+  };
+
+  // ---- PER-STALL held items (StallConfig.heldItem) ---------------------------
+  // A stall may supply its OWN 3D item so its buyers carry a hot dog / a floss
+  // cone / a soda can instead of the generic burger or cup. The builder runs
+  // ONCE per stall (cached prototype) and every purchase gets a `clone()` —
+  // three copies the little transform hierarchy but SHARES geometries and
+  // materials with the prototype, so a park full of eaters costs one recipe's
+  // worth of GPU resources. (Nothing is disposed on detach for exactly that
+  // reason: the clone's wrappers are garbage, the shared resources are not.)
+  const stallItemProto = new Map<StallRec, THREE.Group>();
+  const stallItemMesh = (st: StallRec): THREE.Group | null => {
+    if (!st.cfg.heldItem) return null;
+    let proto = stallItemProto.get(st);
+    if (!proto) {
+      proto = st.cfg.heldItem(t);
+      stallItemProto.set(st, proto);
+    }
+    return proto.clone(true);
+  };
+
+  /** attach the stall's own consumable mesh to `hand` (no-op without a
+   *  `heldItem`, so the generic burger/cup keeps serving those stalls) */
+  const attachStallItem = (g: SimGuest, hand: HandSlot, st: StallRec) => {
+    const mesh = stallItemMesh(st);
+    if (!mesh) return null;
+    // an ANCHOR carrying the tuned hold transform, with the recipe as its
+    // child: whatever position/rotation the builder set on its own group stays
+    // an OFFSET (the floss cone tips itself forward by 0.45 rad this way)
+    const anchor = new t.Group();
+    anchor.name = 'heldStallItem';
+    holdSpot(anchor, hand, st.cfg.item === 'drink' ? 'drink' : 'food');
+    anchor.add(mesh);
+    armOf(g, hand).add(anchor);
+    g.heldCustom = anchor;
+    return anchor;
+  };
+
+  /** the themed item leaves the hand — the meal reached the CONTAINER stage
+   *  (or the guest lost the item some other way) and the generic crumpled
+   *  container takes over the bin/litter lifecycle from here */
+  const detachStallItem = (g: SimGuest) => {
+    if (!g.heldCustom) return;
+    g.heldCustom.removeFromParent();
+    g.heldCustom = null;
+  };
+
+  // ---- WEARABLES (StallConfig.item 'wearable') -------------------------------
+  // Same purchase→attach lifecycle as the balloon above, but parented to the
+  // peep's HEAD slot instead of a hand — and with NO fly-away and no drop
+  // schedule: a wearable is kept for the rest of the visit. Because it rides
+  // `peep.headSlot` it needs no per-frame work at all and cannot be lost when
+  // the guest boards a ride (the rig, and with it the hat, goes along).
+  const attachWearable = (g: SimGuest, st: StallRec): WornItem | null => {
+    if (g.worn) return null; // one head, one hat
+    const mesh = stallItemMesh(st);
+    if (!mesh) return null;
+    const anchor = new t.Group();
+    anchor.name = 'wornItem';
+    anchor.add(mesh);
+    g.peep.headSlot.add(anchor);
+    const rec: WornItem = { group: anchor, stall: st.cfg.name, since: s.simTime };
+    g.worn = rec;
+    return rec;
   };
 
   // ---- held balloons (ACCESSORY): a string + ball rig above the hand ---------
@@ -381,6 +471,9 @@ export function createGuestFx(s: Sim) {
     dropVomit,
     dropPoop,
     ensureHeld,
+    attachStallItem,
+    detachStallItem,
+    attachWearable,
     attachBalloon,
     releaseBalloon,
     update,

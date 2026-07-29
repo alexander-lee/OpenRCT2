@@ -258,7 +258,12 @@ export function DistrictPark({ fullscreen = true }: { fullscreen?: boolean }) {
       <Boulevard plan={AVE} />
       <Bazaar plan={MARKET} />
 
-      {/* FLAGSHIP — §4.0-A pieces mode, no `bank` prop, closes itself */}
+      {/* FLAGSHIP — §4.0-A pieces mode, no `bank` prop, closes itself.
+          exit/exitDir are OMITTED (RCT2 entrance/exit fix): the chassis takes the
+          station-face cell ONE TILE beside the entrance hut, on whichever side its
+          exit path reaches the street soonest, facing the same way out. The old
+          pinned [19.2, -1.2] / [1, 0] sat 2.4 u along the face with NO street on its
+          outward ray: a stranded exit, and since gate check a4 an accessibility FAIL. */}
       <Coaster
         name="Meadow Firestorm"
         pieces={A_PIECES as unknown as TrackPiece[]}
@@ -273,8 +278,6 @@ export function DistrictPark({ fullscreen = true }: { fullscreen?: boolean }) {
         deck={[-2.4, 0]}
         queueTailNode={12}
         queueDir={[1, 0]}
-        exit={[19.2, -1.2]}
-        exitDir={[1, 0]}
       />
 
       {/* a GENTLE ride beside the gate street: the 60 sim-s smoke run needs a
@@ -360,8 +363,6 @@ export function DemoPark({ fullscreen = true }: { fullscreen?: boolean }) {
         price={4}
         queueTailNode={11}
         queueDir={[0, -1]}
-        exit={[-3.6, 1.2]}
-        exitDir={[1, 0]}
         deck={DECK}
       />
       {/* composable catalog rides/stalls: one line each — <ConfigurableRide>/

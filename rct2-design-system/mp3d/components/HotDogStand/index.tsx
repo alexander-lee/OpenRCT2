@@ -7,6 +7,33 @@ import { composableStall } from '../Park';
 // Hot dog stand matched to the RCT2 HOTDS stall: a little fieldstone kiosk
 // with a BLUE/WHITE striped awning roof and a GIANT HOT DOG (bun, sausage,
 // mustard squiggle) lying along the ridge. Serving hatch + counter in front.
+
+// ---- the HELD hot dog (GameManager StallConfig.heldItem) -------------------
+// The 3D item a BUYER walks away eating — a miniature of the roof prop (bun
+// trough with rounded ends, plump sausage proud of it, mustard stripe). Lives
+// HERE, not in the preview: registered on the stall descriptor it works in a
+// real park, where guests used to walk off with the manager's generic burger.
+// Peep-local units, centred on the manager's hand hold spot; fist-to-head
+// sized (head r 0.12) so it reads at park zoom. Deterministic; the manager
+// builds it once per stall and clones it per purchase.
+export function buildHeldHotDog(three: typeof THREE): THREE.Group {
+  const t = three;
+  const g = new t.Group();
+  const BUN = 0xd9a04c;
+  const SAUS = 0xa84222;
+  // bun trough lying ACROSS the hand (along local x), rounded ends
+  g.add(cyl(t, 0.052, 0.052, 0.21, BUN, [0, -0.012, 0], { rough: 0.8, seg: 10, rotZ: Math.PI / 2 }));
+  [-0.105, 0.105].forEach((bx) => g.add(ball(t, 0.052, BUN, [bx, -0.012, 0], { rough: 0.8 })));
+  // plump sausage proud of the bun, stretched end caps
+  g.add(cyl(t, 0.033, 0.033, 0.26, SAUS, [0, 0.036, 0], { tex: 'plastic', repeat: [4, 1], rough: 0.5, seg: 10, rotZ: Math.PI / 2 }));
+  [-0.13, 0.13].forEach((bx) => {
+    const cap = ball(t, 0.033, SAUS, [bx, 0.036, 0], { rough: 0.5 });
+    cap.scale.x = 1.3;
+    g.add(cap);
+  });
+  g.add(box(t, [0.225, 0.012, 0.021], 0xe8b414, [0, 0.071, 0], { rough: 0.22 })); // mustard stripe
+  return g;
+}
 export function buildHotDogStandScene(three: typeof THREE, opts: { withGuest?: boolean } = {}): { group: THREE.Group; update?: (time: number) => void } {
   const group = new three.Group();
   const update =
@@ -105,9 +132,11 @@ export function buildHotDogStandScene(three: typeof THREE, opts: { withGuest?: b
 
 /** <HotDogStand> — composable stall (components/Park/Context.md): mounts the stall
  *  at `position`/`rotation`; inside a <Park>, `register` (+ `name`/`price`/
- *  `value`) registers a selling stall — the serving front faces local +z. */
+ *  `value`) registers a selling stall — the serving front faces local +z.
+ *  Buyers walk away eating a real mini HOT DOG (`heldItem`: buildHeldHotDog),
+ *  not the manager's generic burger. */
 export const HotDogStand = composableStall<{ withGuest?: boolean }>(
   'HotDogStand',
   (t, { withGuest = false }) => buildHotDogStandScene(t, { withGuest }),
-  {name: 'Hot Dogs',item: 'food',price: 3,value: 5},
+  { name: 'Hot Dogs', item: 'food', price: 3, value: 5, heldItem: buildHeldHotDog },
 );

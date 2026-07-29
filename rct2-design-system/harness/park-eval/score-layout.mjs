@@ -2,6 +2,8 @@
 // layout-uniqueness score, with every threshold numeric so two scorers reach
 // the same number. This is the executable form of RUBRIC.md axis 15.
 
+import { districtSeparationFloor } from './layout.mjs';
+
 export const THRESHOLDS = {
   // 3 pts — NOT a monotonous lattice
   gridRegularityFull: 0.55, // <= 0.55 -> full 3
@@ -17,7 +19,16 @@ export const THRESHOLDS = {
   obliqueEdgeFraction: 0.15,  // >= 15% of edges off the two cardinal axes
   // 2 pts — genuine district structure
   districtsRequired: 2,
-  separationAtSize48: 20, // scaled by size/48
+  // THE SEPARATION FLOOR IS NOT DEFINED HERE. It is `districtSeparationFloor`
+  // in layout.mjs — the one source of truth shared with
+  // `rules/park-generation.md` §0.3 check 4 / §0.15 (20 u @48, 40 u @192,
+  // footprint-derived). This scorer reads the value layout.mjs already
+  // published as `districts.separationTarget`; the function is re-exported
+  // here only so a second scorer can print the same number.
+  // (It used to be `separationAtSize48: 20` scaled by size/48 → 80 u at 192,
+  // double the rulebook's mandate, and unreachable for a 3-district park
+  // inside the gate-reach band. See probe-layout-thresholds.mjs section 2.)
+  separationFloor: districtSeparationFloor,
   plotUtilisationFull: 0.7,
   plotUtilisationHalf: 0.45,
   // 1 pt — plaza / open-space variety
@@ -56,12 +67,22 @@ export function scoreLayout(m) {
   if (gr >= T.gridRegularityZero) notes.push(`monotonous lattice: gridRegularity ${gr} >= ${T.gridRegularityZero}`);
 
   // ---- 2 pts: district structure -----------------------------------------
+  // The scored test is POSITIVE — does the park achieve the §0.3 check 4 floor
+  // SOMEWHERE (its WIDEST pair of district centres)? The floor itself is a
+  // design MINIMUM for every adjacent pair, so a rule-following park cannot
+  // fail this; a park whose CLOSEST pair is under the floor gets a note, not a
+  // second deduction (the fine-grained cut can fragment one authored district
+  // into two clusters, and charging for that would punish having districts).
   const sepOk = m.districts.count >= T.districtsRequired && m.districts.maxSeparation >= m.districts.separationTarget;
   let pDistrict = sepOk ? 1 : m.districts.count >= 2 ? 0.5 : 0;
   const pu = m.plot.plotUtilisation;
   const pPlot = pu >= T.plotUtilisationFull ? 1 : pu >= T.plotUtilisationHalf ? 0.5 : 0;
   const districts = pDistrict + pPlot;
-  if (!sepOk) notes.push(`districts ${m.districts.count}, maxSeparation ${m.districts.maxSeparation} vs target ${m.districts.separationTarget}`);
+  if (!sepOk) notes.push(`districts ${m.districts.count}, maxSeparation ${m.districts.maxSeparation} vs floor ${m.districts.separationTarget} (cut ${m.districts.cutDistance})`);
+  else if (m.districts.count > 2 && m.districts.minSeparation < m.districts.separationTarget)
+    notes.push(
+      `ADVISORY (not scored): closest two district centres are ${m.districts.minSeparation} apart, under the ${m.districts.separationTarget} u §0.3 check-4 floor — those two read as one place`,
+    );
   if (pPlot < 1) notes.push(`plotUtilisation ${pu} (extent ${m.plot.pathExtentFraction}, occupancy ${m.plot.occupancyFraction}, quadrantSpread ${m.plot.quadrantSpread})`);
 
   // ---- 1 pt: plaza / open-space variety ----------------------------------

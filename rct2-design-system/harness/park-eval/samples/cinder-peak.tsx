@@ -169,8 +169,6 @@ export default function CinderPeak() {
           deck={[-2.4, 0]}
           queueTailNode={QUEUE_TAIL_NODE}
           queueDir={[1, 0]}
-          exit={[19.2, -1.2]}
-          exitDir={[1, 0]}
         />
 
         {/* Ashfall Fairground (west) — thrill flats */}

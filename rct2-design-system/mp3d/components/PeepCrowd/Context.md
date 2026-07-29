@@ -1,5 +1,9 @@
 # PeepCrowd
 
+**CANONICAL IMPORT — copy exactly:** `import { PeepCrowd } from './components/PeepCrowd';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 A milling plaza crowd of shared `buildPeep` guests animated entirely through the Guest POSE LAYER: standers who glance around and idle weight-shifters breathe on pose `idle` (no treadmill legs), wanderers stroll small loops on pose `walk` with the cadence solved from their ACTUAL ground speed (`cadenceForSpeed` — no foot skating), and dancers ride the pose `dance` sequencer on a shared ~2.2 Hz beat. Varied skin tones, outfits, hair and expressions, ~50 % female (hashed).
 
 Built with three.js on top of the shared `Stage` and `Guest.buildPeep`.

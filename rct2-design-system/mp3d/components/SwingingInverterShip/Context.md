@@ -1,5 +1,9 @@
 # SwingingInverterShip
 
+**CANONICAL IMPORT — copy exactly:** `import { SwingingInverterShip } from './components/SwingingInverterShip';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Inverter ship thrill ride: a single golden gondola rigidly bolted to a massive steel arm slung between two royal-blue lattice A-towers, with a heavy counterweight disc on the short end. Two facing rows of riders under over-shoulder restraints pump up through pendulum swings, roll through five full 360° inversions, then decay back to rest — one velocity-continuous deterministic cycle (26 s). Optional ColorKit `scheme` prop recolours towers/arm/gondola. Night: amber accent bulbs up the tower legs, pulsing strip lights down the arm, two real PointLights at the bearings + platform up-wash (nightK-gated). Modelled on the RCT2 Inverter Ship silhouette.
 
 Fully composable ride on the `<ConfigurableRide>` chassis (FerrisWheel pattern):

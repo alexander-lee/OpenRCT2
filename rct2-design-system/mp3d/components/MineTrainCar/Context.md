@@ -1,5 +1,9 @@
 # MineTrainCar
 
+**CANONICAL IMPORT — copy exactly:** `import { MineTrainCar } from './components/MineTrainCar';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Mine-train ORE CART modelled from the RCT2 mine-train vehicle sprite: a rough-sawn timber tub bound with iron straps, an open iron rim (never a lid), a dark interior well, two in-line bench seats with lumbar rolls and grab bars, an iron underframe and four flanged wheels. It is the vehicle `MineTrainCoaster` runs on its ore train.
 
 `buildMineTrainCart(t, variant?, scheme?, { riders? }) → THREE.Group` — origin on the WHEEL AXLE line (wheel bottoms at −0.15, so a spline runner's default `wheelOffset` 0.195 drops them exactly onto the kit's 0.045 rail tops). RCT2 uses distinct sprites per train position, so `variant` picks the dressing while tub, seats, riders and dimensions stay IDENTICAL (train spacing math never changes):

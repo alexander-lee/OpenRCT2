@@ -1,5 +1,9 @@
 # BobsleighCar — DEPRECATED / REMOVED FROM THE CATALOG
 
+**CANONICAL IMPORT — copy exactly:** `import { BobsleighCar } from './components/BobsleighCar';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 **Do not use.** BobsleighCar has been removed from the catalog. Nothing in the design system ever imported it: `<Bobsleigh>` models its own pod, and every spline / piece-composed bobsled course takes its vehicle from **SplineRideKit's `buildMiniSled`** (see `Park/pieces.tsx` — `<TrackRide profile="bobsled">`).
 
 **Replacement:** `<Bobsleigh>` for the whole ride, or `buildMiniSled(three)` from `components/SplineRideKit` for just the sled.

@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { UIDayNight } from '../UIDayNight';
+// split out for file size; re-exported so `components/Stage` stays the one
+// import surface. ALL the rationale + measurements live in darkLights.ts.
+import { createDarkLightCull } from './darkLights';
+
+export { createDarkLightCull } from './darkLights';
+export type { DarkLightCull } from './darkLights';
 
 // ---------------------------------------------------------------------------
 // Stage — shared three.js viewport for every 3D rig: renderer, orbit camera
@@ -346,6 +352,95 @@ export function mergedBoxes(three: typeof THREE, parts: MergedBoxSpec[], color: 
   return mesh;
 }
 
+/** one part of a `mergedParts` batch: any geometry + a full world matrix */
+export interface PartSpec {
+  geo: THREE.BufferGeometry;
+  matrix: THREE.Matrix4;
+  /** texture repeat for THIS part, baked into its UVs */
+  uv?: [number, number];
+}
+
+/**
+ * STATIC-GEOMETRY MERGE for NON-BOX parts — `mergedBoxes` above only takes
+ * boxes, but a world built out of hexagonal prisms, tapered blades, cylinders,
+ * tori or lathes needs the same trick. N same-material parts of ANY geometry
+ * collapse into ONE mesh (one draw call, one shadow draw). Source geometries
+ * are read, never mutated, so a single geometry (one prism, one pipe segment)
+ * can be reused at many matrices; pass `dispose` (default on) to drop the
+ * sources afterwards on the assumption they were built as per-call
+ * temporaries — pass `false` if a caller keeps its own reference to one of
+ * them (e.g. a shared geometry it wants to reuse again after this merge).
+ */
+export function mergedParts(three: typeof THREE, parts: PartSpec[], material: THREE.Material, dispose = true): THREE.Mesh {
+  const position: number[] = [];
+  const normal: number[] = [];
+  const uv: number[] = [];
+  const index: number[] = [];
+  const v = new three.Vector3();
+  const nv = new three.Vector3();
+  const nm = new three.Matrix3();
+  const seen = new Set<THREE.BufferGeometry>();
+  for (const p of parts) {
+    seen.add(p.geo);
+    nm.getNormalMatrix(p.matrix);
+    const pa = p.geo.getAttribute('position');
+    const na = p.geo.getAttribute('normal');
+    const ua = p.geo.getAttribute('uv');
+    const [rx, ry] = p.uv ?? [1, 1];
+    const base = position.length / 3;
+    for (let i = 0; i < pa.count; i += 1) {
+      v.fromBufferAttribute(pa as THREE.BufferAttribute, i).applyMatrix4(p.matrix);
+      position.push(v.x, v.y, v.z);
+      if (na) {
+        nv.fromBufferAttribute(na as THREE.BufferAttribute, i).applyMatrix3(nm).normalize();
+        normal.push(nv.x, nv.y, nv.z);
+      } else normal.push(0, 1, 0);
+      if (ua) uv.push(ua.getX(i) * rx, ua.getY(i) * ry);
+      else uv.push(0, 0);
+    }
+    const idx = p.geo.getIndex();
+    if (idx) for (let i = 0; i < idx.count; i += 1) index.push(base + idx.getX(i));
+    else for (let i = 0; i < pa.count; i += 1) index.push(base + i);
+  }
+  const geo = new three.BufferGeometry();
+  geo.setAttribute('position', new three.Float32BufferAttribute(position, 3));
+  geo.setAttribute('normal', new three.Float32BufferAttribute(normal, 3));
+  geo.setAttribute('uv', new three.Float32BufferAttribute(uv, 2));
+  geo.setIndex(index);
+  if (dispose) seen.forEach((g) => g.dispose());
+  const mesh = new three.Mesh(geo, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/** compose a matrix out of position / YXZ Euler rotation / (possibly
+ *  non-uniform) scale — the usual way to fill a `PartSpec.matrix` */
+export function mtx(
+  three: typeof THREE,
+  pos: [number, number, number],
+  rot: [number, number, number] = [0, 0, 0],
+  scl: [number, number, number] = [1, 1, 1],
+): THREE.Matrix4 {
+  return new three.Matrix4().compose(
+    new three.Vector3(...pos),
+    new three.Quaternion().setFromEuler(new three.Euler(rot[0], rot[1], rot[2], 'YXZ')),
+    new three.Vector3(...scl),
+  );
+}
+
+/** a +Y-axis geometry (cylinder/cone) laid from point `p` along `dir` for
+ *  length `len` — the other way to fill a `PartSpec.matrix`, for runs that
+ *  are defined by their endpoints rather than a fixed pose (pipes, chain,
+ *  rope, branches, coral). Orients +Y to `dir` and centers the geometry at
+ *  the run's midpoint, matching how CylinderGeometry is built around its
+ *  own local origin. */
+export function alongDir(three: typeof THREE, p: THREE.Vector3, dir: THREE.Vector3, len: number): THREE.Matrix4 {
+  const d = dir.clone().normalize();
+  const q = new three.Quaternion().setFromUnitVectors(new three.Vector3(0, 1, 0), d);
+  return new three.Matrix4().compose(p.clone().addScaledVector(d, len / 2), q, new three.Vector3(1, 1, 1));
+}
+
 /** normalized rect for an extra viewport — x/y from the canvas TOP-LEFT, all 0..1 */
 export interface StageViewportRect {
   x: number;
@@ -411,8 +506,27 @@ export interface StageApi {
   /**
    * Click-pick registration (rules/ui.md clickability): raycasts pointer
    * clicks (not drags) into the scene, walks UP the parent chain from the hit
-   * mesh and delivers the first ancestor whose `userData` carries a `rideRef`
-   * or `guestRef`. Returns an unsubscriber.
+   * mesh and delivers the first ancestor whose `userData` carries a `rideRef`,
+   * a `guestRef` or a `pickRef`. Returns an unsubscriber.
+   *
+   * `pickRef` is the GENERIC scenery hook (round 8): tag ANY component's root
+   * group with `group.userData.pickRef = () => …` and it becomes clickable
+   * exactly like a ride or a guest — same visibility test, same occlusion
+   * order, same viewport-inset handling — with no private raycast of its own.
+   * `<Park>` also CALLS `userData.pickRef(obj)` from its own onPick handler, so
+   * a scenery component inside a park needs no subscription at all; components
+   * that must also work under a bare `<ScenePreview>` subscribe here instead.
+   *
+   * WHAT CAN BE PICKED — the rule is "only what the renderer drew":
+   *  - every object on the hit's parent chain must be `visible` (three's
+   *    Raycaster ignores `visible`, so this is enforced here). Objects hidden
+   *    for a viewport pass (`addViewport({ hide })`) are unpickable in THAT
+   *    view too;
+   *  - a mesh flagged `userData.clickProxy` may be invisible itself — that is
+   *    the point of a fat invisible hit target — but it only wins the pick when
+   *    its owner is on screen AND no real geometry was hit at that pixel;
+   *  - a click inside a live viewport INSET raycasts with the inset's own
+   *    camera, so what you see in the framed monitor is what you pick.
    */
   onPick?(cb: (obj: THREE.Object3D) => void): () => void;
   /**
@@ -423,8 +537,14 @@ export interface StageApi {
    * rules/ui.md) from a HUD or a harness script to check a scene against the
    * budgets in SETUP.md §13; the Stage also logs a one-time warning when a
    * scene sits over budget.
+   *
+   * `lightsCulled` = lights the DARK-LIGHT CULL shed at intensity 0 (darkLights.ts).
+   * `fps` WAS WRONG TWICE until 2026-07: it averaged `1/dt` over the loop's
+   * CLAMPED dt, so (a) it could not read below 10 and (b) E[1/dt] is biased high
+   * anyway. A park at 1.4 real fps reported "13.6". It is now `1 / mean(dt)` on
+   * the UNCLAMPED delta, which is the real frame rate.
    */
-  stats?(): { drawCalls: number; triangles: number; fps: number; frameMs: number; lights: number };
+  stats?(): { drawCalls: number; triangles: number; fps: number; frameMs: number; lights: number; lightsCulled: number };
 }
 
 export type BuildFn = (three: typeof THREE, group: THREE.Group, api?: StageApi) => ((t: number) => void) | void;
@@ -449,6 +569,38 @@ const QUALITY = {
   medium: { pixelRatio: 1.5, antialias: true, shadowMap: 1024 },
   low: { pixelRatio: 1, antialias: false, shadowMap: 512 },
 } as const;
+
+/**
+ * PIXELATE — render at a fraction of the canvas resolution and upscale with
+ * NEAREST neighbour, for the chunky low-res look of the original RollerCoaster
+ * Tycoon (whose sprites were drawn at a fixed small size on a 256-colour
+ * palette).
+ *
+ * `pixelate` is the divisor: 2 = half resolution, 3 = third, 4 = quarter.
+ * 0 or undefined = off (unchanged).
+ *
+ * IT IS CHEAPER, NOT DEARER — and that is the opposite of most "filters".
+ * A post-process pixelation shader would ADD a full-screen pass on top of a
+ * full-resolution render. This does the honest thing instead: it renders FEWER
+ * PIXELS. Fragment work scales with the square of the divisor, so `pixelate: 3`
+ * shades about 1/9 of the fragments, and antialiasing is forced OFF because
+ * smoothing the edges is precisely what destroys the look.
+ *
+ * BUT IT WILL NOT FIX THIS APP'S BOTTLENECK. A CPU profile of a composed park
+ * measured **92 % of frame time in per-draw uniform uploads**
+ * (`uniformMatrix4fv` 78.9 % + `uniformMatrix3fv` 13.1 %) — i.e. the cost is
+ * the ~2,700 individual DRAW CALLS, which are paid once per mesh per frame
+ * regardless of how many pixels each covers. Lowering the resolution does not
+ * remove a single draw call. Expect it to help where fill rate genuinely binds
+ * — software GL, integrated GPUs, and high-DPI screens where `devicePixelRatio`
+ * 2 means 4x the fragments — and to change nothing on a park that is
+ * draw-call-bound. Batching meshes is the fix for that; this is a LOOK.
+ *
+ * The two pieces both matter: `setPixelRatio` shrinks the backing store, and
+ * `imageRendering: 'pixelated'` stops the browser smoothing it back to mush on
+ * upscale. Without the second you get a blurry picture, not a pixel-art one.
+ */
+export type StagePixelate = 0 | 2 | 3 | 4;
 
 /**
  * Walk up the parent chain to the nearest object carrying a `userData.nightK`
@@ -502,6 +654,10 @@ export interface StageProps {
   /** shared-rendering quality tier (default 'high' — previews stay
    *  pixel-identical). See StageQuality; <Park> forwards its own prop. */
   quality?: StageQuality;
+  /** render at 1/N resolution with NEAREST upscaling for the chunky low-res
+   *  RollerCoaster Tycoon look. See StagePixelate — it is CHEAPER than not
+   *  doing it, but it does not touch this app's draw-call bottleneck. */
+  pixelate?: StagePixelate;
 }
 
 export function Stage({
@@ -517,6 +673,7 @@ export function Stage({
   groundAt,
   fog = true,
   quality = 'high',
+  pixelate = 0,
 }: StageProps) {
   const ref = useRef<HTMLDivElement>(null);
   const buildRef = useRef(build);
@@ -534,12 +691,21 @@ export function Stage({
     let h = el.clientHeight || height;
 
     const q = QUALITY[quality] ?? QUALITY.high;
-    const renderer = new THREE.WebGLRenderer({ antialias: q.antialias, powerPreference: 'high-performance' });
+    const renderer = new THREE.WebGLRenderer({ antialias: pixelate ? false : q.antialias, powerPreference: 'high-performance' });
     // retina cap: >2x device pixels quadruple the fill cost for no visible
     // gain at park scale (same cap as the reference RC Park stage); lower
     // quality tiers cap tighter (see StageQuality)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pixelRatio));
+    // PIXELATE divides the backing-store resolution; antialias is already off
+    // for it at construction, because smoothing edges is what kills the look.
+    renderer.setPixelRatio(pixelate ? 1 / pixelate : Math.min(window.devicePixelRatio, q.pixelRatio));
     renderer.setSize(w, h);
+    if (pixelate) {
+      // the browser upscales the smaller backing store to the CSS size and
+      // SMOOTHS it by default — which gives a blurry picture, not a pixel-art
+      // one. Nearest-neighbour on the way back up is the whole effect.
+      const st = renderer.domElement.style as CSSStyleDeclaration & { imageRendering: string };
+      st.imageRendering = 'pixelated';
+    }
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // info is reset ONCE per rAF in the loop (not per render call) so
@@ -648,8 +814,11 @@ export function Stage({
     let camGroundLift = 0;
     let statDrawCalls = 0;
     let statTriangles = 0;
-    let statFps = 0;
+    let statDt = 0; // rolling mean FRAME TIME (s); fps is 1/this, see the loop
     let statFrameMs = 0;
+    // DARK-LIGHT CULL: -42% of the frame on DemoPark, identical picture.
+    // Why, how much, and the two safety rules: ./darkLights.ts
+    const darkCull = createDarkLightCull(scene);
     const api: StageApi = {
       scene,
       camera,
@@ -700,9 +869,10 @@ export function Stage({
         return {
           drawCalls: statDrawCalls,
           triangles: statTriangles,
-          fps: Math.round(statFps * 10) / 10,
+          fps: statDt > 0 ? Math.round((1 / statDt) * 10) / 10 : 0,
           frameMs: Math.round(statFrameMs * 100) / 100,
           lights,
+          lightsCulled: darkCull.culled(),
         };
       },
     };
@@ -751,6 +921,89 @@ export function Stage({
       py = e.clientY;
     };
     const raycaster = new THREE.Raycaster();
+    // ---- click-pick helpers ---------------------------------------------------
+    // A hit only counts if the renderer actually DREW it. three's Raycaster does
+    // NOT test `visible` (Raycaster.js `intersect()` only tests layers), so every
+    // invisible object in the scene is a full-price click target: LOD-culled ride
+    // details, and — the big one — guests the sim has hidden. GameManager keeps a
+    // guest's rig in the scene and only flips `visible = false` while they are
+    // inside a hut/stall/restroom, riding, not yet through the gate, or already
+    // walked OUT of the park (`gone`). Those invisible rigs still carry
+    // `guestRef` AND a fat click proxy, so they intercepted clicks aimed at the
+    // visible guest behind them — a `gone` pick makes <Park> close the window
+    // again immediately, i.e. "clicking the guest does nothing".
+    // A registered CLICK PROXY (`userData.clickProxy`) may be invisible ITSELF —
+    // that is the whole point of it — but its owner still has to be on screen.
+    const isDrawn = (hit: THREE.Object3D, hide?: THREE.Object3D[]) => {
+      let o: THREE.Object3D | null = hit;
+      let self = true;
+      while (o) {
+        if (!o.visible && !(self && (o.userData as { clickProxy?: boolean }).clickProxy)) return false;
+        if (hide && hide.indexOf(o) >= 0) return false; // hidden for THIS view's pass
+        self = false;
+        o = o.parent;
+      }
+      return true;
+    };
+    // A CARRIER is any object that opted into click-pick via userData. Three
+    // flavours, all treated identically by the raycast passes below:
+    //   rideRef  — a ride handle (<Park> opens a RideViewer)
+    //   guestRef — a live guest record accessor (<Park> opens a GuestInfo)
+    //   pickRef  — GENERIC scenery clickability (round 8): any component can
+    //              tag its own root group and get the SAME occlusion-correct,
+    //              visibility-tested, inset-aware pick the rides and guests get,
+    //              instead of bolting a private raycast onto the canvas (which
+    //              is what <MagicMirror> had to do, and which re-derived none of
+    //              the traps this path already handles).
+    const carrierOf = (hit: THREE.Object3D): THREE.Object3D | null => {
+      let o: THREE.Object3D | null = hit;
+      while (o) {
+        const ud = o.userData as { rideRef?: unknown; guestRef?: unknown; pickRef?: unknown };
+        if (ud.rideRef !== undefined || ud.guestRef !== undefined || ud.pickRef !== undefined) return o;
+        o = o.parent;
+      }
+      return null;
+    };
+    const isProxy = (o: THREE.Object3D) => !!(o.userData as { clickProxy?: boolean }).clickProxy;
+    interface PickHit { o: THREE.Object3D; d: number }
+    /** PASS 1 — nearest drawn carrier along the ray, REAL GEOMETRY only */
+    const castBodies = (cam: THREE.Camera, ndc: THREE.Vector2, hide?: THREE.Object3D[]): PickHit | null => {
+      raycaster.setFromCamera(ndc, cam);
+      for (const hit of raycaster.intersectObjects(scene.children, true)) {
+        if (isProxy(hit.object) || !isDrawn(hit.object, hide)) continue;
+        const c = carrierOf(hit.object);
+        if (c) return { o: c, d: hit.distance };
+      }
+      return null;
+    };
+    const _pv = new THREE.Vector3();
+    /** PASS 2 — the fat invisible CLICK PROXIES, resolved in SCREEN SPACE. A
+     *  proxy is much wider than the body it wraps (a 0.72-wide column around a
+     *  ~0.2-wide peep), so on a busy path several overlap the cursor at almost
+     *  the same depth and taking the nearest column along the ray just returned
+     *  a bystander. A proxy only matters when the cursor is NOT on real geometry
+     *  (empty ground, or the gap between thin limbs), so depth order is
+     *  meaningless here — snap to the carrier whose own centre is NEAREST THE
+     *  CURSOR on screen. The returned `d` is that proxy's ray distance, used
+     *  only to compare against a body hit in `castAt`. */
+    const castProxies = (cam: THREE.Camera, ndc: THREE.Vector2, hide?: THREE.Object3D[]): PickHit | null => {
+      raycaster.setFromCamera(ndc, cam);
+      let best: PickHit | null = null;
+      let bestScreen = Infinity;
+      for (const hit of raycaster.intersectObjects(scene.children, true)) {
+        if (!isProxy(hit.object) || !isDrawn(hit.object, hide)) continue;
+        const c = carrierOf(hit.object);
+        if (!c) continue;
+        c.getWorldPosition(_pv);
+        _pv.project(cam);
+        const s = Math.hypot(_pv.x - ndc.x, _pv.y - ndc.y);
+        if (s < bestScreen) {
+          bestScreen = s;
+          best = { o: c, d: hit.distance };
+        }
+      }
+      return best;
+    };
     const up = (e: PointerEvent) => {
       dragging = false;
       dom.style.cursor = 'grab';
@@ -764,18 +1017,53 @@ export function Stage({
       // 3-7px between down and up — under 8px is still a click, not an orbit.
       if (pickCbs.length && Math.hypot(e.clientX - downX, e.clientY - downY) < 8) {
         const r = dom.getBoundingClientRect();
-        const castAt = (cx: number, cy: number): THREE.Object3D | null => {
-          const ndc = new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
-          raycaster.setFromCamera(ndc, camera);
-          for (const hit of raycaster.intersectObjects(scene.children, true)) {
-            let o: THREE.Object3D | null = hit.object;
-            while (o) {
-              const ud = o.userData as { rideRef?: unknown; guestRef?: unknown };
-              if (ud.rideRef !== undefined || ud.guestRef !== undefined) return o;
-              o = o.parent;
-            }
+        // WHICH VIEW was clicked? The extra viewport insets render OVER the main
+        // view (last registered on top, and their ViewportFrame chrome is
+        // pointer-events:none), so a click inside an inset rect must raycast
+        // with THAT camera — casting the main camera through an inset selects
+        // whatever the main view has behind the inset image, which reads as
+        // "clicking the guest I can see does nothing".
+        interface PickView { cam: THREE.Camera; hide?: THREE.Object3D[]; x0: number; y0: number; w: number; h: number }
+        const viewAt = (cx: number, cy: number): PickView => {
+          for (let i = viewports.length - 1; i >= 0; i -= 1) {
+            const v = viewports[i];
+            const x0 = r.left + v.rect.x * r.width;
+            const y0 = r.top + v.rect.y * r.height;
+            const vw = v.rect.w * r.width;
+            const vh = v.rect.h * r.height;
+            if (cx >= x0 && cx <= x0 + vw && cy >= y0 && cy <= y0 + vh)
+              return { cam: v.cam, hide: v.hide, x0, y0, w: vw, h: vh };
           }
-          return null;
+          return { cam: camera, x0: r.left, y0: r.top, w: r.width, h: r.height };
+        };
+        const castAt = (cx: number, cy: number): THREE.Object3D | null => {
+          const v = viewAt(cx, cy);
+          const ndc = new THREE.Vector2(((cx - v.x0) / v.w) * 2 - 1, -((cy - v.y0) / v.h) * 2 + 1);
+          // REAL GEOMETRY FIRST, click proxies only as the fallback: the proxies
+          // are deliberately far fatter than a peep, so on any busy path a
+          // neighbour's proxy sits nearer to the camera than the guest actually
+          // under the cursor and used to steal the click. Exact silhouette wins;
+          // the proxy still catches the clicks that slip between thin limbs.
+          const body = castBodies(v.cam, ndc, v.hide);
+          const proxy = castProxies(v.cam, ndc, v.hide);
+          if (!body) return proxy?.o ?? null;
+          // ...with ONE exception: a guest standing IN FRONT of ride geometry (a
+          // queue rail, a coaster leg, the ride's own hut — guests spend their
+          // lives right next to those) keeps the click when their proxy is the
+          // nearer surface. You were pointing at the peep, not at the ride
+          // behind them. Guest-vs-guest ordering stays strictly silhouette-first.
+          // Round 8: SCENERY carriers (`pickRef`) join rides on the losing side
+          // of this rule for the same reason — guests stand right up against a
+          // mirror or a piano, and the peep in front of it must keep the click.
+          const bud = body.o.userData as { rideRef?: unknown; pickRef?: unknown };
+          if (
+            proxy &&
+            proxy.d < body.d &&
+            (bud.rideRef !== undefined || bud.pickRef !== undefined) &&
+            (proxy.o.userData as { guestRef?: unknown }).guestRef !== undefined
+          )
+            return proxy.o;
+          return body.o;
         };
         // screen-space tolerance: guests are small moving targets — when the
         // exact ray misses every carrier, retry a deterministic ±6px jitter
@@ -863,10 +1151,14 @@ export function Stage({
     const loop = () => {
       const frameStart = performance.now();
       const t = clock.getElapsedTime();
-      const dt = Math.min(Math.max(t - lastT, 0), 0.1);
+      // TWO deltas: `dtRaw` is the truth, `dt` is clamped so one slow frame
+      // cannot fling the animation forward. fps averages the frame TIME and
+      // inverts it — never mean(1/dt), which is biased high. StageApi.stats doc.
+      const dtRaw = Math.max(t - lastT, 0);
+      const dt = Math.min(dtRaw, 0.1);
       lastT = t;
       renderer.info.reset(); // whole-frame totals for api.stats()
-      if (dt > 0) statFps += (1 / dt - statFps) * 0.05; // rolling average
+      if (dtRaw > 0) statDt += (dtRaw - statDt) * 0.05; // rolling mean frame time
       if (shadowFreezeAt !== Infinity && --shadowFreezeAt <= 0) {
         renderer.shadowMap.autoUpdate = false; // static scene: depth map is final
         shadowFreezeAt = Infinity;
@@ -926,6 +1218,7 @@ export function Stage({
       if (scene.fog) (scene.fog as THREE.Fog).color = bgNow;
       group.userData.nightK = nightK; // components read this via nightKOf()
       if (update) update(t);
+      darkCull.tick(dt); // after the updaters set intensity, before the render
       // main view first, then registered extra viewports (scissor multi-view)
       renderer.setScissorTest(true);
       renderer.setViewport(0, 0, w, h);

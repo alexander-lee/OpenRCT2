@@ -1,5 +1,9 @@
 # GuestThoughts
 
+**CANONICAL IMPORT — copy exactly:** `import { GuestThoughts } from './components/GuestThoughts';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 The RCT2 **Guest List window's SUMMARISED THOUGHTS view** on `UIWindow`
 chrome: every in-park guest's freshest thought is grouped into one row —
 a strip of up to four small pixel emotion faces (`UIIcons`, via

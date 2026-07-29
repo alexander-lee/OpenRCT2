@@ -38,7 +38,7 @@ const bundlePath = path.join(HARNESS, 'out', '_probe-seed.bundle.mjs');
 fs.writeFileSync(bundlePath, res.outputFiles[0].text);
 const mod = await import(bundlePath);
 
-const [, , seedArg, climate = 'temperate', sizeArg = '48'] = process.argv;
+const [, , seedArg, climate = 'temperate', sizeArg = '192'] = process.argv;
 const seed = Number(seedArg);
 const size = Number(sizeArg);
 const keepDry = JSON.parse(process.env.KEEPDRY || 'null');
@@ -46,9 +46,19 @@ const coasterPts = JSON.parse(process.env.COASTERPTS || 'null');
 const guards = keepDry || coasterPts ? { ...(keepDry ? { keepDry } : {}), ...(coasterPts ? { coasterPts } : {}) } : undefined;
 const comp = mod.parkComposition(THREE, seed, size, climate, guards);
 if (guards) console.log(`  (GUARDED probe: ${keepDry ? keepDry.length : 0} keepDry cells${coasterPts ? ', coasterPts' : ''})`);
+// BUILD FROM comp.landform (wave 8): the base heightfield is a per-seed
+// LANDFORM ARCHETYPE now, not the old TERRAIN_BASE constant — probing against
+// amplitude 0.38 / scale 0.52·S reported ground heights the park never has.
+// Segment rule mirrors <Terrain>'s own segOf so heightAt matches the mesh.
+const lf = comp.landform;
+const segOf = (sz) => Math.min(Math.round(sz * 6.9), Math.max(220, Math.round(sz / 0.45)));
 const terrain = mod.buildTerrain(THREE, {
-  size, seed: comp.terrainSeed, amplitude: 0.38, scale: size * 0.52, waterLevel: mod.WATER_LEVEL,
-  peaks: [...comp.peaks, ...comp.clampPeaks], basins: [...comp.basins, ...comp.clampBasins], firmShore: true,
+  size, seg: segOf(size), seed: comp.terrainSeed,
+  amplitude: lf.amplitude, scale: lf.scale, octaves: lf.octaves, roughness: lf.roughness,
+  reliefBias: lf.reliefBias, flatSpots: lf.flatSpots,
+  waterLevel: mod.WATER_LEVEL,
+  peaks: [...comp.peaks, ...comp.clampPeaks], basins: [...comp.basins, ...comp.clampBasins],
+  firmShore: true, edgeSkirt: false,
 });
 const wl = mod.WATER_LEVEL;
 console.log(`seed ${seed} ${climate} size ${size}: waterKind ${comp.waterKind} centre [${comp.waterCentre.map((v) => v.toFixed(1))}]`);

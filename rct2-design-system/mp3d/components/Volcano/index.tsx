@@ -33,11 +33,20 @@ import type { ComposableBuilt, ParkContextValue } from '../Park';
 //     daylight too — `nightKOf` lerps the emissive multiplier between a
 //     daylight value and a night value (never to zero).
 //
-// Effects are deterministic and budgeted: 3 ParticleKit emitters (196 particle
-// capacity total — plume, embers, heat haze) and exactly ONE real PointLight,
-// at the vent. Everything else is emissive material. All textures are
-// procedural canvases built the way Stage's `drawTexture` does; hashed sines
-// only, no Math.random / Date.now.
+//   * PERIODIC ERUPTION: on top of the creeping idle state the cone runs a
+//     `eruptEvery`-second cycle (default 120 s, 0 = never) — a build-up
+//     (thickening smoke, brightening vent, a faint tremor), a violent blast
+//     (lava bombs on ballistic arcs, a tall ash column, an ember spray, an
+//     expanding base-surge ring, a light flare) and a long decay back to idle.
+//     Driven entirely off ABSOLUTE time with a seed-hashed phase offset, so it
+//     is deterministic and two volcanoes never erupt in lockstep.
+//
+// Effects are deterministic and budgeted: 5 ParticleKit emitters (298 particle
+// capacity total — plume, embers, heat haze, eruption ash column, lava bombs)
+// and at most TWO real PointLights (the vent + an eruption flash that only
+// exists when the volcano can erupt). Everything else is emissive material.
+// All textures are procedural canvases built the way Stage's `drawTexture`
+// does; hashed sines only, no Math.random / Date.now.
 // ---------------------------------------------------------------------------
 
 // ---- deterministic hashes --------------------------------------------------
@@ -46,6 +55,30 @@ const hash01 = (n: number) => {
   return s - Math.floor(s);
 };
 const hash2 = (a: number, b: number) => hash01(a * 37.19 + b * 91.73 + 3.11);
+
+// ---------------------------------------------------------------------------
+// THE ERUPTION CYCLE (see `eruptEvery`). One period is
+//
+//   … idle … | BUILD-UP (6 s) | BLAST (2.8 s) | --- TAIL / DECAY (12.2 s) --- |
+//                              ^ onset, phase s = 0
+//
+// so a default 120 s cycle is ~21 s of event and ~99 s of the calm volcano.
+// Every window is scaled by W = min(1, period/40) so that a deliberately SHORT
+// period (a demo/test preview at 20 s) still returns to a real idle state
+// instead of erupting continuously; at the 120 s default W = 1 exactly.
+// ---------------------------------------------------------------------------
+const BUILD_T = 6.0; // build-up length, seconds (before the onset)
+const BLAST_T = 2.8; // full-strength blast, seconds (after the onset)
+const TAIL_T = 12.2; // decay from full strength back to idle, seconds
+const RING_T = 2.6; // life of the expanding base-surge ring, seconds
+/** discrete blast pulses: [seconds after onset, lava bombs, embers, ash puffs] */
+const PULSES: [number, number, number, number][] = [
+  [0.0, 34, 30, 22],
+  [0.85, 16, 13, 9],
+  [1.9, 12, 10, 7],
+  [3.2, 9, 8, 5],
+  [4.7, 7, 6, 4],
+];
 
 // ---------------------------------------------------------------------------
 // PROCEDURAL CRUST FIELD (the crack network — the whole illusion)
@@ -610,6 +643,14 @@ export interface VolcanoOpts {
   activity?: number;
   /** crater plume + ember sparks (default true) */
   plume?: boolean;
+  /**
+   * seconds between eruptions (default 120; `0` = never erupts, just the calm
+   * idle volcano). Each instance gets a seed/size-hashed phase offset, so two
+   * volcanoes in one park never erupt in lockstep. Periods under ~40 s squeeze
+   * the build-up/decay windows proportionally so short demo cycles still settle
+   * back to idle. Needs `activity > 0.02` — a dormant cone never erupts.
+   */
+  eruptEvery?: number;
 }
 
 export interface VolcanoBuilt extends ComposableBuilt {
@@ -635,6 +676,19 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
   const seed = opts.seed ?? 1;
   const act = Math.max(0, opts.activity ?? 1);
   const wantPlume = (opts.plume ?? true) && act > 0.02;
+  const period = Math.max(0, opts.eruptEvery ?? 120);
+  /** can this cone erupt at all? (dormant/extinct cones never do) */
+  const canErupt = period > 0 && act > 0.02;
+  // window squeeze for short demo periods — 1 at the 120 s default
+  const EW = Math.min(1, period / 40) || 1;
+  const BUILD = BUILD_T * EW;
+  const BLAST = BLAST_T * EW;
+  const TAIL = TAIL_T * EW;
+  const RINGL = RING_T * EW;
+  // seed/size-hashed phase offset: two volcanoes in one park desync, and the
+  // SAME volcano always erupts at the same absolute times (no build counter,
+  // so a double build hashes identically)
+  const phase0 = hash01(seed * 7.13 + R * 1.37 + H * 2.71 + 2.9) * (period || 1);
   const S = R / 2.75; // everything below is authored at R = 2.75 and scaled
   const rRim = 0.8 * S;
   const craterDepth = 0.52 * S;
@@ -643,6 +697,13 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
 
   const group = new t.Group();
   group.name = 'volcano';
+  // every SOLID mesh lives in this inner group so the pre-eruption tremor can
+  // shudder the whole cone by a couple of centimetres without fighting the
+  // composable transform on `group` (lights + particles stay on `group`, so the
+  // airborne ash never jitters with the rock)
+  const body = new t.Group();
+  body.name = 'volcano-body';
+  group.add(body);
   const geos: THREE.BufferGeometry[] = [];
   const mats: THREE.Material[] = [];
   const texes: THREE.Texture[] = [];
@@ -684,7 +745,7 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
   const flanks = new t.Mesh(flankGeo, flankMat);
   flanks.castShadow = true;
   flanks.receiveShadow = true;
-  group.add(flanks);
+  body.add(flanks);
   geos.push(flankGeo);
   mats.push(flankMat);
 
@@ -711,7 +772,7 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
   const wallMat = lavaMat(t, 0.66, wallCrust, wallCrack);
   const wall = new t.Mesh(wallGeo, wallMat);
   wall.receiveShadow = true;
-  group.add(wall);
+  body.add(wall);
   geos.push(wallGeo);
   mats.push(wallMat);
 
@@ -726,7 +787,7 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
   const lakeMat = lavaMat(t, 0.05, lakeCrust, lakeCrack);
   const lake = new t.Mesh(lakeGeo, lakeMat);
   lake.position.y = shape.floorY + 0.012 * S;
-  group.add(lake);
+  body.add(lake);
   geos.push(lakeGeo);
   mats.push(lakeMat);
 
@@ -741,7 +802,7 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
     crawlTex.push(fCrust, fCrack);
     const pts = flowPath(shape, spec, fi === 2 ? 22 : 34);
     const rib = buildRibbon(t, pts, spec.segs, spec.heat0, spec.heat1, fCrust, fCrack, TS);
-    group.add(rib.group);
+    body.add(rib.group);
     rib.segs.forEach((sg) => {
       geos.push(sg.mesh.geometry);
       mats.push(sg.mat);
@@ -764,7 +825,7 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
   const poolMat = lavaMat(t, 0.42, poolCrust, poolCrack);
   const pool = new t.Mesh(poolGeo, poolMat);
   pool.position.set(poolC[0], 0.035 * S, poolC[1]);
-  group.add(pool);
+  body.add(pool);
   geos.push(poolGeo);
   mats.push(poolMat);
 
@@ -793,7 +854,7 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
   texes.push(fisCrust, fisCrack);
   crawlTex.push(fisCrust, fisCrack);
   const fis = buildRibbon(t, fisPts, 4, 0.2, 0.72, fisCrust, fisCrack, TS * 1.6);
-  group.add(fis.group);
+  body.add(fis.group);
   fis.segs.forEach((sg) => {
     geos.push(sg.mesh.geometry);
     mats.push(sg.mat);
@@ -846,28 +907,49 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
     }
   }
   const blocks = mergedBoxes(t, blockParts, 0x272220, { tex: 'asphalt', repeat: [2, 2], rough: 1, bump: 0.05, flat: true });
-  group.add(blocks);
+  body.add(blocks);
   geos.push(blocks.geometry);
   mats.push(blocks.material as THREE.Material);
   const rubble = mergedBoxes(t, rubbleParts, 0x1e1a18, { tex: 'asphalt', repeat: [1, 1], rough: 1, bump: 0.04, flat: true });
   rubble.userData.lodDetail = true; // fine cinder litter: close-up only
-  group.add(rubble);
+  body.add(rubble);
   geos.push(rubble.geometry);
   mats.push(rubble.material as THREE.Material);
 
-  // ---- ONE real light, at the vent ----------------------------------------
+  // ---- real lights: the vent, plus an eruption flash ----------------------
+  // Budget: TWO PointLights max (the DS cap for this component is 4). The flash
+  // is only allocated when the cone can actually erupt, so a dormant/extinct or
+  // `eruptEvery={0}` volcano still costs exactly one light.
   const vent = new t.PointLight(0xff6a1e, 0, R * 2.3, 2);
   vent.position.set(0, shape.floorY + 0.3 * S, 0);
   group.add(vent);
+  const VENT_RANGE = R * 2.3;
+  let flash: THREE.PointLight | null = null;
+  if (canErupt) {
+    // sits just above the rim so the blast lights the OUTER flanks from above —
+    // that top-down flare is what sells the explosion in DAYLIGHT, where the
+    // vent light alone is buried inside the crater
+    flash = new t.PointLight(0xff7a22, 0, R * 3.4, 2);
+    flash.position.set(0, H + 0.35 * S, 0);
+    group.add(flash);
+  }
 
-  // ---- effects: plume, embers, heat haze (196 particles max) ---------------
+  // ---- effects: 298 particle capacity, 5 emitters --------------------------
+  //   plume 128 + embers 48 + haze 22 (idle, 198) and, only when the cone can
+  //   erupt, ash 52 + bombs 48 (100) → 298 ≤ the 300/component allowance. The
+  //   idle three were rebalanced DOWN from 150/44/56 to make room; the blast
+  //   also `burst()`s the existing ring buffers, which costs no capacity.
   const emitters: ReturnType<typeof buildEmitter>[] = [];
   let plume: ReturnType<typeof buildEmitter> | null = null;
   let embers: ReturnType<typeof buildEmitter> | null = null;
+  let ash: ReturnType<typeof buildEmitter> | null = null;
+  let bombs: ReturnType<typeof buildEmitter> | null = null;
+  const PLUME_RATE = 25 * act;
+  const EMBER_RATE = 7 * act;
   if (wantPlume) {
     plume = buildEmitter(t, {
-      max: 150,
-      rate: 28 * act,
+      max: 128,
+      rate: PLUME_RATE,
       life: 5.0,
       lifeVar: 1.3,
       velocity: [0.12 * S, 0.6 * S, 0.05 * S], // a light drift off the summit
@@ -880,12 +962,12 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
       sizeEnd: 0.95 * S,
       color: 0x6b6560,
       colorEnd: 0xada7a1,
-      opacity: 0.7,
+      opacity: 0.72,
     });
     plume.setOrigin(0, shape.floorY + 0.16 * S, 0);
     embers = buildEmitter(t, {
-      max: 44,
-      rate: 7 * act,
+      max: 48,
+      rate: EMBER_RATE,
       life: 2.4,
       lifeVar: 0.9,
       velocity: [0, 2.1 * S, 0],
@@ -900,10 +982,66 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
     });
     embers.setOrigin(0, shape.floorY + 0.22 * S, 0);
     emitters.push(plume, embers);
+    if (canErupt) {
+      // ERUPTION ASH COLUMN: rate 0 at idle. Far faster and far longer-lived
+      // than the idle wisp (≈ 4.6 u of rise vs ≈ 1.8), with huge soft billows —
+      // 52 particles is plenty because each one grows to ~1.6 u across. Rise is
+      // deliberately capped around 2× the cone height: any taller and the plume
+      // walks straight out of frame in a normal park shot.
+      ash = buildEmitter(t, {
+        max: 52,
+        rate: 0,
+        life: 3.2,
+        lifeVar: 0.7,
+        velocity: [0.16 * S, 1.85 * S, 0.06 * S],
+        spread: 0.56 * S,
+        gravity: -0.05, // still buoyant, so the column keeps climbing
+        // HUGE and fairly opaque: 52 slots only read as a solid ash column if
+        // each billow is big enough to overlap its neighbours. Note the BIRTH
+        // size does most of the work — a particle's alpha has faded to almost
+        // nothing by the time it reaches sizeEnd.
+        size: 1.25 * S,
+        sizeEnd: 3.4 * S,
+        color: 0x3a342e, // a DARK ash cloud at the throat, greying as it cools
+        colorEnd: 0xb3aba3,
+        opacity: 0.85,
+      });
+      // launches at the RIM, not the crater floor: from the DS's high 3/4 camera
+      // anything spawned inside the bowl is half-hidden by the near rim
+      ash.setOrigin(0, H + 0.02 * S, 0);
+      // LAVA BOMBS: the money shot. Big bright ejecta on genuine BALLISTIC
+      // arcs — vy 3.3…7.1 u/s against gravity 6.0 puts the apex 0.9–4.2 u above
+      // the rim, and the ±1.9 u/s lateral spread throws them clear out over the
+      // flanks (up to ~3.8 u, past the cone's own base radius). Deliberately FAT
+      // (0.32 u) and additive so they read as glowing rock in broad daylight,
+      // not as pinprick sparks.
+      bombs = buildEmitter(t, {
+        max: 48,
+        rate: 0,
+        life: 2.6,
+        lifeVar: 0.7,
+        velocity: [0, 5.2 * S, 0],
+        spread: 1.9 * S,
+        gravity: 6.0,
+        // NOTE three's points shader omits the tan(fov/2) term, so a `size` of
+        // 0.62 draws ~11 px at a normal preview distance — chunky glowing rock
+        // rather than the pinprick the number suggests.
+        size: 0.7 * S,
+        sizeEnd: 0.28 * S,
+        // NORMAL blending, unlike the embers: additive over bright grass washes
+        // out to white sparkles, and a bomb is an opaque lump of glowing rock —
+        // solid orange reads as ejecta, additive reads as glitter.
+        color: 0xffc247, // incandescent orange out of the throat…
+        colorEnd: 0xa81d02, // …crusting over deep red as it falls
+        opacity: 1,
+      });
+      bombs.setOrigin(0, H + 0.06 * S, 0);
+      emitters.push(ash, bombs);
+    }
   }
   // heat haze off the base pool: not smoke, just shimmering hot air + dust
   const haze = buildEmitter(t, {
-    max: 56,
+    max: 22,
     rate: 7 * Math.max(0.15, act),
     life: 2.8,
     lifeVar: 0.7,
@@ -920,30 +1058,158 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
   emitters.push(haze);
   emitters.forEach((e) => group.add(e.points));
 
+  // ---- the expanding BASE-SURGE RING over the crater rim -------------------
+  // A collar of ash blasted sideways off the summit, expanding from the rim down
+  // to the base. One unlit mesh, not particles: zero particle budget, and
+  // MeshBasicMaterial means it reads in daylight as well as at night.
+  // It is a shallow CONICAL skirt, not a flat ring — a flat ring sinks straight
+  // into the flank as it grows (the first version was invisible for exactly that
+  // reason). Sloped at ~1.2 (the flank is ~1.3) and re-seated each frame onto
+  // the cone profile at its own inner radius, it hugs the slope all the way down.
+  const RING_R0 = rRim * 1.0;
+  const RING_R1 = rRim * 1.2; // a NARROW band: a wide one paints over the flank
+  const RING_SC = (R * 1.02) / RING_R1; // fully expanded = out past the cone base
+  let ring: THREE.Mesh | null = null;
+  let ringMat: THREE.MeshBasicMaterial | null = null;
+  if (canErupt) {
+    const ringGeo = radialGrid(
+      t,
+      RING_R0,
+      RING_R1,
+      2,
+      44,
+      (r) => -(r - RING_R0) * 1.15,
+      () => [0, 0],
+    );
+    ringMat = new t.MeshBasicMaterial({
+      color: 0xdcd2c8,
+      transparent: true,
+      opacity: 0,
+      side: t.DoubleSide,
+      depthWrite: false,
+    });
+    ring = new t.Mesh(ringGeo, ringMat);
+    ring.visible = false;
+    ring.renderOrder = 2;
+    group.add(ring);
+    geos.push(ringGeo);
+    mats.push(ringMat);
+  }
+
   // ---- the updater: slow. Lava creeps. ------------------------------------
   // DAY-AND-NIGHT GLOW: lava is not a lamp — it is incandescent by daylight
   // too. nightKOf only lerps between a daylight multiplier and a (stronger)
   // night one; it never gates the glow to zero.
   const GLOW_DAY = 1.0;
   const GLOW_NIGHT = 1.85;
+  // eruption bookkeeping: `lastTe` is the previous frame's cycle time, used to
+  // catch the discrete PULSES exactly once each as they are crossed. Everything
+  // CONTINUOUS (env, bld, rates, glow, light, ring, tremor) is a pure function
+  // of absolute time — feed the same time and you get the same state back.
+  let lastTe: number | null = null;
   const update = (time: number) => {
     const nk = nightKOf(group);
-    const glow = (GLOW_DAY + (GLOW_NIGHT - GLOW_DAY) * nk) * act;
+
+    // ---- where are we in the eruption cycle? -------------------------------
+    let env = 0; // 0 = idle, 1 = full blast (drives everything violent)
+    let bld = 0; // 0 → 1 over the build-up window before the onset
+    let s = -1; // seconds since the onset (negative = not erupting yet)
+    if (canErupt) {
+      const te = time + phase0;
+      s = te - Math.floor(te / period) * period; // 0 … period, onset at 0
+      if (s < BLAST) env = 1;
+      else {
+        const k = (s - BLAST) / TAIL;
+        env = k >= 1 ? 0 : (1 - k) ** 1.8; // long ease back to the idle state
+      }
+      if (s > period - BUILD) bld = ((s - (period - BUILD)) / BUILD) ** 2;
+      // discrete pulses: fire each scheduled instant exactly once as the frame
+      // crosses it. The gap guard skips a stalled tab / first frame instead of
+      // dumping every missed pulse at once.
+      if (lastTe != null && te > lastTe && te - lastTe < 0.5) {
+        const n0 = Math.floor(lastTe / period);
+        const n1 = Math.floor(te / period);
+        for (let n = n0; n <= n1; n += 1) {
+          for (const [at, nb, ne, na] of PULSES) {
+            const abs = n * period + at * EW;
+            if (abs > lastTe && abs <= te) {
+              bombs?.burst(nb);
+              embers?.burst(ne);
+              ash?.burst(na);
+              plume?.burst(Math.round(na * 0.8));
+            }
+          }
+        }
+      }
+      lastTe = te;
+    }
+
+    // ---- the idle motion, boosted by the cycle -----------------------------
     // one slow breath of the whole crack network (~15 s period)
     const breathe = 1 + 0.11 * Math.sin(time * 0.42 + 0.7);
-    for (const s of flowSegs) {
+    // the vent region runs hotter as pressure builds and much hotter mid-blast
+    const surge = 1 + 0.4 * bld + 1.5 * env;
+    const glow = (GLOW_DAY + (GLOW_NIGHT - GLOW_DAY) * nk) * act;
+    for (const sg of flowSegs) {
       // a slow surge travelling DOWN the flow — phase offset by position
-      const wave = 1 + 0.26 * Math.sin(time * 0.31 - s.u * 3.4);
-      s.mat.emissiveIntensity = s.heat * glow * breathe * wave;
+      const wave = 1 + 0.26 * Math.sin(time * 0.31 - sg.u * 3.4);
+      // the eruption pushes fresh lava, so the HOT end of each flow brightens
+      // most and the cooled toes barely notice
+      const fresh = 1 + (0.3 * bld + 1.1 * env) * (1 - sg.u) ** 2;
+      sg.mat.emissiveIntensity = sg.heat * glow * breathe * wave * fresh;
     }
-    lakeMat.emissiveIntensity = 1.25 * glow * (1 + 0.14 * Math.sin(time * 0.37));
-    wallMat.emissiveIntensity = 0.42 * glow * breathe;
+    lakeMat.emissiveIntensity = 1.25 * glow * (1 + 0.14 * Math.sin(time * 0.37)) * surge;
+    wallMat.emissiveIntensity = 0.42 * glow * breathe * surge;
     // the crust pattern crawls downhill at ~0.02 u/s (v is arc length)
     const crawl = -time * 0.02;
     for (const tx of crawlTex) tx.offset.y = crawl;
     lakeCrust.offset.x = time * 0.008;
     lakeCrack.offset.x = time * 0.008;
-    vent.intensity = act * (0.5 + 1.9 * nk) * breathe;
+
+    // ---- the light flare ---------------------------------------------------
+    // Lava glows BY DAY here, so the flare has to read in daylight: the day
+    // floor is only 0.5, the blast takes it to ~8 (and the rim flash to ~9),
+    // and the vent's range grows so the flash spills out over the flanks.
+    const flick = 1 + 0.09 * Math.sin(time * 9.7 + phase0) + 0.05 * Math.sin(time * 17.3 + 1.9);
+    vent.intensity = act * ((0.5 + 1.9 * nk) * breathe * (1 + 1.1 * bld) + (7.5 + 5 * nk) * env * flick);
+    vent.distance = VENT_RANGE * (1 + 0.55 * env);
+    if (flash) {
+      flash.intensity = act * (9 + 6 * nk) * env * flick;
+      flash.visible = flash.intensity > 0.001;
+    }
+
+    // ---- particle rates ----------------------------------------------------
+    if (plume) plume.setRate(PLUME_RATE * (1 + 0.9 * bld + 1.2 * env));
+    if (embers) embers.setRate(EMBER_RATE * (1 + 0.8 * bld) + 12 * act * env);
+    if (ash) ash.setRate(17 * act * env);
+    if (bombs) bombs.setRate(22 * act * env ** 1.2);
+
+    // ---- the base-surge ring ----------------------------------------------
+    if (ring && ringMat) {
+      const k = s >= 0 && s < RINGL ? s / RINGL : -1;
+      ring.visible = k >= 0;
+      if (k >= 0) {
+        const e = 1 - (1 - k) ** 2; // fast out of the crater, then coasting
+        const sc = 1 + (RING_SC - 1) * e;
+        ring.scale.setScalar(sc);
+        // re-seat on the cone profile at the skirt's inner radius, so the collar
+        // rides just clear of the slope the whole way down
+        // ride WELL clear of the slope: sitting on it just repaints the flank
+        ring.position.y = shape.surfY(Math.min(RING_R0 * sc, R * 0.99), 0) + 0.3 * S;
+        ringMat.opacity = 0.34 * (1 - k) ** 1.05;
+      }
+    }
+
+    // ---- the tremor: the cone shudders as the pressure lets go -------------
+    const quake = (0.006 * bld + 0.024 * env * (s < BLAST * 1.6 ? 1 : 0.3)) * S;
+    if (quake > 0) {
+      body.position.set(
+        quake * Math.sin(time * 37.1 + phase0 * 3.3),
+        quake * 0.4 * Math.sin(time * 43.7 + 1.7),
+        quake * Math.sin(time * 31.3 + 0.9),
+      );
+    } else if (body.position.lengthSq() > 0) body.position.set(0, 0, 0);
+
     for (const e of emitters) e.update(time);
   };
 
@@ -961,6 +1227,7 @@ export function buildVolcano(t: typeof THREE, opts: VolcanoOpts = {}): VolcanoBu
       });
       mats.forEach((m) => m.dispose());
       vent.dispose();
+      flash?.dispose();
     },
   };
 }
@@ -983,6 +1250,7 @@ export const Volcano = composable<VolcanoProps, VolcanoBuilt>(
       seed: props.seed,
       activity: props.activity,
       plume: props.plume,
+      eruptEvery: props.eruptEvery,
     }),
   {
     compose: (park: ParkContextValue, { built, props, position, rotation, scale }) => {

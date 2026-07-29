@@ -7,6 +7,31 @@ import { composableStall } from '../Park';
 // Cotton candy stand matched to the RCT2 CNDYF stall: the building is a GIANT
 // fluffy pink-white candy-floss cloud on a stick stump, with a serving hatch
 // tucked into the fluff, a counter, and display cones of floss beside it.
+
+// ---- the HELD floss cone (GameManager StallConfig.heldItem) ----------------
+// The 3D item a BUYER walks away eating: the counter display recipe (cream
+// paper cone + pink fluff ball) shrunk to a peep's fist. Lives HERE, not in
+// the preview: registered on the stall descriptor it works in a REAL park,
+// where guests used to walk off with the manager's generic burger. Peep-local
+// units, centred on the manager's hand hold spot, fist-to-head sized (head
+// r 0.12). The group TIPS ITSELF FORWARD (rotation.x 0.45) and takes up the
+// slack of its own thinness — the manager keeps a builder's own transform as an
+// OFFSET from the hold spot, and the shared spot (0.15 out, sized for the fat
+// burger) would leave a thin stick floating 0.1 in front of the fist — so the
+// cone is pulled back to z ~0.105 and lifted 0.05: the stick's lower end
+// (r 0.018) then touches the closed fist (hand ball r 0.05 at arm-local
+// y −0.32, front face z 0.05) instead of hovering ahead of it, while the fluff
+// (r 0.095, centred ~0.17 out) still clears the forearm box (front face 0.055)
+// and, at full bite lift, the hair.
+export function buildHeldFloss(three: typeof THREE): THREE.Group {
+  const t = three;
+  const g = new t.Group();
+  g.position.set(0, 0.05, -0.045);
+  g.rotation.x = 0.45;
+  g.add(cyl(t, 0.018, 0.044, 0.17, 0xf0e6d0, [0, 0.005, 0], { rough: 0.7, seg: 8 })); // paper cone
+  g.add(ball(t, 0.095, 0xecb0c8, [0, 0.155, 0], { tex: 'leaf', repeat: [2, 2], flat: true, rough: 0.95 })); // fluff
+  return g;
+}
 export function buildCottonCandyStandScene(three: typeof THREE, opts: { withGuest?: boolean } = {}): { group: THREE.Group; update?: (time: number) => void } {
   const group = new three.Group();
   const update =
@@ -78,9 +103,11 @@ export function buildCottonCandyStandScene(three: typeof THREE, opts: { withGues
 
 /** <CottonCandyStand> — composable stall (components/Park/Context.md): mounts the stall
  *  at `position`/`rotation`; inside a <Park>, `register` (+ `name`/`price`/
- *  `value`) registers a selling stall — the serving front faces local +z. */
+ *  `value`) registers a selling stall — the serving front faces local +z.
+ *  Buyers walk away eating a real FLOSS CONE (`heldItem`: buildHeldFloss),
+ *  not the manager's generic burger. */
 export const CottonCandyStand = composableStall<{ withGuest?: boolean }>(
   'CottonCandyStand',
   (t, { withGuest = false }) => buildCottonCandyStandScene(t, { withGuest }),
-  {name: 'Cotton Candy',item: 'food',price: 2,value: 4},
+  { name: 'Cotton Candy', item: 'food', price: 2, value: 4, heldItem: buildHeldFloss },
 );

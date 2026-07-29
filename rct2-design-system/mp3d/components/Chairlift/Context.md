@@ -1,5 +1,9 @@
 # Chairlift
 
+**CANONICAL IMPORT — copy exactly:** `import { Chairlift } from './components/Chairlift';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Chairlift: orange buckets with flags gliding a cable between pylons (CLIFT1). The stock layout is a real out-and-back cable loop — two bullwheel pylons, six cabins riding the stadium loop, pylon + cabin lamps after dark.
 
 Original three.js model on the shared Stage (day/night lighting); proportions and palette referenced from the RCT2 asset library.

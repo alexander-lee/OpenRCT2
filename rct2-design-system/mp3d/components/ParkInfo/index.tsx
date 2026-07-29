@@ -71,7 +71,19 @@ export function ParkInfo({ manager, api, width = 216 }: ParkInfoProps) {
 
   return (
     <>
-    <UIWindow title="Park Information" corner="bottom-right" width={width} collapsible>
+      {/* SCROLL THE ROSTER. This list is unbounded — it grows with every
+          registered ride, and a five-land park runs 13+ — while the body was
+          `overflow: hidden`, so the tail was silently CLIPPED and the window
+          walked off the bottom of the canvas (anchored bottom-right, it grows
+          UPWARD into the view). 260 px shows ~11 rows plus the stats block
+          before it scrolls, so a small park's window is the height it always
+          was.
+          WARNING, twice-burned: a slash-slash comment placed inside a JSX
+          fragment is TEXT, and renders as visible characters in the window —
+          and it bundles clean, so no gate catches it. Use a braced JSX comment
+          here, and do NOT write a nested comment terminator inside it, because
+          the first one ends the comment early and dumps the rest on screen. */}
+    <UIWindow title="Park Information" corner="bottom-right" width={width} collapsible maxBodyHeight={260}>
       {stats && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
           <UIIcon name="guest" size={12} />

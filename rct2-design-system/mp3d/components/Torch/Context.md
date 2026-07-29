@@ -1,5 +1,9 @@
 # Torch
 
+**CANONICAL IMPORT — copy exactly:** `import { Torch } from './components/Torch';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 A rustic park torch: tapered wooden pole (embedded 0.03 below the group origin for ground contact) with a four-ring wrapped leather grip band, an iron sconce head — collar, tapered basket cup, rim ring and four outward-tilted straps — holding a flickering coal bed, topped with a small ParticleKit `buildFire` flame (layered core / outer flame / embers / smoke + one warm point light that flickers on hashed sines and brightens at night via `nightKOf`).
 
 Exports (composable convention — components/Park/Context.md):

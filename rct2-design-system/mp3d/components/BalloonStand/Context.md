@@ -1,5 +1,9 @@
 # BalloonStand
 
+**CANONICAL IMPORT — copy exactly:** `import { BalloonStand } from './components/BalloonStand';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 The RCT2 balloon stall: a small colourful kiosk (red plastic body, wood counter, serving hatch, red/white striped pitched canopy on metal corner poles with a scalloped skirt) with a tether pole holding a bunch of 7 helium balloons — emissive-tinted balls on thin string cylinders that sway gently — plus two single balloons tied to the counter. `BALLOON_COLS` exports the realistic balloon palette (also the GameManager's per-guest held-balloon colour source, matching RCT2's purchase-time `balloonColour`, Guest.cpp:1682).
 
 API / contract: `buildBalloonStand(t) → { group, front: [0, 0, 1.05] }` — `front` is where a buying guest stands, at ground level in the group's local space (+z of the counter). GameManager agents route guests to this point. Footprint ≈ 1.28 × 1.04 (plus the tether pole at local x 0.78), ridge height 1.41.

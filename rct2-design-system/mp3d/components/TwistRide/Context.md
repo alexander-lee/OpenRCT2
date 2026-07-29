@@ -1,5 +1,9 @@
 # TwistRide
 
+**CANONICAL IMPORT — copy exactly:** `import { TwistRide } from './components/TwistRide';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Twist: three arms with counter-rotating car clusters (TWIST1). Original three.js model; proportions and palette referenced from the RCT2 asset library.
 
 Fully composable ride on the `<ConfigurableRide>` chassis (FerrisWheel pattern):

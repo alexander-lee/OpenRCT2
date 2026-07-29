@@ -1,5 +1,9 @@
 # SpaceRings
 
+**CANONICAL IMPORT — copy exactly:** `import { SpaceRings } from './components/SpaceRings';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Space rings: gyroscope rings with a strapped-in rider (SRINGS).
 
 Original three.js model on the shared Stage (day/night lighting); proportions and palette referenced from the RCT2 asset library.

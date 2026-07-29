@@ -1,5 +1,9 @@
 # ParticleKit
 
+**CANONICAL IMPORT — copy exactly:** `import { ParticleKit } from './components/ParticleKit';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 The shared particle-emitter primitive (`buildEmitter`) plus the layered realistic fire effect (`buildFire`) for every effect in the design system — fountain spray, crash smoke + sparks, kart exhaust, chimney wisps, vomit bursts, flume/rapids splash droplets. One draw call per emitter: a `THREE.Points` over a **fixed-capacity ring buffer** with a soft round dot CanvasTexture sprite (never squares), per-particle age-driven size / colour / alpha lerps and gravity integration.
 
 ## Contract (STABLE — other components code against this exact shape)

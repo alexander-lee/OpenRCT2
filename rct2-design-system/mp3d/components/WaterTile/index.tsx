@@ -32,6 +32,46 @@ const SHALLOW = 0x7ab8b8;
 const MID = 0x477a8c;
 const DEEP = 0x2f5266;
 
+/**
+ * A LIQUID PALETTE. `shallow`/`mid`/`deep` are the three body tones the sheet
+ * mixes by wave height; `glow` (0..1) switches the sheet from ambient-lit to
+ * SELF-ILLUMINATED and `glowTint` is the colour it radiates.
+ *
+ * The default water palette is the THIRD iteration of a colour the user
+ * rejected twice — once for reading neon, once for going murky near-black —
+ * so treat `WATER` as settled and add new liquids as presets beside it rather
+ * than by drifting these three numbers.
+ */
+export interface LiquidPalette {
+  shallow: number;
+  mid: number;
+  deep: number;
+  /** 0 = ambient-lit water (dims at night), 1 = molten (glows at night) */
+  glow?: number;
+  /** the colour a glowing liquid radiates */
+  glowTint?: number;
+}
+
+export const WATER: LiquidPalette = { shallow: SHALLOW, mid: MID, deep: DEEP, glow: 0 };
+
+/**
+ * MOLTEN LAVA — Emberfall's liquid. Modelled on real basaltic lava rather than
+ * "red water": a flow is mostly a dark grey-black chilled CRUST, and the
+ * incandescent orange only shows where the crust is thin or torn — at the
+ * cracks, and along the crests where the skin stretches. So `deep` (the wave
+ * troughs, the bulk of the surface) is near-black basalt and `shallow` (the
+ * crests) is the hot yellow-orange, which is the INVERSE of how water's
+ * palette is arranged. Fully opaque and self-illuminated: molten rock is a
+ * light source, so it must get BRIGHTER after dark, not dimmer.
+ */
+export const LAVA: LiquidPalette = {
+  shallow: 0xffb43c, // torn crust: incandescent yellow-orange
+  mid: 0xc4361a, // cooling skin: deep ember red
+  deep: 0x2a1a16, // chilled basalt crust, faintly warm — NOT black
+  glow: 1,
+  glowTint: 0xff7a26,
+};
+
 // the six directional wave octaves: [dirX, dirY, freq, speed, amp]
 const OCTAVES: [number, number, number, number, number][] = [
   [1.0, 0.2, 1.1, 1.3, 0.1],
@@ -57,6 +97,8 @@ const FRAGMENT = [
   'uniform vec3 uShallow;',
   'uniform vec3 uMid;',
   'uniform vec3 uDeep;',
+  'uniform float uGlow;', // 0 = water (ambient-lit), 1 = molten (self-illuminated)
+  'uniform vec3 uGlowTint;',
   'uniform vec3 uSun;',
   // scene.fog, hand-plumbed: a raw ShaderMaterial gets NO fog from three, so
   // without these the water stayed fully saturated past the fog wall while
@@ -113,6 +155,27 @@ const FRAGMENT = [
   // gentler slope + higher bias than the old navy tuning: deep patches stay
   // in the bright mid-blue band instead of pooling at the darkest stop
   '  float hMix = clamp(vH * 2.4 + 0.62 + (noise2(vWorld.xz * 5.0) - 0.5) * 0.04, 0.0, 1.0);',
+  // MOLTEN CRUST. Water blends its three tones smoothly across the wave, but a
+  // lava flow does not: it is mostly a solid chilled CRUST, and the glow shows
+  // only where that crust is thin or torn apart. So when uGlow is up we push
+  // most of the surface hard toward `deep` (basalt) with a cubic, and carve
+  // CRACKS with a second, finer noise field — the incandescence then reads as
+  // a network of fissures between dark plates instead of a uniform orange
+  // disc, which is what the first render looked like.
+  '  if (uGlow > 0.001) {',
+  // Fissures are the CONTOUR of a noise field, not a threshold of it: taking
+  // |n - 0.5| and keeping only the values near zero leaves thin veins where
+  // the field crosses its own mid-level, which is how plate boundaries
+  // actually look. Thresholding instead (the first attempt) gave 50%-area
+  // orange blobs with dark islands — exactly inverted from a real flow.
+  '    float n1 = noise2(vWorld.xz * 3.4 + vec2(uTime * 0.035, 0.0));',
+  '    float n2 = noise2(vWorld.xz * 8.1 - vec2(0.0, uTime * 0.02));',
+  '    float vein = 1.0 - smoothstep(0.015, 0.085, abs(n1 - 0.5));', // main network
+  '    float hair = (1.0 - smoothstep(0.010, 0.045, abs(n2 - 0.5))) * 0.45;', // finer craze
+  '    float crack = clamp(max(vein, hair), 0.0, 1.0);',
+  '    float crust = pow(hMix, 3.0) * 0.35;', // the plates: dark, barely varying
+  '    hMix = mix(crust, 0.62 + 0.38 * hMix, crack * uGlow);',
+  '  }',
   '  vec3 base = hMix < 0.5 ? mix(uDeep, uMid, hMix * 2.0) : mix(uMid, uShallow, hMix * 2.0 - 1.0);',
   '  vec3 l = normalize(uSun);',
   '  vec3 hf = normalize(l + v);',
@@ -159,8 +222,16 @@ const FRAGMENT = [
   // night dimming: the shader is ambient-led (not scene-lit), so without
   // this the bright palette glowed like a lit pool after dark — a cool
   // moonlight multiplier keeps night water subdued and blue-cast
-  '  col *= mix(vec3(1.0), vec3(0.34, 0.40, 0.52), uNight);',
+  // uGlow (default 0) makes the sheet SELF-ILLUMINATED instead of ambient-lit:
+  // molten rock is its own light source, so the night multiplier is cancelled
+  // in proportion to it and the crests are pushed HOTTER after dark rather
+  // than dimmer. At uGlow 0 this line is exactly the original behaviour.
+  '  vec3 nightMul = mix(vec3(1.0), vec3(0.34, 0.40, 0.52), uNight);',
+  '  col *= mix(nightMul, vec3(1.0) + uGlowTint * uNight * 0.55, uGlow);',
+  // crest incandescence: the wave tops are the thinnest, hottest crust
+  '  col += uGlowTint * uGlow * smoothstep(0.15, 0.95, hMix) * (0.16 + 0.34 * uNight);',
   '  float alpha = mix(0.78, 0.9, 1.0 - hMix * 0.6);', // shallows clearer, deeps denser
+  '  alpha = mix(alpha, 1.0, uGlow * 0.85);', // lava is opaque — no read-through
   // fade out over the last few cm before the radius clip so the pool edge
   // blends into its basin instead of cutting a hard circle
   '  if (uRadius < 1000.0) alpha *= 1.0 - smoothstep(uRadius - 0.08, uRadius - 0.005, r);',
@@ -189,8 +260,9 @@ const FRAGMENT = [
  */
 export function buildWaterMaterial(
   t: typeof THREE,
-  opts: { radius?: number; amp?: number; ribbonLength?: number; waviness?: number } = {},
+  opts: { radius?: number; amp?: number; ribbonLength?: number; waviness?: number; palette?: LiquidPalette } = {},
 ) {
+  const pal = opts.palette ?? WATER;
   const radius = opts.radius ?? 1e6;
   const ribbon = opts.ribbonLength;
   let vertexShader: string;
@@ -262,9 +334,11 @@ export function buildWaterMaterial(
       uAmp: { value: opts.amp ?? 1 },
       uWav: { value: opts.waviness ?? 1 },
       uRadius: { value: radius },
-      uShallow: { value: new t.Color(SHALLOW) },
-      uMid: { value: new t.Color(MID) },
-      uDeep: { value: new t.Color(DEEP) },
+      uShallow: { value: new t.Color(pal.shallow) },
+      uMid: { value: new t.Color(pal.mid) },
+      uDeep: { value: new t.Color(pal.deep) },
+      uGlow: { value: pal.glow ?? 0 },
+      uGlowTint: { value: new t.Color(pal.glowTint ?? 0xffffff) },
       uSun: { value: new t.Vector3(6, 11, 5).normalize() },
       // fog defaults = OFF (near past any real far plane); syncWaterFog copies
       // the live scene.fog in every frame
@@ -310,7 +384,7 @@ export function syncWaterFog(mesh: THREE.Object3D, material: THREE.ShaderMateria
  * paper-thin plane. Built in the sheet's LOCAL space (plane xy, -z = down
  * after the sheet's -PI/2 tilt) so it inherits the sheet's transform.
  */
-function buildSkirt(t: typeof THREE, size: number, radius: number, depth: number) {
+function buildSkirt(t: typeof THREE, size: number, radius: number, depth: number, pal: LiquidPalette = WATER) {
   const round = radius < 1000;
   const geo = round
     ? new t.CylinderGeometry(radius, radius, depth, 64, 1, true)
@@ -320,8 +394,8 @@ function buildSkirt(t: typeof THREE, size: number, radius: number, depth: number
     depthWrite: false,
     side: t.DoubleSide,
     uniforms: {
-      uTop: { value: new t.Color(MID) },
-      uBottom: { value: new t.Color(DEEP).multiplyScalar(0.85) },
+      uTop: { value: new t.Color(pal.mid) },
+      uBottom: { value: new t.Color(pal.deep).multiplyScalar(0.85) },
       uNight: { value: 0 },
       uFogColor: { value: new t.Color(0xffffff) },
       uFogNear: { value: 1e8 },
@@ -378,16 +452,17 @@ function buildSkirt(t: typeof THREE, size: number, radius: number, depth: number
  */
 export function buildWater(
   t: typeof THREE, size = 4, seg = 140, radius = 1e6, skirt?: number | false, amp = 1, waviness = 1,
+  palette: LiquidPalette = WATER,
 ) {
   const geo = new t.PlaneGeometry(size, size, seg, seg);
-  const material = buildWaterMaterial(t, { radius, amp, waviness });
+  const material = buildWaterMaterial(t, { radius, amp, waviness, palette });
   const mesh = new t.Mesh(geo, material);
   mesh.rotation.x = -Math.PI / 2;
   mesh.renderOrder = 1; // draw after opaque terrain (depthWrite is off)
   const depth = typeof skirt === 'number' ? skirt : skirt === false ? 0 : radius < 1000 ? 0.16 : 0;
   let skirtMat: THREE.ShaderMaterial | null = null;
   if (depth > 0) {
-    const sk = buildSkirt(t, size, radius, depth);
+    const sk = buildSkirt(t, size, radius, depth, palette);
     skirtMat = sk.material as THREE.ShaderMaterial;
     mesh.add(sk);
   }
@@ -423,7 +498,7 @@ export function buildWaterRibbon(
   t: typeof THREE,
   points: { p: THREE.Vector3; side: THREE.Vector3; up?: THREE.Vector3 }[],
   width: number,
-  opts: { amp?: number; across?: number; waviness?: number } = {},
+  opts: { amp?: number; across?: number; waviness?: number; palette?: LiquidPalette } = {},
 ) {
   const across = Math.max(2, opts.across ?? 4);
   const n = points.length;
@@ -467,7 +542,12 @@ export function buildWaterRibbon(
   geo.setAttribute('local', new t.BufferAttribute(loc, 2));
   geo.setAttribute('upv', new t.BufferAttribute(ups, 3));
   geo.setIndex(idx);
-  const material = buildWaterMaterial(t, { ribbonLength: total, amp: opts.amp ?? 0.16, waviness: opts.waviness });
+  const material = buildWaterMaterial(t, {
+    ribbonLength: total,
+    amp: opts.amp ?? 0.16,
+    waviness: opts.waviness,
+    palette: opts.palette,
+  });
   const mesh = new t.Mesh(geo, material);
   mesh.renderOrder = 1;
   return {
@@ -480,7 +560,12 @@ export function buildWaterRibbon(
   };
 }
 
-export function buildWaterTileScene(three: typeof THREE): { group: THREE.Group; update?: (time: number) => void } {
+export function buildWaterTileScene(
+  three: typeof THREE,
+  opts: { palette?: LiquidPalette } = {},
+): { group: THREE.Group; update?: (time: number) => void } {
+  const palette = opts.palette ?? WATER;
+  const molten = (palette.glow ?? 0) > 0.5;
   const group = new three.Group();
   const update =
     ((t: typeof THREE, g: THREE.Group) => {
@@ -489,8 +574,12 @@ export function buildWaterTileScene(three: typeof THREE): { group: THREE.Group; 
         // sheet stays a natural lagoon-blue hint (never a dark dead patch);
         // re-matched to the 2026-07 third-pass desaturated DEEP so the floor
         // doesn't read as a leftover neon patch under the calmer sheet
-        g.add(cyl(t, 2.9, 3.05, 0.7, 0xcdb98a, [0, -0.35, 0], { tex: 'sand', repeat: [10, 2], rough: 1, seg: 48 }));
-        g.add(cyl(t, 2.36, 2.36, 0.14, 0x2f5266, [0, 0, 0], { rough: 0.35, seg: 48 })); // matches DEEP — read-through never darker than the water
+        // a molten pool sits in a scorched basalt crater, not a sand beach —
+        // and its floor matches the palette's own deep tone, never the sea's
+        const basinCol = molten ? 0x3a2b26 : 0xcdb98a;
+        const basinTex = molten ? 'concrete' : 'sand';
+        g.add(cyl(t, 2.9, 3.05, 0.7, basinCol, [0, -0.35, 0], { tex: basinTex, repeat: [10, 2], rough: 1, seg: 48 }));
+        g.add(cyl(t, 2.36, 2.36, 0.14, palette.deep, [0, 0, 0], { rough: 0.35, seg: 48 })); // read-through never darker than the liquid
         // beach berm: an annular lathe ring hugging the shoreline — its crest
         // (y 0.19) stands above the water sheet (y 0.16) and both feet land on
         // the basin top, so waves lap a real beach instead of a floating disc
@@ -501,7 +590,7 @@ export function buildWaterTileScene(three: typeof THREE): { group: THREE.Group; 
           [2.76, 0.12],
           [2.86, 0.0],
         ].map(([r, yy]) => new t.Vector2(r, yy));
-        const bermMat = mat(t, 0x9a8a5f, { tex: 'sand', repeat: [12, 1], rough: 1 });
+        const bermMat = mat(t, molten ? 0x2f2422 : 0x9a8a5f, { tex: molten ? 'concrete' : 'sand', repeat: [12, 1], rough: 1 });
         bermMat.side = t.DoubleSide;
         const berm = new t.Mesh(new t.LatheGeometry(prof, 48), bermMat);
         berm.castShadow = true;
@@ -509,7 +598,8 @@ export function buildWaterTileScene(three: typeof THREE): { group: THREE.Group; 
         g.add(berm);
         // amp 0.22: troughs bottom out at 0.093 — always above the pool floor
         // top (0.07), so the sheet never clips through to bare shaded floor
-        const water = buildWater(t, 4.8, 140, 2.32, undefined, 0.22);
+        // lava is ~100x more viscous than water: same swell, far lazier
+        const water = buildWater(t, 4.8, 140, 2.32, undefined, 0.22, molten ? 0.34 : 1, palette);
         water.mesh.position.y = 0.16;
         g.add(water.mesh);
         return (time) => water.update(time);
@@ -518,5 +608,9 @@ export function buildWaterTileScene(three: typeof THREE): { group: THREE.Group; 
 }
 
 /** <WaterTile> — composable (components/Park/Context.md): mounts the scene at
- *  `position`/`rotation`/`scale` inside a <Park> or <ScenePreview>. */
-export const WaterTile = composable('WaterTile', (t) => buildWaterTileScene(t));
+ *  `position`/`rotation`/`scale` inside a <Park> or <ScenePreview>.
+ *  `lava` swaps the liquid for the molten `LAVA` palette (and re-skins the
+ *  basin to scorched basalt); `palette` takes any `LiquidPalette` directly. */
+export const WaterTile = composable<{ lava?: boolean; palette?: LiquidPalette }>('WaterTile', (t, props) =>
+  buildWaterTileScene(t, { palette: props.palette ?? (props.lava ? LAVA : WATER) }),
+);

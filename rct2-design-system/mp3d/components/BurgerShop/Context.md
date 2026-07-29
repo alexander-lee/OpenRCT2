@@ -1,5 +1,9 @@
 # BurgerShop
 
+**CANONICAL IMPORT — copy exactly:** `import { BurgerShop } from './components/BurgerShop';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Burger shop matched to the RCT2 BURGB stall: the building IS a giant sesame-bun burger — dome top bun, lettuce ruffle, patty/cheese band — with a serving hatch cut into the front (local +z), counter, lit menu board and night-gated sign bulbs. Proportions and palette referenced from the RCT2 asset library.
 
 **THE composable-stall exemplar** (components/Park/Context.md → "The composable convention"). Exports:
@@ -18,3 +22,7 @@ Top-level `name`/`price`/`value` props still work and WIN over the object's fiel
 
 
 The preview wraps `<BurgerShop withGuest>` in `<ScenePreview distance={5.8} targetY={0.75} autoRotate={false}>`.
+
+## The HELD burger (`buildHeldBurger`)
+
+`buildHeldBurger(t) → THREE.Group` is the shop's own 3D item, registered on the stall descriptor as GameManager's `StallConfig.heldItem`: every guest who buys HERE walks off eating THIS burger (sesame dome bun, lettuce ruffle, cheese slice with proud corners, patty, base bun) instead of the manager's generic burger puck. Peep-local units, fist-to-head sized so it reads at park zoom; the manager clones it per purchase onto the tuned hand hold spot and hands the meal back to the generic crumpled container when it runs out, so the bin/litter flow is untouched. Override per placement with `register={{ heldItem }}`. See components/GameManager/Context.md → "Per-stall held items".

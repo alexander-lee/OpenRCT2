@@ -4,6 +4,17 @@
 // onto real nodes. Seed 7 temperate; the GUARDED probe puts the composed lake
 // in the NORTH-EAST (centre 14.7, 14.7 — basins (9.6, 9.6) wl-r 4.5 and
 // (10.1, 13.3) wl-r 6.1), so the whole district lives WEST of x 0.
+//
+// SEED STABILITY — MEASURED 2026-07-25, DO NOT RE-SEED. At THIS park's size
+// (48) seed 7 temperate is `probes 1` unguarded AND `probes 1` GUARDED with
+// this park's 109 keepDry cells — zero clamp discs, zero violations, and 12
+// realistic one-cell keepDry edits moved the landform 0 times. That is the
+// cleanest composition in the corpus; §1's `probes 18` is the size-128 row
+// (`probes` is SIZE-dependent), not this park's. The `probes 1` alternatives
+// are strictly worse here: 31 temperate probes 35, 83 temperate probes 2.
+// (The guarded probe keeps the seed's RIVER at (18.1, −5.9) — the re-picked
+// north-east lake in the paragraph above is a stale reading; the district
+// living west of x 0 is still correct for both.)
 import React from 'react';
 import { Park, GameManager, Terrain, Paths, Gate, Restroom, Scenery, Placed } from './components/Park';
 import { buildParkNet } from './components/SetPieceKit';
@@ -42,7 +53,9 @@ const NET = buildParkNet({
   ],
 });
 
-const TREES: [number, number, string][] = [
+// the shape is a LITERAL UNION, not `string` — `tree()` takes exactly these
+// four (caught by `node typecheck.mjs`, which the esbuild bundler cannot see)
+const TREES: [number, number, 'round' | 'pine' | 'palm' | 'willow'][] = [
   [-13.2, 18.0, 'round'], [-9.6, 18.0, 'pine'], [-2.4, 18.0, 'round'], [-16.8, 12.0, 'pine'],
   [-16.8, 4.8, 'round'], [-16.8, -2.4, 'pine'], [-13.2, -4.8, 'round'], [-16.8, -13.2, 'pine'],
   [-13.2, -16.8, 'round'], [0, -16.8, 'pine'], [3.6, -9.6, 'round'], [4.8, -14.4, 'pine'],
@@ -57,6 +70,7 @@ export default function SetpieceRef() {
         climate="temperate"
         size={48}
         guests={18}
+        roster={{ rides: 2, stalls: 3 }}
         onReady={(report: any) => {
           // eslint-disable-next-line no-console
           console.log('[SETPIECE-REF]', report?.ok ? 'ok' : 'FAILURES', report?.failures?.length ?? 0, 'warnings', report?.warnings?.length ?? 0);

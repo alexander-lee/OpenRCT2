@@ -47,6 +47,11 @@ function BalloonStandDemo() {
           simT += 1 / 30;
           mgr.update(simT, 1 / 30);
         }
+        // HARNESS PROBE (never called by the page, no visual cost): the live
+        // stall roster + guest records, so a headless run can ASSERT this
+        // vignette actually trades (sold > 0, items in hands) instead of
+        // eyeballing a screenshot.
+        g.userData.stallProbe = () => ({ simT, stalls: mgr.stalls(), guests: mgr.guests() });
         // then run at 2x in fixed substeps — a full purchase->hold->fly-away
         // lifecycle fits one viewing without rushing the walk cycles
         let last = 0;

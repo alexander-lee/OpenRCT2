@@ -1,5 +1,9 @@
 # PlayerCam
 
+**CANONICAL IMPORT — copy exactly:** `import { attachPlayerCam } from './components/PlayerCam';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 An on-ride / chase camera bound to any vehicle `Object3D`, rendered as a
 Stage viewport inset (bottom-left by default — `rules/ui.md`). Not a React
 component: `attachPlayerCam` is an imperative helper for use inside a Stage

@@ -40,6 +40,49 @@ export const toBuilt = (res: THREE.Group | ComposableBuilt): ComposableBuilt =>
   (res as THREE.Object3D).isObject3D ? { group: res as THREE.Group } : (res as ComposableBuilt);
 
 /**
+ * THE COMPONENT TAG (`ParkBuilder/worlds.ts`'s `DsTag`). Every catalog
+ * component mounted through one of the factories stamps its own displayName +
+ * class onto the group it built. It costs one `userData` write and buys two
+ * things nothing in the design system could do before:
+ *
+ *   * `validatePark`'s WORLD THEME COHERENCE audit can tell what a group IS,
+ *     so a themed piece standing in the wrong world is detectable by position
+ *     (a lava fissure inside the Pulse District). `themeOfComponent` maps the
+ *     kind to its world; anything absent from `COMPONENT_THEME` is NEUTRAL.
+ *   * the eval harness stops having to INJECT the same tag at bundle time
+ *     (`evaltags.mjs` still does, for older tag names — these are the real
+ *     ones, present in a plain build).
+ *
+ * `themeId` is only passed by `setPiece()`, whose plan carries an explicit
+ * `theme`: a structural `<Bazaar theme={PULSE_DISTRICT}>` is classified by the
+ * dress it wears, not by its (neutral) component name. Nothing here affects
+ * geometry, and `hashGroup` (the determinism check) never reads userData.
+ */
+export function tagComponent(
+  built: ComposableBuilt,
+  displayName: string,
+  cls: 'ride' | 'stall' | 'scenery' | 'setPiece',
+  themeId?: string,
+  at?: [number, number],
+): void {
+  try {
+    const ud = built.group.userData as Record<string, unknown>;
+    ud.dsComponent = displayName;
+    ud.dsClass = cls;
+    if (themeId) ud.dsWorldTheme = themeId;
+    // `at` is REQUIRED for a set-piece: `setPiece()` builds in WORLD
+    // coordinates and mounts its group at the ORIGIN, so `getWorldPosition`
+    // returns [0, 0] for a plaza that stands 40 u away. Without this a themed
+    // set-piece could never be resolved to a world by position (measured: an
+    // Emberfall-dressed <Bazaar> inside the Thornwick Glade read as
+    // `world: null` instead of a cross-theme finding).
+    if (at) ud.dsAt = at;
+  } catch {
+    /* a builder that returned something without userData — never fatal */
+  }
+}
+
+/**
  * Mount a deterministic builder into the surrounding <Park>'s shared scene.
  * Returns TRUE when inside a <Park> (the group was mounted via addObject with
  * the prop transform — render null); FALSE outside one (render a standalone
@@ -66,19 +109,30 @@ export function useComposable(
       console.warn(
         `[Park] useComposable(build: ${buildRef.current.name}) looks like a preview SCENE builder (build<Name>Scene) — those are for previews; inside a <Park> use the component or its build<Name>() builder instead`,
       );
-    const built = toBuilt(buildRef.current(t, park));
-    const pos = props.position ?? ([0, 0] as XZ);
-    const [x, z] = xzOf(pos);
-    const y = yOf(pos) ?? park.floorAt(x, z);
-    const g = new t.Group();
-    g.add(built.group);
-    g.position.set(x, y, z);
-    g.rotation.y = props.rotation ?? 0;
-    g.scale.setScalar(props.scale ?? 1);
-    const cleanup = park.addObject(g, built.update);
+    // TIME-SLICED MOUNT. This body used to run inline, and since React runs
+    // every effect of a commit in one task, a park's whole geometry built in a
+    // single ~10-second block before the browser could paint. It is now queued:
+    // the queue is FIFO, so this component still builds in exactly the effect
+    // order it always did (its `floorAt` still sees the terrain, its
+    // registration still lands after the manager) — only the timing changes.
+    let cleanup: (() => void) | null = null;
+    let built: ComposableBuilt | null = null;
+    const cancel = park.enqueueBuild(() => {
+      built = toBuilt(buildRef.current(t, park));
+      const pos = props.position ?? ([0, 0] as XZ);
+      const [x, z] = xzOf(pos);
+      const y = yOf(pos) ?? park.floorAt(x, z);
+      const g = new t.Group();
+      g.add(built.group);
+      g.position.set(x, y, z);
+      g.rotation.y = props.rotation ?? 0;
+      g.scale.setScalar(props.scale ?? 1);
+      cleanup = park.addObject(g, built.update);
+    }, buildRef.current.name || 'composable');
     return () => {
-      cleanup();
-      built.dispose?.();
+      cancel(); // unmounted before its turn came up
+      cleanup?.();
+      built?.dispose?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [park, key]);
@@ -121,6 +175,7 @@ export function composable<P extends object, B extends ComposableBuilt = Composa
     const inScene = useComposable(
       (t, park) => {
         const built = toBuilt(build(t, props, park)) as B;
+        tagComponent(built, displayName, 'scenery');
         if (cfg.compose && !(park as ParkStore)._previewHost) {
           const pos = position ?? ([0, 0] as XZ);
           const [x, z] = xzOf(pos);

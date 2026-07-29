@@ -1,5 +1,9 @@
 # Teacups
 
+**CANONICAL IMPORT — copy exactly:** `import { Teacups } from './components/Teacups';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Spinning tea-cups flat ride (COFFEECU): a wooden turntable with a coffee-grinder centrepiece and four tilted white/pink cups that each spin on their own axis while the deck rotates. Modelled from the authentic RCT2 sprite.
 
 Each cup is a real ride car: an outer white wall with a gold lip torus, a PINK inner liner 0.03 inside it (the cup's wall thickness — it meets the lip's inner surface exactly), a floor pan 0.20 down in the cup, and a **20-segment upholstered bench ring** around the interior (dark moulded shell + claret fabric cushion, top y 0.30, + leaning backrest; batched with `mergedBoxes`, 2 draw calls per cup) with an 80° step-in gap on the outward side. The cup HANDLE is a C-shaped partial torus tilted 0.337 rad to follow the wall flare, so both roots bury 0.014 inside the 0.03 wall thickness (nothing shows inside the cup) and the top of the arc stays 0.044 under the gold lip.

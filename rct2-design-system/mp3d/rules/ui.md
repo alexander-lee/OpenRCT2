@@ -95,8 +95,9 @@ Use the `UI_TEXT` styles exported from `components/UIWindow`:
 - **`<Park>` (components/Park) owns the canvas AND the windows.** A JSX-
   composed park gets all of this for free — ONE full-screen Stage
   (`fullscreen` default true, autoRotate off, terrain-clamped camera),
-  `onPick` wired so a ride click opens RideViewer and a guest click opens
-  GuestInfo (one floating window at a time), and ParkInfo mounted
+  `onPick` wired so a ride click opens RideViewer, a guest click opens
+  GuestInfo (one floating window at a time) and a `userData.pickRef` scenery
+  click is handed straight back to the component that owns it, and ParkInfo mounted
   bottom-right once the manager settles. Never render a second Stage or a
   duplicate window suite inside a `<Park>`; custom overlays join its
   `position: relative` wrapper and follow the corner rules above.
@@ -118,10 +119,19 @@ Use the `UI_TEXT` styles exported from `components/UIWindow`:
   the view can NEVER clip under terrain or walls. Every terrain scene should
   set it.
 - **Clickable scene objects carry a marker in `userData`**: rides set
-  `userData.rideRef`, guests set `userData.guestRef`, on their root group.
+  `userData.rideRef`, guests set `userData.guestRef`, and ANY OTHER scenery sets
+  `userData.pickRef` (a `(obj) => void` callback), on their root group.
   `api.onPick(cb)` raycasts pointer clicks (drags are ignored), walks up the
-  parent chain and delivers the first `rideRef`/`guestRef` carrier — use it to
-  open the matching RideViewer / GuestInfo window from a click.
+  parent chain and delivers the first `rideRef`/`guestRef`/`pickRef` carrier —
+  use it to open the matching RideViewer / GuestInfo window from a click.
+  `<Park>` additionally CALLS `userData.pickRef(obj)` itself, so a scenery
+  component inside a park needs no subscription; one that must also work under a
+  bare `<ScenePreview>` subscribes to `api.onPick` too (both routes must be
+  idempotent). **Never bolt a private raycast onto the canvas** — the shared path
+  already handles the parent-chain visibility test (three's Raycaster ignores
+  `visible`), real-geometry-before-click-proxy ordering, the 8 px drag threshold,
+  a ±6 px near-miss ring and per-INSET cameras, and every one of those was a
+  separately-fixed bug.
 - **autoRotate policy:** parks and multi-ride scenes turn it OFF
   (`autoRotate={false}` — teleported/arrow-key poses must hold). Small
   single-rig component previews may keep the default slow auto-rotate.

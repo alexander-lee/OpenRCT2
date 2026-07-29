@@ -21,7 +21,10 @@
 // change a ride's sim config, remount the whole <Park> (give it a `key`).
 // ---------------------------------------------------------------------------
 
-export type { ParkPosition, AddObjectOpts, ParkGround, ParkPathsInfo, ParkTerrainApi, ParkContextValue } from './parkContext';
+// V3 and XZ are re-exported deliberately: the rules and two skills all print
+// `import type { V3, XZ } from './components/Park'` as the canonical line, and
+// without these names that documented import is a TS2305 every park inherits.
+export type { ParkPosition, V3, XZ, AddObjectOpts, ParkGround, ParkPathsInfo, ParkTerrainApi, ParkContextValue } from './parkContext';
 export { usePark } from './parkContext';
 
 // round-7 PLACEMENT SUGGESTION API (rules/park-generation.md §0.14): ask the
@@ -31,7 +34,7 @@ export { offPathCell, pathClearance } from '../ParkBuilder';
 export type { StreetLattice, PathClearance, OffPathCellOpts } from '../ParkBuilder';
 
 export type { ComposableBuilt, ComposableProps, ComposableConfig, ScenePreviewProps } from './composable';
-export { useComposable, composable, ScenePreview } from './composable';
+export { useComposable, composable, ScenePreview, tagComponent } from './composable';
 
 export type {
   RideRegisterProps,
@@ -57,6 +60,7 @@ export {
   HelixR,
   SBend,
   Corkscrew,
+  Loop,
   collectTrackPieces,
   Coaster,
   TrackRide,
@@ -92,6 +96,7 @@ export {
   DanceFloorR,
   Scenery,
   Lights,
+  ThemeRegion,
 } from './wrappers';
 
 // <Park> and <GameManager> are re-declared here as thin pass-throughs rather
@@ -101,6 +106,16 @@ export {
 // generated component API. Props are listed explicitly and forwarded
 // undefined-as-is, so every default still lives in exactly one place —
 // parkRoot's destructuring defaults.
+//
+// THE `...rest` SPREAD IS LOad-BEARING — DO NOT REMOVE IT. Listing props
+// explicitly is what the extractor needs, but it also means a prop added to
+// ParkProps later is SILENTLY DROPPED here unless someone remembers to add it
+// in two places. That is not hypothetical: `roster` was added to parkRoot,
+// never added to this list, and was quietly discarded for every park using
+// the public API — which made the whole rosterOverstated gate dead code until
+// it was found by accident. The spread forwards anything not named above, so
+// the failure mode is "the extractor does not advertise a new prop" (visible,
+// harmless) instead of "the prop silently does nothing" (invisible, costly).
 import React from 'react';
 import { Park as ParkRoot, GameManager as GameManagerRoot } from './parkRoot';
 import type { ParkProps, GameManagerProps } from './parkRoot';
@@ -115,6 +130,7 @@ export function Park({
   height,
   validate,
   guests,
+  roster,
   background,
   fog,
   distance,
@@ -123,6 +139,7 @@ export function Park({
   budgets,
   onReady,
   children,
+  ...rest
 }: ParkProps) {
   return (
     <ParkRoot
@@ -133,6 +150,7 @@ export function Park({
       height={height}
       validate={validate}
       guests={guests}
+      roster={roster}
       background={background}
       fog={fog}
       distance={distance}
@@ -140,6 +158,7 @@ export function Park({
       quality={quality}
       budgets={budgets}
       onReady={onReady}
+      {...rest}
     >
       {children}
     </ParkRoot>
@@ -149,3 +168,5 @@ export function Park({
 export function GameManager({ guests }: GameManagerProps) {
   return <GameManagerRoot guests={guests} />;
 }
+
+export type { ThemeRegionProps } from './wrappers';

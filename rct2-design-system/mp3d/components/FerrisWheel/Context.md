@@ -1,5 +1,9 @@
 # FerrisWheel
 
+**CANONICAL IMPORT — copy exactly:** `import { FerrisWheel } from './components/FerrisWheel';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Ferris wheel matched to the RCT2 FWH1 sprite: red wheel steel with lattice cross-bracing between paired rings, cream rim, slate A-frame lattice supports and 8 upright bench gondolas. Night: 32 instanced rim bulbs (one draw call) + two hub PointLights, all `nightKOf`-gated. Perf-merged (`mergedBoxes` for supports, wheel lattice and gondola shells).
 
 **THE composable-ride exemplar** (components/Park/Context.md → "The composable convention"). Exports:

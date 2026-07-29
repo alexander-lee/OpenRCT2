@@ -1,5 +1,9 @@
 # ObservationTower
 
+**CANONICAL IMPORT — copy exactly:** `import { ObservationTower } from './components/ObservationTower';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Observation tower: blue window drum + orange/white pinwheel roof cabin rising a lattice mast (OBS1).
 
 Original three.js model on the shared Stage (day/night lighting); proportions and palette referenced from the RCT2 asset library.

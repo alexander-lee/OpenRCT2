@@ -1,5 +1,9 @@
 # FlyingSaucers
 
+**CANONICAL IMPORT — copy exactly:** `import { FlyingSaucers } from './components/FlyingSaucers';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Electric bumper-saucer pad: a circular gunmetal floor crossed by twelve cyan radial glow strips and a perimeter glow ring, ringed by a low segmented containment wall with a white top rail and four pylon lamps. Six domed metallic saucers (coloured dome skirts, rubber rim torus, eight rim lights, beacon + antenna) that ACTUALLY bump: a deterministic rink sim — hashed-sine waypoint steering, clamped-dt (≤0.1) velocity integration, circular-wall reflection (restitution 0.5) and circle-circle impulses (radius 0.5, restitution 0.65) — deflects them off each other with a hull-bank kick, rider whiplash and a per-saucer rim-light flash. Each carries one belted rider on a cushioned centre seat (lap-belt webbing into buckle anchors, console + joystick). Fully composable ride: `register` inside a `<Park>` wires the GameManager (queue HEAD 4.0 out local +z, exit hut at [-3.3, 2.2]); real guests ride the bumping saucers via `seatWorld` (static riders hide, FerrisWheel-style), `vehicle` (saucer 0) feeds the onboard cam, and `onStateChange` drifts the saucers to a stop on breakdown. Optional ColorKit `scheme` recolours wall + saucer fleet. Floor strips, rims and pylons glow at night with two cool overhead PointLights (nightK-gated).
 
 Built with three.js on the shared Stage; modelled on the RCT2 Flying Saucers silhouette.

@@ -1,5 +1,9 @@
 # DropTower
 
+**CANONICAL IMPORT — copy exactly:** `import { DropTower } from './components/DropTower';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Vertical drop tower: a ring gondola that climbs then drops.
 
 Built with three.js on the shared Stage; modelled from the authentic RCT2 sprite.

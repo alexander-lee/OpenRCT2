@@ -17,7 +17,9 @@
 //     composition) the terrain-SECTION zone paint (sand/meadow/rock/forest).
 //   - dressTerrain — deterministic auto-dressing of the sections: forest
 //     tree clusters, mountain rock outcrops + scree, beach dunes/palms
-//     (<Terrain> mounts it automatically for every composed park).
+//     (<Terrain> mounts it automatically for every composed park). Pass
+//     `noDress` (NoDressRegion discs/rects) for ground that must stay bare —
+//     planting-only exclusion, the heightfield is NOT touched (unlike keepDry).
 //   - placement helpers: terrainLint (isDry/slope/in-bounds), planRideAccess
 //     + laneLenOf (GameManager-compatible queue/hut/exit planning),
 //     bermNetToGround / plinthUnder / groundRideAccess (settle structures to
@@ -72,12 +74,31 @@ export {
 } from './climate';
 export type { ParkTheme, ParkClimate, TreeSpecies, ParkZone, ClimateSpec, TerrainStyle, TerrainStyleSpec } from './climate';
 
-export { parkComposition, reclampTerrain } from './composition';
+export {
+  parkComposition,
+  reclampTerrain,
+  SEED_TABLE_128,
+  SEED_TABLE_SIZE,
+  SEED_TABLE_128_BAND,
+  seedTableRow,
+  TWO_WATER_MIN_SIZE,
+  SECOND_WATER_MIN_FRAC,
+  waterBodyTarget,
+  waterBodyGapMin,
+  // THE LANDFORM-CHARACTER FLOOR (2026-07-25): the ONE definition of "how flat
+  // is this park?", read by the composition's own floor, validatePark's
+  // `terrainFlattened` gate and harness/park-eval/seed-table.mjs
+  measurePlotRelief,
+  RELIEF_GRID,
+  RELIEF_FLOOR_FRAC,
+} from './composition';
+export type { SeedTableRow, ReliefFloorReport } from './composition';
 export type {
   HillCluster,
   TerrainZoneKind,
   TerrainZone,
   WaterStyle,
+  SecondWaterStyle,
   MountainStyle,
   CompositionGuards,
   ParkComposition,
@@ -86,7 +107,7 @@ export type {
 } from './composition';
 
 export { tintTerrainForClimate, dressTerrain, surroundPalette } from './dressing';
-export type { DressCounts, DressResult } from './dressing';
+export type { DressCounts, DressResult, NoDressRegion, NoDressDisc, NoDressRect } from './dressing';
 
 export {
   terrainLint,
@@ -101,6 +122,36 @@ export {
   offPathCell,
 } from './placement';
 export type { RideAccess, ParkFootRect, StreetLattice, PathClearance, OffPathCellOpts } from './placement';
+
+// wave-9 P0-A: the PLAN-TIME LINT BUS. A plan builder that hits a bad input
+// degrades + records here instead of throwing at module scope (a throw there
+// black-framed the whole page); <Park> replays the bus into validatePark.
+export { reportPlanLint, parkPlanLints, clearParkPlanLints } from './planLints';
+export type { ParkPlanLint } from './planLints';
+
+// THE WORLD LAYER's machine-readable half (worlds.ts): the component→world
+// theme TAG, the declared-world region type and the positional THEME-COHERENCE
+// audit both `validatePark` and the eval probe read. The dress itself
+// (`WorldTheme`, `WORLD_THEMES`, `worldPlan`, `<World>`) lives in SetPieceKit.
+export {
+  WORLD_PRESET_IDS,
+  COMPONENT_THEME,
+  themeOfComponent,
+  isNeutralComponent,
+  componentsOfWorld,
+  worldContains,
+  worldAt,
+  auditWorldThemes,
+} from './worlds';
+export type {
+  WorldThemeId,
+  WorldRegionRec,
+  ThemedPieceRec,
+  CrossThemeFinding,
+  WorldBuildOut,
+  WorldAudit,
+  DsTag,
+} from './worlds';
 
 export { SIM_SMOKE_SECONDS, validatePark } from './validate';
 export type {

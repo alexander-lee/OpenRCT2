@@ -9,6 +9,27 @@ import { composableStall } from '../Park';
 // with a geometric logo mark — one can carrying the serving hatch and
 // counter, plus a bendy straw.
 
+// ---- the HELD soda (GameManager StallConfig.heldItem) ----------------------
+// The 3D drink a BUYER walks away sipping: a miniature of the giant cans the
+// stall is BUILT from (red body, printed white label band with the dark
+// accent stripe, crisp silver lid) with a white straw out of the top, instead
+// of the manager's generic red cup. Peep-local units, centred on the manager's
+// hand hold spot (drinks sit at arm-local z 0.115, slightly nearer the fist);
+// fist-to-head sized (head r 0.12) so it reads at park zoom. Deterministic —
+// the manager builds it once per stall and clones it per purchase.
+export function buildHeldSoda(t: typeof THREE): THREE.Group {
+  const g = new t.Group();
+  const RED = 0xc42a2a;
+  const DARK = 0x8a1a1a;
+  g.add(cyl(t, 0.05, 0.05, 0.155, RED, [0, 0, 0], { tex: 'plastic', repeat: [4, 1], rough: 0.35, seg: 14 })); // can body
+  g.add(cyl(t, 0.052, 0.052, 0.062, 0xf2f0ea, [0, -0.004, 0], { tex: 'plastic', repeat: [4, 1], rough: 0.4, seg: 14 })); // white label band
+  g.add(cyl(t, 0.054, 0.054, 0.014, DARK, [0, -0.042, 0], { rough: 0.4, seg: 14 })); // dark accent stripe
+  g.add(cyl(t, 0.041, 0.05, 0.02, RED, [0, 0.0875, 0], { rough: 0.35, seg: 14 })); // neck taper
+  g.add(cyl(t, 0.04, 0.041, 0.012, 0xdde1e7, [0, 0.1035, 0], { metal: 0.3, rough: 0.28, seg: 14 })); // silver lid
+  g.add(cyl(t, 0.008, 0.008, 0.11, 0xf0f0e8, [0.016, 0.155, 0], { rough: 0.6, seg: 6, rotZ: -0.16 })); // straw
+  return g;
+}
+
 export interface SodaStandOpts {
   /** add the decorative queueing guest (preview flavour — in a composed park
    *  the GameManager's real guests walk up instead; default false) */
@@ -117,9 +138,10 @@ export interface SodaStandProps {
  *  giant-can cluster at `position`/`rotation`; inside a <Park>, `register`
  *  (+ optional `name`/`price`/`value`) registers a selling drink stall with
  *  the GameManager — the serving hatch faces local +z (attach 0.72 out), so
- *  aim `rotation` at the path the customers should approach from. */
+ *  aim `rotation` at the path the customers should approach from. Buyers walk
+ *  away sipping the stand's OWN mini can (`heldItem`: buildHeldSoda). */
 export const SodaStand = composableStall<SodaStandProps>(
   'SodaStand',
   (t, { withGuest = false }) => buildSodaStandScene(t, { withGuest }),
-  { name: 'Soda Stand', item: 'drink', price: 2, value: 4 },
+  { name: 'Soda Stand', item: 'drink', price: 2, value: 4, heldItem: buildHeldSoda },
 );

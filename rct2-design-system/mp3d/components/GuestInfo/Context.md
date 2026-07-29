@@ -1,5 +1,9 @@
 # GuestInfo
 
+**CANONICAL IMPORT — copy exactly:** `import { GuestInfo } from './components/GuestInfo';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 The RCT2 **Guest window**'s stats + thoughts tabs on `UIWindow` chrome (never
 custom chrome — `rules/ui.md`): a mood line, six bevelled CSS stat bars in the
 window's inset panel and the guest's thought ring, latest first, quoted.

@@ -1,6 +1,10 @@
 # PathNetwork
 
-A footpath GRAPH renderer in the RCT2 grey-tarmac style: nodes + edges become kerbed asphalt slabs with expansion-joint seams, uniform SQUARE junction pads at every node (same width as the slabs), lamp posts at junctions (degree >= 3) and litter bins at dead ends. RCT2 paths live on a TILE GRID — tiles connect only N/S/E/W, wide areas are full "center" tiles, sloped tiles ramp one height step per tile — and the `grid` / `plazas` / `nodeY` options carry those three rules over.
+**CANONICAL IMPORT — copy exactly:** `import { buildPathNetwork, buildRouting, snapNetToGrid } from './components/PathNetwork';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
+A footpath GRAPH renderer in the RCT2 grey-tarmac style: nodes + edges become kerbed asphalt slabs with expansion-joint seams, uniform SQUARE junction pads at every node (same width as the slabs), and RCT2 PATH ADDITIONS — benches, litter bins and lamp posts — lining the verge down BOTH sides of every street. RCT2 paths live on a TILE GRID — tiles connect only N/S/E/W, wide areas are full "center" tiles, sloped tiles ramp one height step per tile — and the `grid` / `plazas` / `nodeY` options carry those three rules over.
 
 Kerb trim follows RCT2's footpath configurations: it appears ONLY where no neighbouring path continues. Each node pad places a kerb strip on every FREE cardinal side (no incident edge within 45° of that side's normal) plus the four kerb corner blocks — so a 4-way node reads as an RCT2 cross tile (corners only), a 3-way as a T, a bend as a corner tile, and edge kerbs butt exactly against the pad corners. Lamps/bins are planted in the widest angular gap between a node's approaches, so they never stand on a slab.
 
@@ -46,6 +50,27 @@ buildElevatedWalkwayScene(t)  // ramp → elevated straight on scaffolds → ram
 
 Pair with `attachWalkers` from `components/PathWalkers` to populate it with guests.
 
+## Path additions (benches, bins, lamps)
+
+RCT2 additions live on path **TILES**, not on junctions — which is why a finished RCT2 street is *lined* with furniture rather than having one bin at the end of it. `furniture` plants them along the verge just outside the kerb, **on both sides**, facing the path:
+
+```tsx
+furniture={{ lampEvery: 7.2, seatEvery: 4.8, bothSides: true }}   // the defaults
+furniture={false}                                                  // verge pass off
+```
+
+- `lampEvery` / `seatEvery` are the spacing in units between items of one kind on ONE side (default: a lamp every six tiles, a bench/bin pair every four). Items sit at interval **centres**, so a single-tile street still gets one in the middle instead of being skipped, and a long avenue gets an even run that never crowds either junction.
+- Benches and bins **alternate** down the run and swap sides, so a verge reads as a row of seats punctuated by bins.
+- `avoid(x, z)` vetoes a position. The network knows its own kerbs but nothing about rides, stalls, queue lanes or scenery, so a verge point can legitimately land inside someone else's footprint — a park passes its blocker test in here. Plaza interiors are skipped automatically (a plaza is paved to its boundary, so there is no verge to stand on), as is any verge that falls away more than 0.6 below the path.
+
+The meshes are RCT2-faithful: the **bench** is a slatted timber seat and back on two cast-iron end frames; the **bin** is a ribbed tapered body under a domed lid with the posting slot left open across it; the **lamp** is a fluted base and tapered post under a real lantern — a glass box with a cap and a finial, not a bare bulb. Junction lamps and dead-end bins now use the same meshes.
+
+**Cost is four draw calls, not one per item.** Every part is a BOX, collected into merged buckets (park ironwork / bench timber / lantern glass) and merged once. The lantern glass is ONE shared emissive material for the whole network, which is both why it is a single draw and why the entire street lights together on the night gate; real `PointLight`s stay capped at `MAX_LAMP_LIGHTS` (6).
+
+**FIXED — every bench on the network faced AWAY from its street.** The furniture is authored looking down its own local −z (the backrest is at +z), and under `rotY(a)` that direction is world `(−sin a, −cos a)`. An item standing at `centreline + (−uz, ux)·sd·OFF` has to look back along `(uz, −ux)·sd`, which needs `sin a = −uz·sd` and `cos a = ux·sd` — i.e. `yaw ∓ π/2`. The code had `yaw ± π/2`, the exact negation of both, so every seat on every street had its back to the pavement and stared into the hedge behind it. Lamps and bins are rotationally symmetric and hid it. Measured by `harness/mp3d-render/probe-bench-facing.mjs`, which takes each published seat's yaw against the nearest centreline: **16 of 16 seats now face the path, worst dot 1.000** (it reports 16 of 16 facing AWAY if the sign is put back).
+
+**`buildPathNetwork` PUBLISHES its bench seats** as `benches: BenchSeat[]` — one entry per seat (an RCT2 bench holds two), each `{ x, y, z, yaw }` where the point is the slat top a guest's hips land on and the yaw is the direction they look. `<Paths>` hands the list to `park.paths.benches` and `<Park>` forwards it into the GameManager as `benches`, which is what lets a worn-out guest walk to a real bench and SIT on it (RCT2 `PeepState::Sitting`) instead of freezing mid-street. No routing spur is attached per seat, deliberately: a park-scale lattice publishes hundreds of them and that many logical nodes would swamp the routing graph, so a bench is reached by a short off-network detour with `g.resume`, exactly the way a litter bin is.
+
 ## Grid rule (RCT2 tile grid)
 
 RCT2 footpaths occupy map tiles that connect only north/south/east/west — there are no diagonal paths. With `grid: true`, `buildPathNetwork` validates every edge (`|dx| < 0.01` or `|dz| < 0.01`) and emits `console.warn("grid mode: edge k is diagonal — paths must run N/S/E/W")` for offenders (they still render; the warning is the contract).
@@ -69,6 +94,7 @@ Give nodes heights either as `[x, z, elevation]` TRIPLES (preferred — no paral
 - **Flush knuckles** — a node where grades change (ramp foot/head, crest) keeps its pad AT the node's height, but the pad BEVELS toward each sloped edge: a tilted wedge, coplanar with the ribbon and the same thickness, carries the surface from the node centre to the pad edge where the ribbon takes over. Zero steps, gaps or overhangs where a ramp meets a level span. Free-side kerbs split into flat + tilted halves and the four corner blocks plant on the LOCAL bevel surface. Flat slabs whose knuckle carries a PERPENDICULAR ramp stop at the pad edge (the bevel owns that ground).
 - **Mid-slope nodes** — a degree-2 node whose two sloped edges run straight through at the same grade gets NO pad: the ribbons are one continuous plane (RCT2 slopes have no mid-slope landing). Supports still plant at the joint.
 - **Slope cap (lint)**: RCT2 sloped path climbs exactly one height step per tile, i.e. **0.5 rise per 1.2 run** (grade ≈ 0.42). Steeper edges render but warn with the node indices (`ramp lint: edge k (node a -> b) grade …`). Two more ramp lints fire when any node is elevated: sloped edges meeting at an ANGLE at a node (RCT2 slopes run straight), and an elevated node with NO walkable-grade route down to the ground network (`deck unreachable`). All are part of the same console-warning contract as the grid lint — a composed park must produce ZERO warnings.
+  - **`deck unreachable` only ever reports STREET nodes** (`degree > 0` counting the `renderEdges` prefix). The GameManager's `routing.attach()` appends stall-front and queue-tail spurs onto the same `nodes`/`edges` arrays, and those endpoints touch no pavement — they are unreachable *by construction*, not by defect. Until 2026-07-27 the flood fill correctly walked street edges only while the REPORT iterated every node, so every spur endpoint more than 0.05 off datum was warned about: skeleton-l emitted **11 such warnings, all of them degree 0 and none of them real**, while its accessibility graph reached all 130 nodes from the gate. A real elevated deck is built from street edges, so its nodes have `degree ≥ 1` and are still tested.
 - Junction pads, free-side kerbs, and furniture all use the node's own height; furniture is skipped where the verge drops away and never lands mid-slope.
 - `pointAt(edge, u)` interpolates the height along the incline and `walkYAt(x, z)` samples the surface anywhere, so walkers/guests climb ramps automatically. `buildRouting` is unchanged — routing stays 2D.
 
@@ -109,3 +135,48 @@ posOnPath(net, a, b, u): [number, number]          // xz lerp between nodes a an
 - `route` — greedy best-first scored by Euclidean distance to the goal (RCT2's `Δx + Δy + 2Δz` heuristic without z, `GuestPathfinding.cpp:628`). `memory` is the guest's last-4 thin-junction nodes (`GuestPathfinding.cpp:1300`): those nodes are expanded LAST (large score penalty), never hard-blocked, and a visited set guarantees termination.
 - `wanderNext` — RCT2 aimless wander (`GuestPathfinding.cpp:535,1926`): 50% chance (hashed sine of `seed`) of the straightest continuation of the prev→at heading, else a hashed uniform pick among neighbours; never returns to `prevNode` unless the node is degree-1 (dead end).
 - `attach(x, z)` — how queue tails and stall fronts join the network: pushes a new node `[x, z]` plus a LOGICAL edge to the nearest existing node into the same `{nodes, edges}` arrays (and adjacency), returning the new node index. No visual slab is added — add a spur edge before building the mesh if you want it visible.
+
+## The path cross-section (`./ribbon.ts`) — ONE definition, shared with ride access
+
+A straight run of pavement in this system is THREE courses, and they are now
+declared once so the street renderer and the RIDE ACCESS runs cannot drift apart:
+
+```
+PATH_H          0.09   walked surface above a path's DATUM (a node level, a ride pad level)
+PATH_SLAB       0.11   rendered slab thickness (0.09 course + 0.02 carried below grade)
+PATH_KERB_W     0.08   kerb strip width;  PATH_KERB_PROUD 0.01 above the slab top
+PATH_SEAM_EVERY 0.5    expansion joints;  PATH_SEAM_PROUD 0.004
+PATH_PAD_LIP    0.006  how far the DRAWN pavement stands above the walkYAt datum
+PATH_PAD_TOP    0.096  a junction pad's / ramp ribbon's finished level (H + LIP)
+pathRibbon(t, specs, run, opts)   emits slab + kerbs + seams into three merge buckets
+```
+
+`GameManager/access.ts` builds a ride's QUEUE LANE and its EXIT FOOTPATH with
+`pathRibbon`, so both inherit the street's slab datum, kerb cross-section, seam
+pitch, inclined-frame ramping and merge batching. A queue passes `kerbs: false`
+(RCT2 edges a queue with its RAILING) but keeps the seams.
+
+**`walkYAt` vs `surfaceYAt` — the units trap.** `walkYAt` is the SIM datum
+(`node + PATH_H`): guest feet, queue slots, bench seats and stall fronts are all
+expressed against it. `surfaceYAt` is what is actually DRAWN — the per-edge slab
+top (`H` plus a 1.5-4.5 mm anti-z-fight jitter), a junction pad or ramp ribbon at
+`PATH_PAD_TOP`, and a KNUCKLE pad's bevel toward each of its sloped edges. A ride
+access run graded to `walkYAt` ends 5-12 mm UNDER the street it joins (measured
+across six rides, `harness/mp3d-render/probe-lane-joins.mjs`); grade to
+`surfaceYAt` sampled where the slab PHYSICALLY ENDS. Do not "fix" this by moving
+`walkYAt`.
+
+**Spur heights.** `routing.attach` links an access spur to its NEAREST node, and
+that can be ANOTHER SPUR — a ride's queue tail and its exit end routinely land in
+the same cell and the exit end's coordinates come out of `planExitLane` a
+floating-point hair off the lattice. `<Paths>` therefore WALKS the spur chain to
+find the street node a spur ultimately hangs off. A spur left at offset 0 still
+gets a full 1.22 u junction pad drawn at the network's flat reference level,
+standing proud of the graded street beside it (measured +0.0095 u).
+
+**Mesh names.** `Stage`'s `mat()` bakes the colour into the TEXTURE and leaves
+`material.color` white, so a raycast probe cannot identify a slab by colour. The
+network names its merged buckets `streetPave` / `streetKerb` / `streetSeam`, and
+the access rigs name theirs `queuePave` / `queueSeam` / `queueKerb` / `queueRail`
+/ `exitPave` / `exitKerb` / `exitSeam` / `exitBerm`, plus `hutGround` on a hut's
+apron and `access:<ride>` on each rig group. Measure joins against THOSE.

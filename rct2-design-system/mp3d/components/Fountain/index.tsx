@@ -1,6 +1,6 @@
 import React from 'react';
 import * as THREE from 'three';
-import { cyl, ball, mat, nightKOf } from '../Stage';
+import { alongDir, cyl, ball, mat, mergedParts, mtx, nightKOf } from '../Stage';
 import { buildWater } from '../WaterTile';
 import { buildEmitter } from '../ParticleKit';
 import { composable } from '../Park';
@@ -85,14 +85,21 @@ export function buildFountain(t: typeof THREE): { group: THREE.Group; update: (t
   // next to the real water below). Tiny swell (amp 0.12 x waviness 0.5 →
   // ±0.018) so crests stay under the rolled lip; no skirt — the bowl shell
   // is the volume. Edge (r 1.02·S) alpha-fades and hides behind the lip tuck.
-  const bowlWater = buildWater(t, 1.02 * S * 2 + 0.3, 48, 1.02 * S, false, 0.12, 0.5);
+  // seg 20 (was 48): the swell shortest wavelength is 1.48 u (WaterTile
+  // OCTAVES, f 4.3) and this sheet is 1.32 u across at ±0.018 u of swell — 20
+  // segments is still ~22 vertices per wavelength. 4 608 → 800 triangles with
+  // no visible change (probed side-by-side at the hero camera).
+  const bowlWater = buildWater(t, 1.02 * S * 2 + 0.3, 20, 1.02 * S, false, 0.12, 0.5);
   bowlWater.mesh.position.y = 1.62 * S;
   grp.add(bowlWater.mesh);
 
   // ---- basin water: the size warrants the real animated sheet. LOW
   // waviness 0.4 (composing with amp 0.6 → ±0.072 swell) — a calm pool that
   // shimmers gently instead of the old full-amp open-water chop ----
-  const water = buildWater(t, (basinR - 0.06) * 2 + 0.4, 96, basinR - 0.08, undefined, 0.6, 0.4);
+  // seg 32 (was 96): 3.48 u across, ~13 vertices per the shortest 1.48 u
+  // octave — 18 432 → 2 048 triangles. This one sheet was 68% of the whole
+  // fountain's geometry and the fountain ships in every park hub.
+  const water = buildWater(t, (basinR - 0.06) * 2 + 0.4, 32, basinR - 0.08, undefined, 0.6, 0.4);
   water.mesh.position.y = 0.44;
   grp.add(water.mesh);
 
@@ -102,15 +109,16 @@ export function buildFountain(t: typeof THREE): { group: THREE.Group; update: (t
   const jetR1 = basinR - 0.35;
   const jetY1 = 0.46; // splash just above the basin water sheet (0.44)
   const jetMat = new t.MeshStandardMaterial({ color: 0x9adcec, transparent: true, opacity: 0.8, roughness: 0.15, depthWrite: false });
-  const up = new t.Vector3(0, 1, 0);
+  // BATCHED (perf wave 12): the six tapered arcs are 54 static box segments
+  // that never move and all share `jetMat` — they were 54 meshes and 54 draw
+  // calls (the fountain is in every park hub, so that shipped everywhere).
+  // Same segment boxes, same transforms, ONE mesh. `castShadow`/`receiveShadow`
+  // stay off, exactly as the individual segments had them.
+  const jetParts: { geo: THREE.BufferGeometry; matrix: THREE.Matrix4 }[] = [];
   const barSeg = (from: THREE.Vector3, to: THREE.Vector3, w: number) => {
     const dir = to.clone().sub(from);
     const len = dir.length();
-    const mesh = new t.Mesh(new t.BoxGeometry(w, len, w), jetMat);
-    mesh.position.copy(from).addScaledVector(dir, 0.5);
-    mesh.quaternion.setFromUnitVectors(up, dir.normalize());
-    mesh.castShadow = false;
-    grp.add(mesh);
+    jetParts.push({ geo: new t.BoxGeometry(w, len, w), matrix: alongDir(t, from, dir, len) });
   };
   for (let i = 0; i < 6; i++) {
     const th = (i / 6) * Math.PI * 2;
@@ -130,6 +138,10 @@ export function buildFountain(t: typeof THREE): { group: THREE.Group; update: (t
       );
     }
   }
+  const jets = mergedParts(t, jetParts, jetMat);
+  jets.castShadow = false;
+  jets.receiveShadow = false;
+  grp.add(jets);
 
   // ---- ParticleKit spray: one droplet emitter riding each jet's arc top
   // (velocity = the stream tangent there, gravity carries the spray down
@@ -166,13 +178,19 @@ export function buildFountain(t: typeof THREE): { group: THREE.Group; update: (t
   // white domes riding just proud of the water (y 0.44), selling the arc
   // landings from the steep park camera
   const foamMat = new t.MeshStandardMaterial({ color: 0xeaf6f8, transparent: true, opacity: 0.55, roughness: 0.4, depthWrite: false });
-  for (let i = 0; i < 6; i++) {
-    const th = (i / 6) * Math.PI * 2;
-    const foam = new t.Mesh(new t.SphereGeometry(0.1, 12, 8), foamMat);
-    foam.scale.set(1.3, 0.28, 1.3);
-    foam.position.set(Math.cos(th) * jetR1, 0.455, Math.sin(th) * jetR1);
+  {
+    // same six domes, same squash and positions — one shared dome geometry
+    // instanced into ONE merged mesh (was 6 meshes / 6 draws)
+    const domeGeo = new t.SphereGeometry(0.1, 12, 8);
+    const foamParts = Array.from({ length: 6 }, (_, i) => {
+      const th = (i / 6) * Math.PI * 2;
+      return { geo: domeGeo, matrix: mtx(t, [Math.cos(th) * jetR1, 0.455, Math.sin(th) * jetR1], [0, 0, 0], [1.3, 0.28, 1.3]) };
+    });
+    const foam = mergedParts(t, foamParts, foamMat, false);
     foam.castShadow = false;
+    foam.receiveShadow = false;
     grp.add(foam);
+    domeGeo.dispose();
   }
 
   // ---- night: four cool up-lights around the pedestal, gated by the Stage

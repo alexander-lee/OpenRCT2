@@ -1,5 +1,9 @@
 # MotionSimulator
 
+**CANONICAL IMPORT — copy exactly:** `import { MotionSimulator } from './components/MotionSimulator';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Motion simulator: white pod with pink stripes pitching on hydraulic rams (SIMPOD).
 
 Original three.js model on the shared Stage (day/night lighting); proportions and palette referenced from the RCT2 asset library.

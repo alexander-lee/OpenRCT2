@@ -33,6 +33,43 @@ function perplexity(counts) {
 
 const ANG_BINS = 12; // 15° bins over [0, 180) — orientation is undirected
 
+// ---------------------------------------------------------------------------
+// DISTRICT SCALE — THE ONE SOURCE OF TRUTH (wave-10 P0)
+//
+// `rules/park-generation.md` §0.3 check 4 and §0.15 mandate **≥ 40 u between
+// district centres at size 192** (≥ 20 u at 48), derived from district
+// FOOTPRINTS. This harness used to derive its two district numbers as blind
+// PLOT FRACTIONS off the size-48 figures — cut `0.25·size`, target `20·size/48`
+// — which at the wave-8 default of 192 became 48 u and 80 u: the cut then
+// exceeded most measured inter-district gaps (so a 4-district park read as ONE
+// district) and the target was double what the rulebook asks. A park that
+// obeyed the rules scored 0/1. `node probe-layout-thresholds.mjs` is the
+// measurement; these two functions are the published answer, and
+// `score-layout.mjs` / `RUBRIC.md` / §0.3 check 4 all cite THEM.
+//
+//   separationFloor(S) — the floor on the distance between two district
+//     centres. Footprint-derived, NOT a plot fraction: a district's measured
+//     diameter (19.4-23.0 u at 192, 5.8-19.0 u at 48 — probe section 1, with
+//     §4.0-A's flagship ring alone at 37.6 × 37.6) plus one approach boulevard
+//     (≥ 8 lattice cells = 9.6 u at 192, 4 cells = 4.8 u at 48). That brackets
+//     the rulebook's two published anchors, 20 u @48 and 40 u @192, and
+//     `20·√(S/48)` is the curve through both. A blind ×4 to 80 u is REFUTED by
+//     measurement: inside §0.3's gate-reach band, with a district footprint
+//     allowed for, the largest MUTUAL separation three district centres can
+//     reach is 75.0 u, four 60.2 u and five 54.1 u (probe section 2), so an
+//     80-u floor would mandate a park the acceptance sim cannot ride.
+//
+//   clusterCut(S) — how close two rides have to be to count as the same place.
+//     0.6 · the floor: it must sit ABOVE every intra-district ride gap and
+//     BELOW the floor. Measured (probe section 1): intra-district ride gaps run
+//     4.6-9.4 u at 48 and 7.2-18.0 u at 192; inter-district jumps run
+//     10.9-33.8 u at 48 and 20.6-61.4 u at 192. 0.6 keeps the size-48 value at
+//     exactly the 12 u the size-48 reference parks were calibrated on (so every
+//     48/16 park in the corpus is bit-identical), and gives 24 u at 192 — above
+//     every measured intra-district gap, below every measured jump.
+export const districtSeparationFloor = (S) => r2(20 * Math.sqrt((S || 48) / 48));
+export const districtClusterCut = (S) => r2(0.6 * districtSeparationFloor(S));
+
 export function layoutMetrics(raw) {
   const S = raw.size || 48;
   const nodes = raw.nodes || [];
@@ -73,19 +110,80 @@ export function layoutMetrics(raw) {
   const diagonalFraction = nE ? diagonal / nE : 0;
   const obliqueEdgeFraction = 1 - axisAlignedFraction;
 
-  // length classes, quantised to the DS half-pitch (0.6 u)
+  // ---------------------------------------------------------------------
+  // 1b. SET-PIECE MEMBER EDGES (wave-12 P0, round 11's park) — EXCLUDED from
+  // the edge-length VARIETY terms only, the same way access spurs are
+  // excluded from the grid/lattice/curve block above.
+  //
+  // A `<Boulevard>`'s carriageway is authored as a chain of 1.2 u lattice
+  // cells (one node per cell — Boulevard/index.tsx `localEdges`), a
+  // `<Bazaar>`'s aisle the same, and a `<FountainPlaza>`'s walkable ring is a
+  // handful of fixed-length legs around the basin. All three are the DESIGN
+  // SYSTEM'S OWN macro geometry, not a choice the author made about block
+  // size — but the length-variety histogram cannot tell "the rulebook's
+  // recommended boulevard" from "an author who hand-chained 100 unit edges to
+  // fake variety": round 11's park routed seven boulevards exactly as
+  // `rules/park-generation.md` §3 advises and measured `effectiveClasses
+  // 1.96` / `modalShare 0.857` with 132 of 154 edges at 1.2 u — LOSING the
+  // 0.75-pt block-size-variety term for following the rules.
+  //
+  // The fix reads `raw.setPieces[].bbox` (probe.mjs, world-space bbox of the
+  // piece's own mounted dressing group — its lamps/trees/benches/props sit at
+  // the same world coordinates as its internal chain/ring, so the box is a
+  // reasonable proxy for "this edge belongs to piece X's own sub-net", even
+  // though the carriageway SLAB itself is drawn by the shared <Paths>
+  // component and is not literally inside that group). An edge is a MEMBER
+  // edge when BOTH its endpoints fall inside some piece's padded bbox. This
+  // is a proxy, not a byte-exact membership tag (a boulevard's stations start
+  // one `spacing` in from its ports, so a short run right at the port may
+  // read as "authored" rather than "member" — a conservative miss, not a
+  // false exclusion), and it is a NO-OP for any park with no `raw.setPieces`
+  // at all, so a park that hand-chains uniform edges WITHOUT ever using a
+  // macro piece gets no exclusion and no help from this fix.
+  const PIECE_BBOX_PAD = 0.75; // u — dressing sits >= 1.35 u off a boulevard's
+  // centreline and a plaza's benches sit inside `ring`, so a small pad closes
+  // rounding gaps without pulling in an unrelated street a few units away
+  const pieceBoxes = (raw.setPieces || [])
+    .filter((p) => p && p.bbox)
+    .map((p) => ({
+      x0: p.bbox.min[0] - PIECE_BBOX_PAD, x1: p.bbox.max[0] + PIECE_BBOX_PAD,
+      z0: p.bbox.min[2] - PIECE_BBOX_PAD, z1: p.bbox.max[2] + PIECE_BBOX_PAD,
+    }));
+  const inBox = (x, z, b) => x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1;
+  const nodeInAnyPiece = (i) => pieceBoxes.some((b) => inBox(nodes[i][0], nodes[i][1], b));
+  const isMemberEdge = (s) => pieceBoxes.length > 0 && nodeInAnyPiece(s.a) && nodeInAnyPiece(s.b);
+  const memberEdgeCount = pieceBoxes.length ? segs.filter(isMemberEdge).length : 0;
+
+  // length classes, quantised to the DS half-pitch (0.6 u). Computed TWICE:
+  // `*Raw` over every street edge (the pre-wave-12 behaviour, kept for
+  // audit), and the published fields over the AUTHORED SPINE only (set-piece
+  // member edges excluded) — see the block comment above.
   const LEN_Q = 0.6;
-  const lenCounts = {};
-  segs.forEach((s) => {
-    const k = (Math.round(s.len / LEN_Q) * LEN_Q).toFixed(1);
-    lenCounts[k] = (lenCounts[k] || 0) + 1;
-  });
-  const lenP = perplexity(lenCounts);
-  const lens = segs.map((s) => s.len);
-  const meanLen = nE ? lens.reduce((a, b) => a + b, 0) / nE : 0;
-  const varLen = nE ? lens.reduce((a, b) => a + (b - meanLen) ** 2, 0) / nE : 0;
-  const lengthCV = meanLen > 0 ? Math.sqrt(varLen) / meanLen : 0;
-  const modalLenShare = nE ? Math.max(0, ...Object.values(lenCounts)) / nE : 0;
+  const lengthStats = (segList) => {
+    const counts = {};
+    segList.forEach((s) => {
+      const k = (Math.round(s.len / LEN_Q) * LEN_Q).toFixed(1);
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    const n = segList.length;
+    const p = perplexity(counts);
+    const lensL = segList.map((s) => s.len);
+    const meanL = n ? lensL.reduce((a, b) => a + b, 0) / n : 0;
+    const varL = n ? lensL.reduce((a, b) => a + (b - meanL) ** 2, 0) / n : 0;
+    return {
+      counts,
+      eff: p.eff,
+      cv: meanL > 0 ? Math.sqrt(varL) / meanL : 0,
+      modalShare: n ? Math.max(0, ...Object.values(counts)) / n : 0,
+    };
+  };
+  const authoredSegs = pieceBoxes.length ? segs.filter((s) => !isMemberEdge(s)) : segs;
+  const lenStatsRaw = lengthStats(segs);
+  const lenStats = lengthStats(authoredSegs);
+  const lenCounts = lenStats.counts;
+  const lenP = { eff: lenStats.eff };
+  const lengthCV = lenStats.cv;
+  const modalLenShare = lenStats.modalShare;
 
   // orientation classes, 15° bins
   const angCounts = {};
@@ -149,11 +247,15 @@ export function layoutMetrics(raw) {
   // LATTICE-LIKE = WORSE). Fixed weights; every term is published above so
   // two scorers reach the same value.
   const g1 = axisAlignedFraction;                   // all-cardinal streets
-  const g2 = clamp01(1 / lenP.eff);                 // one edge length only
+  const g2 = clamp01(1 / lenP.eff);                 // one edge length only (AUTHORED spine — set-piece member edges excluded, see 1b above)
   const g3 = clamp01(2 / Math.max(1e-9, angP.eff)); // only the 2 cardinal bearings
   const g4 = latticeNodeShare;                      // nodes on col ∩ row lines
   const g5 = pitchUniformity;                       // a single pitch per axis
   const gridRegularity = clamp01(0.25 * g1 + 0.25 * g2 + 0.15 * g3 + 0.2 * g4 + 0.15 * g5);
+  // pre-wave-12 number, kept for audit: `lengthUniformity` computed over
+  // EVERY street edge, set-piece member chains included
+  const g2Raw = clamp01(1 / lenStatsRaw.eff);
+  const gridRegularityRaw = clamp01(0.25 * g1 + 0.25 * g2Raw + 0.15 * g3 + 0.2 * g4 + 0.15 * g5);
 
   // ---------------------------------------------------------------------
   // 3. CURVE / NON-RIGHT-ANGLE CONTENT
@@ -223,7 +325,9 @@ export function layoutMetrics(raw) {
   // ---------------------------------------------------------------------
   // 4. DISTRICT STRUCTURE — single-link clustering of the ride positions
   // ---------------------------------------------------------------------
-  const CUT = 0.25 * S; // 12 u on size 48: rides closer than this share a district
+  // rides closer than CUT share a district — 12 u @48, 24 u @192, published
+  // above (was `0.25·S`, a plot fraction that merged whole parks at 192)
+  const CUT = districtClusterCut(S);
   const clusters = [];
   {
     const pts = rides.map((r) => ({ name: r.name, x: (r.centre || r.at)[0], z: (r.centre || r.at)[1] }));
@@ -250,7 +354,8 @@ export function layoutMetrics(raw) {
       maxSep = Math.max(maxSep, d); minSep = Math.min(minSep, d);
     }
   if (!Number.isFinite(minSep)) minSep = 0;
-  const SEP_TARGET = 20 * (S / 48); // >= 20 u on size 48, scaled with the plot
+  // §0.3 check 4's floor: 20 u @48, 40 u @192 (was `20·S/48` → 80 u @192)
+  const SEP_TARGET = districtSeparationFloor(S);
 
   // ---------------------------------------------------------------------
   // 5. PLOT UTILISATION — is the whole plot used, or one huddled quadrant?
@@ -335,19 +440,29 @@ export function layoutMetrics(raw) {
     net: {
       nodes: nodes.length, edges: allEdges.length,
       streetNodes: sn, streetEdges: nE, accessSpursExcluded: streetOnly,
-      meanEdgeLen: r2(meanLen), totalLength: r2(lens.reduce((a, b) => a + b, 0)),
+      meanEdgeLen: r2(nE ? segs.reduce((a, s) => a + s.len, 0) / nE : 0),
+      totalLength: r2(segs.reduce((a, s) => a + s.len, 0)),
+      setPieceMemberEdges: memberEdgeCount,
     },
 
     gridRegularity: r3(gridRegularity),
+    gridRegularityRaw: r3(gridRegularityRaw),
     gridTerms: { axisAligned: r3(g1), lengthUniformity: r3(g2), bearingUniformity: r3(g3), latticeNodeShare: r3(g4), pitchUniformity: r3(g5) },
     gridWeights: { axisAligned: 0.25, lengthUniformity: 0.25, bearingUniformity: 0.15, latticeNodeShare: 0.2, pitchUniformity: 0.15 },
 
     edgeLengths: {
+      // AUTHORED SPINE only (set-piece member edges excluded — see 1b above)
       distinctClasses: Object.keys(lenCounts).length,
       effectiveClasses: r2(lenP.eff),
       modalShare: r3(modalLenShare),
       cv: r3(lengthCV),
       byClass: lenCounts,
+      // pre-wave-12 numbers, every street edge included (audit trail)
+      distinctClassesRaw: Object.keys(lenStatsRaw.counts).length,
+      effectiveClassesRaw: r2(lenStatsRaw.eff),
+      modalShareRaw: r3(lenStatsRaw.modalShare),
+      cvRaw: r3(lenStatsRaw.cv),
+      byClassRaw: lenStatsRaw.counts,
     },
     edgeBearings: {
       axisAlignedFraction: r3(axisAlignedFraction),

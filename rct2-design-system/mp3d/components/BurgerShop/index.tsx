@@ -8,6 +8,39 @@ import { composableStall } from '../Park';
 // with a serving hatch cut into the front (local +z), a counter, a lit menu
 // board and (optionally) a queueing guest.
 
+// ---- the HELD burger (GameManager StallConfig.heldItem) --------------------
+// The 3D item a BUYER walks away eating — the same recipe as the building,
+// shrunk to a peep's fist. Peep-local units: the manager parents this group at
+// the tuned hand hold spot (arm-local ±0.03, −0.37, 0.15) on the guest rig, so
+// the park's 0.5 GUEST_SCALE is already accounted for; sizes are ~fist-to-head
+// (head r 0.12) so the burger still reads at park zoom. Deterministic, no
+// per-instance state — the manager builds it ONCE and clones per purchase.
+export function buildHeldBurger(t: typeof THREE): THREE.Group {
+  const g = new t.Group();
+  const BUN = 0xc9903c;
+  const BUN_D = 0xa8722a;
+  g.add(cyl(t, 0.088, 0.092, 0.032, BUN_D, [0, -0.03, 0], { rough: 0.85, seg: 12 })); // base bun
+  g.add(cyl(t, 0.096, 0.096, 0.03, 0x5a3520, [0, -0.005, 0], { rough: 0.95, seg: 12 })); // patty
+  g.add(box(t, [0.17, 0.012, 0.17], 0xe8b020, [0, 0.016, 0], { rough: 0.5, rotY: 0.55 })); // cheese slice, corners proud
+  for (let i = 0; i < 5; i += 1) {
+    // lettuce ruffle peeking out from under the top bun (dome underside 0.055)
+    const a = (i / 5) * Math.PI * 2 + 0.3;
+    g.add(ball(t, 0.028, 0x5c9e2e, [Math.cos(a) * 0.082, 0.028, Math.sin(a) * 0.082], { flat: true, rough: 0.9 }));
+  }
+  const dome = ball(t, 0.095, BUN, [0, 0.052, 0], { rough: 0.8 });
+  dome.scale.set(1, 0.62, 1);
+  g.add(dome);
+  for (let i = 0; i < 4; i += 1) {
+    // sesame seeds ON the dome surface (r 0.095, y-scale 0.62)
+    const a = (i / 4) * Math.PI * 2 + 0.7;
+    const r = 0.035 + (i % 2) * 0.018;
+    const sd = ball(t, 0.011, 0xf0e2b8, [Math.cos(a) * r, 0.052 + Math.sqrt(Math.max(0, 1 - (r / 0.095) ** 2)) * 0.0589, Math.sin(a) * r], { rough: 0.6 });
+    sd.scale.set(1, 0.5, 1.5);
+    g.add(sd);
+  }
+  return g;
+}
+
 export interface BurgerShopOpts {
   /** add the decorative queueing guest (preview flavour — in a composed park
    *  the GameManager's real guests walk up instead; default false) */
@@ -108,9 +141,10 @@ export interface BurgerShopProps {
  *  burger building at `position`/`rotation`; inside a <Park>, `register`
  *  (+ optional `name`/`price`/`value`) registers a selling food stall with
  *  the GameManager — the serving hatch faces local +z, so aim `rotation` at
- *  the path the customers should approach from. */
+ *  the path the customers should approach from. Buyers walk away eating the
+ *  shop's OWN 3D burger (`heldItem`: buildHeldBurger). */
 export const BurgerShop = composableStall<BurgerShopProps>(
   'BurgerShop',
   (t, { withGuest = false }) => buildBurgerShop(t, { withGuest }),
-  { name: 'Burger Bar', item: 'food', price: 3, value: 5 },
+  { name: 'Burger Bar', item: 'food', price: 3, value: 5, heldItem: buildHeldBurger },
 );

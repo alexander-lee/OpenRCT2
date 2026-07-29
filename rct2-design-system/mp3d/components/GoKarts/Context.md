@@ -1,5 +1,9 @@
 # GoKarts
 
+**CANONICAL IMPORT — copy exactly:** `import { GoKarts } from './components/GoKarts';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Go-kart circuit rebuilt on SplineRideKit ('gokart' profile — RCT2 tracks go-karts as a real tracked ride): a closed flat asphalt course with two straights, an S-bend of esses and a tight hairpin, kerbed in red/white. Four orange karts with seated guest drivers race their own lanes and throttles (laneOffset/speedScale) so they overtake; start gantry + chequered line sit on the spline's start frame, tyre stacks guard the hairpin, headlights come on at night. Each kart trails tiny ParticleKit exhaust puffs (grey-blue, buoyant, growing) whose emission rate is THROTTLE-SYNCED to the kart's time-warp surge — 4 × 32 = 128 particles, origins chasing the tailpipes in world space.
 
 Built with three.js on the shared Stage; modelled from the authentic RCT2 sprite. Layout passes validateSpline.

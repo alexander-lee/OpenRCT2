@@ -47,6 +47,20 @@ export interface DanceFloorOpts {
    *  the park runtime sheds it beyond NEAR distance. The DJ is NOT part of
    *  this — the booth peep is always built (it's the attraction). */
   dancers?: boolean;
+  /**
+   * ADDITIVE: the tile/lamp colour cycle (default `DISCO_PALETTE`).
+   *
+   * Exists because a THEMED land could not restate it. `DISCO_PALETTE` carries
+   * amber `0xe8a018` and lime `0x8fd818`, and in the Pulse District — whose
+   * whole palette is the cool subset — the dance floor sat dead centre as the
+   * only warm, most-saturated element in the frame and read as a play mat
+   * beside the cool light-tile aprons around it. The alternative a land was
+   * left with was mutating the exported array, which would silently restyle
+   * every other dance floor in the fleet.
+   *
+   * Pass `PULSE_PALETTE` (exported from `../Discotron`) for a nightclub.
+   */
+  palette?: number[];
 }
 
 export function buildDanceFloor(
@@ -55,6 +69,9 @@ export function buildDanceFloor(
 ): { group: THREE.Group; update: (time: number) => void; floorTopY: number } {
   const size = opts.size ?? 4;
   const tileW = opts.tile ?? 0.6;
+  // the colour cycle — a themed land restates it rather than mutating the
+  // shared export (which would restyle every other floor in the fleet)
+  const PAL = opts.palette && opts.palette.length ? opts.palette : DISCO_PALETTE;
   const field = size * tileW;
   const half = field / 2;
   const group = new t.Group();
@@ -88,8 +105,8 @@ export function buildDanceFloor(
   for (let ix = 0; ix < size; ix += 1) {
     for (let iz = 0; iz < size; iz += 1) {
       const m = new t.MeshStandardMaterial({
-        color: DISCO_PALETTE[0],
-        emissive: DISCO_PALETTE[0],
+        color: PAL[0],
+        emissive: PAL[0],
         emissiveIntensity: 0.4,
         roughness: 0.35,
       });
@@ -163,7 +180,7 @@ export function buildDanceFloor(
 
   // ---- two low floor lights tinted to the dominant tile colour ----
   const lights: THREE.PointLight[] = [-1, 1].map((s) => {
-    const pl = new t.PointLight(DISCO_PALETTE[0], 0.3, 4.5, 2);
+    const pl = new t.PointLight(PAL[0], 0.3, 4.5, 2);
     pl.position.set(s * half * 0.5, 1.35, 0);
     group.add(pl);
     return pl;
@@ -193,14 +210,14 @@ export function buildDanceFloor(
     tiles.forEach((tl) => {
       // colour steps once per beat (hashed per-tile phase + palette offset)
       const step = Math.floor(time * BEAT_HZ + tl.ph);
-      const col = DISCO_PALETTE[(step + tl.off) % DISCO_PALETTE.length];
+      const col = PAL[(step + tl.off) % PAL.length];
       tl.m.color.setHex(col);
       tl.m.emissive.setHex(col);
       // pulse dips exactly at the colour change, blooms mid-beat
       const pulse = 0.55 + 0.45 * Math.abs(Math.sin(Math.PI * (time * BEAT_HZ + tl.ph)));
       tl.m.emissiveIntensity = gain * pulse;
     });
-    const dom = DISCO_PALETTE[Math.floor(time * BEAT_HZ) % DISCO_PALETTE.length];
+    const dom = PAL[Math.floor(time * BEAT_HZ) % PAL.length];
     lights.forEach((pl, i) => {
       pl.color.setHex(dom);
       pl.intensity = (0.25 + 1.6 * k) * (0.8 + 0.2 * Math.abs(Math.sin(Math.PI * time * BEAT_HZ + i)));
@@ -244,6 +261,17 @@ export interface DanceFloorProps {
    *  `registerDanceZone` — see Context.md. Registrations are permanent
    *  (manager convention): remount the whole <Park> to change them. */
   register?: boolean;
+  /**
+   * ADDITIVE: the tile/lamp colour cycle (default `DISCO_PALETTE`) — the React
+   * surface of `DanceFloorOpts.palette`. Without it the Opts hook is
+   * unreachable from JSX: `composable` forwards unknown props into the builder's
+   * `props`, but this component's builder picks its fields by name, so a
+   * `palette` passed here was SILENTLY DROPPED (the round-7 failure mode).
+   *
+   * Pass `PULSE_PALETTE` (from `../Discotron`) for a nightclub — see the Opts
+   * doc for why the Pulse District needed it.
+   */
+  palette?: number[];
 }
 
 /** the manager surface the compose hook needs (additive — lands with the
@@ -264,6 +292,7 @@ export const DanceFloor = composable<DanceFloorProps>(
       size: props.size,
       tile: props.tile,
       dancers: props.dancers ?? (preview && !props.register),
+      palette: props.palette, // undefined -> buildDanceFloor's DISCO_PALETTE default
     });
   },
   {

@@ -1,19 +1,17 @@
 import React from 'react';
-import * as THREE from 'three';
-import { box, cyl, ball } from '../Stage';
 import { ScenePreview } from '../Park';
 import { buildPathNetwork } from '../PathNetwork';
 import { createGameManager } from '../GameManager';
-import { HotDogStand } from './index';
+import { HotDogStand, buildHeldHotDog } from './index';
 
 // The stand sells REAL hot dogs through the GameManager consumable flow (the
 // same live-sim vignette as the BalloonStand preview): a ScenePreview `dress`
 // hook runs a miniature deterministic sim — small path loop, the stall
 // registered at the counter front — at 2x time, PRE-WARMED so guests are
-// already mid-loop on the first frame. The GameManager's stock held-food mesh
-// is a burger, so every lazily-built `heldFood` hand group is re-dressed ONCE
-// (deterministic meshes, userData-flagged) into a mini hot dog — bun halves,
-// plump sausage, mustard stripe — matching the giant one on the roof.
+// already mid-loop on the first frame. The mini hot dog buyers carry is the
+// stall's OWN `heldItem` recipe (buildHeldHotDog, exported from ./index and
+// registered on the stall descriptor), so what this preview shows is exactly
+// what a real park shows — no preview-only mesh surgery.
 function HotDogStandDemo() {
   return (
     <ScenePreview
@@ -39,45 +37,36 @@ function HotDogStandDemo() {
         // registration hook, so the demo registers the sale itself. Anchor is
         // pushed +z so the serving front (anchor + 0.72·dir) lands at z 1.0 —
         // just clear of the counter slab edge (z 0.85), no clipping.
-        mgr.registerStall({ name: 'Hot Dogs', item: 'food', price: 3, value: 5, anchor: [0, 0, 0.28], dir: [0, 1] });
-        mgr.spawnGuests(8);
-        // re-dress stock burger hand-meshes into hot dogs: heldFood groups are
-        // built lazily on each guest's FIRST food purchase, so sweep after
-        // every sim step and convert any new ones exactly once
-        const dressHeld = () => {
-          const fresh: THREE.Object3D[] = [];
-          mgr.group.traverse((o) => {
-            if (o.name === 'heldFood' && !o.userData.hotdog) fresh.push(o);
-          });
-          fresh.forEach((h) => {
-            h.userData.hotdog = true;
-            h.clear();
-            // fist-to-head sized to match the stock burger's new read at park
-            // zoom, centred on the hold origin (in front of the closed fist)
-            // bun trough lying across the hand (along local x), rounded ends
-            h.add(cyl(t, 0.052, 0.052, 0.21, 0xd9a04c, [0, -0.012, 0], { rough: 0.8, seg: 10, rotZ: Math.PI / 2 }));
-            [-0.105, 0.105].forEach((bx) => h.add(ball(t, 0.052, 0xd9a04c, [bx, -0.012, 0], { rough: 0.8 })));
-            // plump sausage proud of the bun, stretched end caps
-            h.add(cyl(t, 0.033, 0.033, 0.26, 0xa84222, [0, 0.036, 0], { tex: 'plastic', repeat: [4, 1], rough: 0.5, seg: 10, rotZ: Math.PI / 2 }));
-            [-0.13, 0.13].forEach((bx) => {
-              const cap = ball(t, 0.033, 0xa84222, [bx, 0.036, 0], { rough: 0.5 });
-              cap.scale.x = 1.3;
-              h.add(cap);
-            });
-            // mustard stripe along the top
-            h.add(box(t, [0.225, 0.012, 0.021], 0xe8b414, [0, 0.071, 0], { rough: 0.22 }));
-          });
-        };
-        // pre-warm (fixed 1/30 substeps, deterministic): guests are spread
-        // around the loop with the purchase/eat cycle in full swing — the eat
-        // chain lasts ~6.4 sim-s, so fresh buys land on-screen within seconds
+        // ...with the stall's OWN held item, exactly as <HotDogStand register>
+        // does inside a real <Park> (the descriptor carries buildHeldHotDog)
+        mgr.registerStall({ name: 'Hot Dogs', item: 'food', price: 3, value: 5, anchor: [0, 0, 0.28], dir: [0, 1], heldItem: buildHeldHotDog });
+        // ...and the cohort is spawned ALREADY PECKISH. A fresh RCT2
+        // arrival is well fed — hunger spawns at 177-255 on the INVERTED 0-255
+        // scale — and the counter refuses food above hunger 75 (RCT2's own
+        // DecideAndBuyItem gate), which on the RCT2-faithful 512-tick needs
+        // clock is ~163 sim-s of walking before anyone may buy at all: longer
+        // than this whole vignette, so the cart stood idle. The needs RATES are
+        // correct and deliberately untouched; a STAGED vignette seeds the state
+        // it exists to demonstrate. The band is wide on purpose — the hungriest
+        // guests buy during the pre-warm and are already eating on frame 1, the
+        // fed end of it crosses the seek threshold while the preview plays, so
+        // fresh sales keep landing on screen.
+        mgr.spawnGuests(8, undefined, { hunger: [4, 48] });
+        // pre-warm (fixed 1/30 substeps, deterministic): 32 sim-s is enough for
+        // the hungriest of the staged cohort to have bought and be eating on
+        // frame 1, with the rest still working their way to the counter, so the
+        // sales keep coming while the preview plays
         const WARM = 32;
         let simT = 0;
         while (simT < WARM) {
           simT += 1 / 30;
           mgr.update(simT, 1 / 30);
         }
-        dressHeld(); // first frame already shows hot dogs, not burgers
+        // HARNESS PROBE (never called by the page, no visual cost): the live
+        // stall roster + guest records, so a headless run can ASSERT this
+        // vignette actually trades (sold > 0, items in hands) instead of
+        // eyeballing a screenshot.
+        g.userData.stallProbe = () => ({ simT, stalls: mgr.stalls(), guests: mgr.guests() });
         // then run at 2x in fixed substeps — a full walk-up -> buy -> eat ->
         // bin/litter cycle fits one viewing without rushing the walk cycles
         let last = 0;
@@ -91,7 +80,6 @@ function HotDogStandDemo() {
             mgr.update(simT, h);
             step -= h;
           }
-          dressHeld();
           paths.update?.(time);
         };
       }}
@@ -108,7 +96,7 @@ const previews = {
     {
       name: 'Selling hot dogs (live sim)',
       description:
-        "Hot dog stand as a working composableStall: the stone kiosk with the giant roof dog (HOTDS) registered with a miniature GameManager sim (item 'food', price 3, value 5). Peckish guests on the path loop walk up to the serving front (local +z, 0.72 out from the counter), buy, and stroll off EATING — the held hand-mesh is re-dressed deterministically into a mini hot dog (bun halves, plump sausage, mustard stripe) matching the roof prop, lifted to the mouth on the eased bite-cycle arm overlay until only a crumpled container is left to throw away (RCT2 DecideAndBuyItem, Guest.cpp:1529). Pre-warmed + 2x time so buying and eating both show in one viewing. Deterministic.",
+        "Hot dog stand as a working composableStall: the stone kiosk with the giant roof dog (HOTDS) registered with a miniature GameManager sim (item 'food', price 3, value 5). Peckish guests on the path loop walk up to the serving front (local +z, 0.72 out from the counter), buy, and stroll off EATING — the item in their hand is the stall's OWN 3D hot dog (bun trough, plump sausage, mustard stripe — StallConfig.heldItem, the same mesh a real park serves), lifted to the mouth on the eased bite-cycle arm overlay until only a crumpled container is left to throw away (RCT2 DecideAndBuyItem, Guest.cpp:1529). Pre-warmed + 2x time so buying and eating both show in one viewing. Deterministic.",
       render: () => <HotDogStandDemo />,
     },
     {

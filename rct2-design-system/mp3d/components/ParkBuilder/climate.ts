@@ -78,18 +78,34 @@ export interface TerrainStyleSpec {
   scaleK: number;
   octaves: number;
   roughness: number;
+  /** MOUNTAINOUS-CHARACTER multiplier, applied to `amplitude` on plots PAST the
+   *  classic 48 only (2026-07). The base amplitudes above are the measured
+   *  sweep values the ≤48 compositions were authored against and must stay
+   *  bit-identical; the archetypes that are SUPPOSED to read as mountain
+   *  country — ridges, badlands, steppe — were nonetheless landing at 2-4 u of
+   *  relief across a 128-u plot (a 2-3% grade: a billiard table with a tilt),
+   *  because relief is size-invariant in world units and only `amplitudeK`
+   *  added any back. `drama` is where "this archetype is mountainous" is now
+   *  expressed, per archetype rather than globally, so plains stays plains. */
+  drama: number;
   /** one-line description (surfaced in the composition log) */
   label: string;
 }
 
 export const TERRAIN_STYLES: Record<TerrainStyle, TerrainStyleSpec> = {
-  plains: { amplitude: 0.38, scaleK: 0.52, octaves: 3, roughness: 0.45, label: 'flat open plains' },
-  downs: { amplitude: 0.95, scaleK: 0.3, octaves: 4, roughness: 0.5, label: 'broad rolling downs' },
-  hollows: { amplitude: 1.4, scaleK: 0.3, octaves: 2, roughness: 0.35, label: 'open swells and hollows' },
-  ridges: { amplitude: 1.8, scaleK: 0.12, octaves: 3, roughness: 0.35, label: 'corrugated ridge country' },
-  steppe: { amplitude: 1.0, scaleK: 0.08, octaves: 5, roughness: 0.62, label: 'fine-grained upland steppe' },
-  badlands: { amplitude: 1.4, scaleK: 0.05, octaves: 4, roughness: 0.62, label: 'crinkled arid badlands' },
+  plains: { amplitude: 0.38, scaleK: 0.52, octaves: 3, roughness: 0.45, drama: 1, label: 'flat open plains' },
+  downs: { amplitude: 0.95, scaleK: 0.3, octaves: 4, roughness: 0.5, drama: 1.18, label: 'broad rolling downs' },
+  hollows: { amplitude: 1.4, scaleK: 0.3, octaves: 2, roughness: 0.35, drama: 1.22, label: 'open swells and hollows' },
+  ridges: { amplitude: 1.8, scaleK: 0.12, octaves: 3, roughness: 0.35, drama: 1.6, label: 'corrugated ridge country' },
+  steppe: { amplitude: 1.0, scaleK: 0.08, octaves: 5, roughness: 0.62, drama: 1.5, label: 'fine-grained upland steppe' },
+  badlands: { amplitude: 1.4, scaleK: 0.05, octaves: 4, roughness: 0.62, drama: 1.5, label: 'crinkled arid badlands' },
 };
+
+/** the MOUNTAINOUS-CHARACTER multiplier actually applied for a plot: exactly 1
+ *  at or below the classic 48 (so every ≤48 composition — the reference parks,
+ *  the pinned 16-u tables — is bit-identical), the archetype's own `drama`
+ *  above it. ONE place decides this; the composer is the only caller. */
+export const landformDramaK = (spec: TerrainStyleSpec, S: number) => (S > 48 ? spec.drama : 1);
 
 /** plots smaller than this keep TERRAIN_BASE exactly — compact parks were
  *  authored against the flat baseline and stay BIT-IDENTICAL (DemoPark's
@@ -105,10 +121,22 @@ export const CLIMATE_TERRAIN_STYLES: Record<ParkClimate, TerrainStyle[]> = {
   coastal: ['hollows', 'downs', 'plains', 'downs', 'hollows', 'steppe'],
 };
 
-/** landform amplitude multiplier for the plot size: 1 at the classic 48
- *  (bit-identical), up to 1.9 on a 192 plot so 4× the ground does not read as
- *  4× flatter (relief is otherwise size-invariant in world units) */
-export const landformAmplitudeK = (S: number) => clamp(0.55 + 0.45 * (S / 48), 0.55, 1.9);
+/** landform amplitude multiplier for the plot size: exactly 1 at the classic 48
+ *  (bit-identical), climbing past it so a bigger plot does not read as a
+ *  proportionally FLATTER one (relief is otherwise size-invariant in world
+ *  units, i.e. the same metres of relief smeared over more ground).
+ *
+ *  2026-07: the old curve topped out at 1.9 and reached it only at 192, which
+ *  left the 128 default at 1.75 — measured, the built plots came out with 2-4 u
+ *  of total relief across 128 u of ground and the render read as "nearly flat,
+ *  gentle swells, no silhouette". The multiplier now reaches **2.9 by 128** and
+ *  holds there (bigger plots gain nothing from more vertical — they need more
+ *  RANGES, which `bonusRanges` gives them). Combined with the per-archetype
+ *  `drama` factor a ridge-country 128 plot builds ~8 u of landform amplitude,
+ *  i.e. real relief on the horizon. `reliefBias` still holds the buildable core
+ *  gentle, so none of this reaches the ground a layout stands on. */
+export const landformAmplitudeK = (S: number) =>
+  S <= 48 ? clamp(0.55 + 0.45 * (S / 48), 0.55, 1) : 1 + 1.9 * clamp((S - 48) / 80, 0, 1);
 
 // ---- themes (realistic palette — muted brick reds, forest greens, navy; no
 // orange/pink plastic) --------------------------------------------------------

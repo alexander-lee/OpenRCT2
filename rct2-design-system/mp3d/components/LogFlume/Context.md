@@ -1,5 +1,9 @@
 # LogFlume
 
+**CANONICAL IMPORT — copy exactly:** `import { LogFlume } from './components/LogFlume';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Log flume water ride: an elevated trough with a CARVED log boat of riders. The hull (exported as `buildLog(t, scheme?)`) is ported from the reference "RC Park 3D" LogBoat construction: an open-top LatheGeometry log (top ~0.66 rad left open, rounded bow AND stern, DoubleSide bark), partial-arc darker bark rings that follow the taper via the shared `hullROf` profile, pale cut-wood gunwale lips SWEPT along the opening edges (tubes hugging the hull, never floating past the tapers), a dark hollowed cockpit with three cut-wood bench seats + back lips, cut-wood BOW/STERN DECKS closing the lathe's opening arc over the end tapers (plus bark tip plugs) so the hull is solid from every angle, chevron bow-wave plates at the waterline, and three seated `buildPeep` riders. Hull radius 0.30 / length 1.48 / origin at barrel centre — trough-compatible (rides at wheelOffset 0.25).
 
 The drop lands in a flared splash RUN-OUT on the trough itself (no separate splash pool): low outward-leaned splash boards ride both rim rails through the valley (found by a deterministic steepest-frame scan), churned-foam patches whiten the trough water, and the proximity-driven foam burst + ParticleKit droplet spray erupt as the log crosses.

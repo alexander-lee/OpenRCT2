@@ -90,7 +90,12 @@ export function GuestThoughts({ manager, onClose, x = 244, y = 10, width = 232, 
   const groups = summariseThoughts(active, maxRows);
 
   return (
-    <UIWindow title="Guest Thoughts" x={x} y={y} width={width} onClose={onClose}>
+    // SCROLL. The thought roster is unbounded — it groups every distinct
+    // thought currently held in the park, and now that thoughts NAME their ride
+    // ("Wyrm's Hollow was great!") the distinct-line count scales with the ride
+    // count too, so a busy park easily outgrows a fixed panel and the tail was
+    // being clipped.
+    <UIWindow title="Guest Thoughts" x={x} y={y} width={width} onClose={onClose} maxBodyHeight={240}>
       <div style={{ ...UI_TEXT.header, marginBottom: 3 }}>Summarised guest thoughts</div>
       {groups.length === 0 && (
         <div style={{ ...UI_TEXT.value, opacity: 0.8 }}>(no guests are thinking anything)</div>

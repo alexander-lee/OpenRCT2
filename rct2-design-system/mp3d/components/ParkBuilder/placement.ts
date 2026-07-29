@@ -257,17 +257,28 @@ export function bermNetToGround(
   // heights: explicit nodeY, else the third element of [x, z, elevation] triples
   const nodeYArr = nodeY ?? (net.nodes.some((n) => n.length > 2) ? net.nodes.map((n) => (n[2] as number) ?? 0) : undefined);
   const surfOf = (ni: number) => pathY + (nodeYArr?.[ni] ?? 0);
+  // the berm has to reach the ground under the WHOLE slab, not just under its
+  // centreline: on a side-slope the downhill kerb hangs half a width further
+  // down, and a centreline-deep berm left it visibly floating
+  const BERM_HALF = 0.49; // the berm box is 0.98 wide
   net.edges.forEach(([a, b]) => {
     const [ax, az] = net.nodes[a];
     const [bx, bz] = net.nodes[b];
     const len = Math.hypot(bx - ax, bz - az);
+    const nx = len > 1e-6 ? -(bz - az) / len : 0;
+    const nz = len > 1e-6 ? (bx - ax) / len : 0;
+    const lowGround = (x: number, z: number) =>
+      Math.min(groundAt(x, z), groundAt(x + nx * BERM_HALF, z + nz * BERM_HALF), groundAt(x - nx * BERM_HALF, z - nz * BERM_HALF));
     let minG = Infinity;
     let maxLift = -Infinity;
     for (let k = 0; k <= 5; k += 1) {
       const u = k / 5;
-      const gk = groundAt(ax + (bx - ax) * u, az + (bz - az) * u);
-      minG = Math.min(minG, gk);
-      maxLift = Math.max(maxLift, surfOf(a) + (surfOf(b) - surfOf(a)) * u - gk);
+      const px = ax + (bx - ax) * u;
+      const pz = az + (bz - az) * u;
+      minG = Math.min(minG, lowGround(px, pz));
+      // the berm-vs-scaffold DECISION stays on the centreline, matching
+      // buildPathNetwork's own support test — only the berm's DEPTH widens
+      maxLift = Math.max(maxLift, surfOf(a) + (surfOf(b) - surfOf(a)) * u - groundAt(px, pz));
     }
     if (maxLift > SCAFFOLD_LIFT) return; // elevated span — scaffolds, not berms
     const sA = surfOf(a);
@@ -280,7 +291,7 @@ export function bermNetToGround(
       let deep = 0;
       for (let k = 0; k <= 5; k += 1) {
         const u = k / 5;
-        deep = Math.max(deep, sA + (sB - sA) * u - 0.02 - groundAt(ax + (bx - ax) * u, az + (bz - az) * u));
+        deep = Math.max(deep, sA + (sB - sA) * u - 0.02 - lowGround(ax + (bx - ax) * u, az + (bz - az) * u));
       }
       if (deep <= 0.05) return; // ribbon already hugs the ground
       const h = deep + 0.25;
@@ -380,6 +391,12 @@ export function groundRideAccess(
   acc: RideAccess,
   y: number,
   exitXZ: [number, number] = acc.exit,
+  /** the queue lane's TAIL level, when it differs from `y` — the lane itself is
+   *  an RCT2 SLOPED PATH from the ride's level down (or up) to the street it
+   *  joins (GameManager `buildQueueLane`), so the berm/scaffold that carries it
+   *  has to follow the same grade or it stands proud of the slab at one end and
+   *  leaves it hanging in the air at the other. Omitted ⇒ level, as before. */
+  tailY: number = y,
 ): { x: number; z: number; r: number }[] {
   (
     [
@@ -414,9 +431,14 @@ export function groundRideAccess(
     minG = Math.min(minG, groundAt(acc.anchor[0] + (acc.tail[0] - acc.anchor[0]) * (k / 5), acc.anchor[1] + (acc.tail[1] - acc.anchor[1]) * (k / 5)));
   }
   const laneYaw = Math.atan2(acc.tail[0] - acc.anchor[0], acc.tail[1] - acc.anchor[1]);
-  if (y - minG > SCAFFOLD_LIFT) {
+  // the lane's own grade: `y` at the anchor (head), `tailY` at the tail
+  const rise = tailY - y;
+  const lanePitch = -Math.atan2(rise, len || 1); // local +z (the tail) rises with it
+  const laneRun = Math.hypot(len, rise); // the carried length ON the slope
+  const yHigh = Math.max(y, tailY);
+  if (yHigh - minG > SCAFFOLD_LIFT) {
     // elevated queue lane — one wooden post bay per ~1.2 tile + a plank deck
-    // strip (top at y + 0.01), never a stretched berm
+    // strip (top at the lane surface + 0.01), never a stretched berm
     const ux = (acc.tail[0] - acc.anchor[0]) / (len || 1);
     const uz = (acc.tail[1] - acc.anchor[1]) / (len || 1);
     const specs: MergedBoxSpec[] = [];
@@ -425,23 +447,22 @@ export function groundRideAccess(
       const u = (k + 0.5) / bays;
       const wx = acc.anchor[0] + (acc.tail[0] - acc.anchor[0]) * u;
       const wz = acc.anchor[1] + (acc.tail[1] - acc.anchor[1]) * u;
-      scaffoldBay(t, specs, wx, wz, uz, -ux, 0.24, y - 0.03, groundAt(wx, wz), k * 23 + 5);
+      scaffoldBay(t, specs, wx, wz, uz, -ux, 0.24, y + rise * u - 0.03, groundAt(wx, wz), k * 23 + 5);
     }
-    specs.push({
-      dims: [0.62, 0.06, len],
-      pos: [(acc.anchor[0] + acc.tail[0]) / 2, y - 0.02, (acc.anchor[1] + acc.tail[1]) / 2],
-      rotY: laneYaw,
-      repeat: [1, Math.max(2, Math.round(len * 2))],
-    });
+    const deck = new t.Matrix4().makeRotationFromEuler(new t.Euler(lanePitch, laneYaw, 0, 'YXZ'));
+    deck.setPosition(
+      (acc.anchor[0] + acc.tail[0]) / 2,
+      (y + tailY) / 2 - 0.02,
+      (acc.anchor[1] + acc.tail[1]) / 2,
+    );
+    specs.push({ dims: [0.62, 0.06, laneRun], matrix: deck, repeat: [1, Math.max(2, Math.round(laneRun * 2))] });
     g.add(mergedBoxes(t, specs, SCAFFOLD_WOOD, { tex: 'wood', rough: 0.85 }));
-  } else if (y - minG > 0.05) {
-    const h = y - minG + 0.3;
-    const berm = box(t, [0.6, h, len], EARTH, [(acc.anchor[0] + acc.tail[0]) / 2, y - h / 2 + 0.01, (acc.anchor[1] + acc.tail[1]) / 2], {
-      tex: 'concrete',
-      repeat: [2, 6],
-      rough: 1,
-    });
-    berm.rotation.y = laneYaw;
+  } else if (yHigh - minG > 0.05) {
+    // sized off the HIGH end so an inclined berm still reaches ground at the low one
+    const h = yHigh - minG + 0.3;
+    const berm = box(t, [0.6, h, laneRun], EARTH, [0, 0, 0], { tex: 'concrete', repeat: [2, 6], rough: 1 });
+    berm.rotation.set(lanePitch, laneYaw, 0, 'YXZ');
+    berm.position.set((acc.anchor[0] + acc.tail[0]) / 2, (y + tailY) / 2 - h / 2 + 0.01, (acc.anchor[1] + acc.tail[1]) / 2);
     g.add(berm);
   }
   return [

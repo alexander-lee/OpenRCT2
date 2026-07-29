@@ -1,5 +1,9 @@
 # MagneticRide
 
+**CANONICAL IMPORT — copy exactly:** `import { MagneticRide } from './components/MagneticRide';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 A **MAGLEV GLIDER** — the trackless-dark-ride idea (slow, poised, cinematic pods drifting past a show scene) built as an OPEN-AIR attraction on purpose: there is no show building, so the whole circuit — guideway, pods and every effect — reads from outside the plot. The vocabulary is deliberately not coaster: no ties, no rails, no wheels. A slim graphite induction beam on single elegant pylons carries a polished levitation rail, glowing coil strips down both flanks, coil ribs, cable conduits and painted travel chevrons. Four pod-shaped vehicles hover a VISIBLE gap above the rail crown and glide at a constant walking pace, banking gently through the sweeps with a slow hashed yaw/pitch/roll drift for the cinematic feel. The show piece the pods circle — a hexagonal monolith with three magnetically suspended rings — stands in the open, in the middle of the ring.
 
 Palette: graphite/steel shell and pylons (`0x3e444d`/`0x2c313a`/`0x9aa2ab`/`0x6d757e`), deep navy pod bodies (`0x2c3e5a`), concrete footings/deck, restrained cyan accents (`0x9fe9f4`/`0x2fb6cf`) and violet beacon glass (`0xb9a6ff`/`0x6a4fd0`) — no neon plastic.

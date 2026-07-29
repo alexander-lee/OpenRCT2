@@ -1,5 +1,9 @@
 # UIWindow
 
+**CANONICAL IMPORT — copy exactly:** `import { UIWindow } from './components/UIWindow';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 The classic RCT2 window chrome in pure DOM/CSS (no images): tan bevelled frame,
 dark brownish-red title bar with centred text, square bevelled close/collapse
 buttons, and a darker inset content panel. **This is the base chrome for every

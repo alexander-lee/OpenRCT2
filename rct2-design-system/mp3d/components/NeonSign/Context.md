@@ -1,5 +1,9 @@
 # NeonSign
 
+**CANONICAL IMPORT — copy exactly:** `import { NeonSign } from './components/NeonSign';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Neon tube signage: text in a compact 16-segment-style vector font, or any SVG path, rendered as emissive neon tubes with halo glow, stand-off mounted so nothing floats.
 
 Original three.js model on the shared Stage (day/night lighting). Exports:

@@ -3,10 +3,10 @@ import * as THREE from 'three';
 import { laneLenOf, groundRideAccess, obbOverlap, offPathCell, pathClearance, WATER_LEVEL, TILE } from '../ParkBuilder';
 import type { ParkFootRect, StreetLattice } from '../ParkBuilder';
 import { computeSplineFrames } from '../SplineCoaster';
-import type { StallItemKind } from '../GameManager';
+import type { StallItemKind, StallItemBuilder, QueueSurface, RideStationConfig as GMRideStationConfig } from '../GameManager';
 import { xzOf, yOf } from './parkContext';
-import type { GameMgr, MovableRec, ParkContextValue, ParkStore, V3, XZ } from './parkContext';
-import { useComposable, toBuilt } from './composable';
+import type { GameMgr, MovableRec, ParkContextValue, ParkPathsInfo, ParkStore, V3, XZ } from './parkContext';
+import { useComposable, toBuilt, tagComponent } from './composable';
 import type { ComposableBuilt, ComposableProps } from './composable';
 
 // ---- queue-lane orientation safeguard (round-4) ------------------------------------
@@ -31,6 +31,192 @@ const laneRectFor = (anchor: XZ, dir: XZ, laneLen: number): ParkFootRect => ({
   label: 'queue lane',
 });
 const hutRectFor = (c: XZ, yaw: number, label: string): ParkFootRect => ({ cx: c[0], cz: c[1], hx: 0.55, hz: 0.5, yaw, label });
+
+// ---------------------------------------------------------------------------
+// THE RCT2 ENTRANCE/EXIT LAYOUT — adjacent on one station face, both outward
+// ---------------------------------------------------------------------------
+// WHAT RCT2 ACTUALLY ENFORCES, and what it merely CONVENTIONALISES. Read the
+// source before changing any of this:
+//
+//   * ENFORCED. Each of the entrance and the exit must stand on a full tile
+//     orthogonally adjacent to a STATION TRACK tile of its own ride, on a side
+//     the track sequence permits. The tool refuses any other tile
+//     (`RideGetEntranceOrExitPositionFromScreenPosition`,
+//     openrct2-ui/ride/Construction.cpp:449-487) and `Ride::validateStations`
+//     DELETES one that no longer qualifies (RideConstruction.cpp:1557-1592 —
+//     line 1584 is the relative-direction test this file has always cited).
+//   * ENFORCED. The stored element `direction` points INWARD, at the station;
+//     both the queue and the footpath attach on the REVERSE side
+//     (`kEntranceDirections` = 4, EntranceElement.cpp:22-26 +
+//     Footpath.cpp:118-121). Our `dir`/`exitDir` are that reverse — the
+//     OUTWARD facing, the sense of the UI's own
+//     `gRideEntranceExitPlaceDirection` (Construction.cpp:479-483).
+//   * NOT ENFORCED — and this corrects a premise. NOTHING in RCT2 relates the
+//     entrance's tile or face to the exit's. `RideStation` holds two entirely
+//     independent `TileCoordsXYZD` (Ride.h:172-173) and no code compares them;
+//     each is validated only against the station track. On a long station the
+//     entrance may sit on tile 1's north face and the exit on tile 4's south.
+//     Placing them ADJACENT ON ONE FACE is player convention — the thing every
+//     RCT2 player actually builds, because it is what makes one queue in and
+//     one path out read as a station.
+//
+// So: adjacency is the DEFAULT and a WARNING when broken, never a hard error
+// (see ParkBuilder/validate.ts check a4 for the same split), while the two
+// things RCT2 does enforce — an axis-aligned outward facing and a path on the
+// tile outside the exit — are load-bearing.
+
+/** RCT2 tile pitch — the entrance/exit sit on ADJACENT tiles, i.e. this apart */
+const HUT_PITCH = TILE;
+/** the entrance hut stands this far back from the queue HEAD (registry.ts) */
+const HUT_BACK = 0.62;
+
+/** the two station-face cells ADJACENT to the entrance hut, nearest side first
+ *  — both facing the same way OUT as the entrance (`dir`) */
+export function adjacentExitCells(anchor: XZ, dir: XZ, sideHint = -1): { cell: XZ; side: number }[] {
+  const hut: XZ = [anchor[0] - dir[0] * HUT_BACK, anchor[1] - dir[1] * HUT_BACK];
+  const tan: XZ = [-dir[1], dir[0]]; // along the station face
+  const first = sideHint >= 0 ? 1 : -1;
+  return [first, -first].map((side) => ({
+    cell: [hut[0] + tan[0] * HUT_PITCH * side, hut[1] + tan[1] * HUT_PITCH * side] as XZ,
+    side,
+  }));
+}
+
+/** is this exit cell/facing the RCT2 shape — one tile along the SAME station
+ *  face as the entrance, doorway pointing the same way OUT? */
+export function exitIsAdjacentOutward(
+  anchor: XZ,
+  dir: XZ,
+  exit: XZ,
+  exitDir: XZ,
+): { ok: boolean; sameFace: boolean; along: number; across: number; dot: number } {
+  const m = Math.hypot(exitDir[0], exitDir[1]) || 1;
+  const ed: XZ = [exitDir[0] / m, exitDir[1] / m];
+  const dot = ed[0] * dir[0] + ed[1] * dir[1];
+  const hut: XZ = [anchor[0] - dir[0] * HUT_BACK, anchor[1] - dir[1] * HUT_BACK];
+  const dx = exit[0] - hut[0];
+  const dz = exit[1] - hut[1];
+  const across = dx * dir[0] + dz * dir[1]; // out from the face (want ~0)
+  const along = Math.abs(-dx * dir[1] + dz * dir[0]); // along the face (want ~1 tile)
+  const sameFace = dot > 0.966; // within 15°, i.e. the same cardinal side
+  // one tile is 1.2; allow up to 1.85 (a hut is 1.09 wide, so 1.2 is the tightest
+  // legal pitch and ~1.5 is still one cell of slack) and 0.85 of depth wobble
+  return { ok: sameFace && along <= 1.85 && Math.abs(across) <= 0.85, sameFace, along, across, dot };
+}
+
+/**
+ * How far an EXIT PATH cast out of `from` along `dir` runs before it meets the
+ * street — `Infinity` when nothing is on that ray inside `maxReach`. This is the
+ * SAME ray-cast `GameManager/access.ts planExitLane` registers with; it lives
+ * here too so the chassis can CHOOSE the exit cell before registering instead of
+ * repairing it afterwards. Cardinal only, nodes and edge crossings both.
+ */
+export function exitLaneReach(
+  from: XZ,
+  dir: XZ,
+  net: StreetLattice,
+  streetNodes: number,
+  maxReach = 9,
+  /** the queue's TAIL cell — the JOIN fallback target (see planExitLane) */
+  tail?: XZ,
+): number {
+  const start: XZ = [from[0] + dir[0] * HUT_BACK, from[1] + dir[1] * HUT_BACK];
+  const px = -dir[1];
+  const pz = dir[0];
+  let best = Infinity;
+  const n0 = Math.max(0, Math.min(streetNodes, net.nodes.length));
+  for (let i = 0; i < n0; i += 1) {
+    const ddx = net.nodes[i][0] - start[0];
+    const ddz = net.nodes[i][1] - start[1];
+    const along = ddx * dir[0] + ddz * dir[1];
+    if (along < 0.35 || along > maxReach) continue;
+    if (Math.abs(ddx * px + ddz * pz) > 0.45) continue;
+    best = Math.min(best, along);
+  }
+  for (const [a, b] of net.edges) {
+    if (a >= n0 || b >= n0) continue;
+    const A = net.nodes[a];
+    const B = net.nodes[b];
+    const ex = B[0] - A[0];
+    const ez = B[1] - A[1];
+    const den = dir[0] * ez - dir[1] * ex;
+    if (Math.abs(den) < 1e-6) continue; // parallel — never crossed
+    const rx = A[0] - start[0];
+    const rz = A[1] - start[1];
+    const tt = (rx * ez - rz * ex) / den;
+    const u = (rx * dir[1] - rz * dir[0]) / den;
+    if (u < -0.02 || u > 1.02 || tt < 0.35 || tt > maxReach) continue;
+    best = Math.min(best, tt);
+  }
+  // THE JOIN: a dead-end tail spur has no cross-street for the ray to meet, so
+  // the path runs out level with the queue tail and turns one tile onto it —
+  // the same fallback `planExitLane` registers with, so the cell CHOSEN here is
+  // the cell that actually gets built.
+  if (tail) {
+    const ddx = tail[0] - start[0];
+    const ddz = tail[1] - start[1];
+    const alongT = ddx * dir[0] + ddz * dir[1];
+    const lat = Math.abs(ddx * px + ddz * pz);
+    if (alongT >= 0.35 && lat >= 0.6 && lat <= 1.85) best = Math.min(best, alongT + lat);
+  }
+  return best;
+}
+
+/**
+ * PICK the exit cell: of the two station-face cells beside the entrance hut,
+ * the legal one whose EXIT PATH is SHORTEST (the hint side wins ties within half
+ * a tile). RCT2's exit path is a tile or three, not a causeway — the short side
+ * is the one whose ray meets the CROSS-STREET through the queue's own tail node,
+ * which is the shape a player builds; the long side is the ray that misses that
+ * junction and runs on to the next street, and that is the run that ends up
+ * crossing a plaza or another land on its way there.
+ *
+ * `reach: Infinity` on the returned cell means no street lies on its ray at all
+ * — RCT2's `STR_EXIT_NOT_CONNECTED` condition (Ride.cpp:2076). The caller lints
+ * it; nothing is auto-moved onto another face, because THAT is what produced the
+ * stranded exits this whole change exists to fix.
+ */
+export function pickAdjacentExitCell(opts: {
+  anchor: XZ;
+  dir: XZ;
+  sideHint?: number;
+  net: StreetLattice;
+  streetNodes: number;
+  /** in bounds / dry / clear of every audited footprint (default: everything is) */
+  isClean?: (cell: XZ) => boolean;
+  /** the queue's TAIL cell — lets the JOIN fallback count as reachable */
+  tail?: XZ;
+}): { cell: XZ; reach: number; clean: boolean } {
+  const cands = adjacentExitCells(opts.anchor, opts.dir, opts.sideHint ?? -1);
+  const clean = opts.isClean ?? (() => true);
+  let best: { cell: XZ; reach: number; clean: boolean } | null = null;
+  cands.forEach((c, i) => {
+    const ok = clean(c.cell);
+    if (!ok) return;
+    const reach = exitLaneReach(c.cell, opts.dir, opts.net, opts.streetNodes, 9, opts.tail) + (i === 0 ? 0 : 0.6);
+    if (!best || reach < best.reach) best = { cell: c.cell, reach, clean: true };
+  });
+  if (best) return best;
+  // neither cell is legal — keep the hinted one and report it unclean
+  return { cell: cands[0].cell, reach: exitLaneReach(cands[0].cell, opts.dir, opts.net, opts.streetNodes, 9, opts.tail), clean: false };
+}
+
+/** the shared §0.4 lint text for an authored exit that is not adjacent-and-outward */
+export function exitAdjacencyLintDetail(label: string, m: ReturnType<typeof exitIsAdjacentOutward>, exit: XZ, suggested: XZ, dir: XZ): string {
+  return (
+    `${label}: the authored exit hut at [${exit.map((v) => +v.toFixed(2)).join(', ')}] is NOT the RCT2 layout — ` +
+    (m.sameFace
+      ? `it faces the same way OUT as the entrance (good) but sits ${m.along.toFixed(2)} u along the face and ${m.across.toFixed(
+          2,
+        )} u out of it, where the RCT2 shape is ONE TILE (1.2 u) along and flush (0 u out)`
+      : `its doorway facing is ${(Math.acos(Math.max(-1, Math.min(1, m.dot))) * (180 / Math.PI)).toFixed(
+          0,
+        )}° off the entrance's, so the two huts open onto DIFFERENT faces — a guest leaving walks out the back of the ride while the queue comes in the front`) +
+    `. RCT2 does not FORBID this (nothing in the game relates station.Entrance to station.Exit — Ride.h:172-173, and each is validated only against the station track, RideConstruction.cpp:1584), which is why this is a warning and not a failure; but the entrance-beside-exit, queue-in / path-out station is what every RCT2 park is built from, and the EXIT PATH is cast along \`exitDir\` — a facing that points at the ride, or into a meadow, gets no path at all (RCT2 flags exactly that as STR_EXIT_NOT_CONNECTED, Ride.cpp:2076). Use exit [${suggested
+      .map((v) => +v.toFixed(2))
+      .join(', ')}] with exitDir [${dir.map((v) => +v.toFixed(2)).join(', ')}], or drop \`exit\`/\`exitDir\` and let the chassis derive the adjacent cell (§0.4)`
+  );
+}
 
 export function resolveQueueOrientation(opts: {
   /** `[Coaster] 'Name'`-style prefix for the console warnings */
@@ -271,6 +457,13 @@ export function lintPadOffLattice(
       )} u off every node + edge centreline — \`offPathCell(net, [${at[0]}, ${at[1]}], { clear: ${need.toFixed(2)} })\`)`
     : `NO cell within 4.8 u clears ${need.toFixed(2)} u — the street skeleton itself is too dense here: re-plan it (or use buildParkNet + a set-piece, §3.1)`;
   if (slab <= pathHalf) {
+    // wave-11 P0: hand the OFFENDER and the cell already computed above to the
+    // settle pass, which MOVES it (`resolvePadOnStreet`). Only pads the gate
+    // has actually judged to be in the slab are ever moved — the settle pass
+    // never re-derives the geometry, so it cannot disagree with this lint.
+    const st = park as ParkStore;
+    if (st._padOnStreet)
+      st._padOnStreet.push({ name: label.replace(/^\[Park\]\s*/, ''), at, to: spot ?? null, clear: need, kind });
     park.reportLint(
       'padOnStreet',
       `${label}: its ${kind} pad INTERSECTS the street — ${slab.toFixed(2)} u to ${slabWhat} near [${slabAt[0].toFixed(1)}, ${slabAt[1].toFixed(
@@ -280,7 +473,12 @@ export function lintPadOffLattice(
       )} u path slab. Guests cannot walk through it: every street edge crossing this pad becomes a \`blockers\` FAIL and any queue tail behind it becomes unreachable. Pads go on cell INTERIORS, ≥ ${PAD_OFF_LATTICE.toFixed(
         1,
       )} u off every lattice node and edge centreline (only the queue lane may touch a node — §0.14): ${fix}`,
-      true,
+      // wave-11 P0: NOT §0-fatal here any more. `resolvePadOnStreet` runs at
+      // settle time over the same movable rig and APPLIES the cell computed
+      // above; it re-reports the case as fatal only when the rig is pinned or
+      // no legal cell exists. Reporting-and-shipping the broken placement is
+      // what cost round 10 eleven points.
+      false,
     );
     return;
   }
@@ -320,6 +518,108 @@ export function stallFootRect(st: { name: string; anchor: [number, number, numbe
     yaw: Math.atan2(dxn, dzn),
     label: `${st.name} stall`,
   };
+}
+
+/**
+ * PAD-ON-STREET AUTO-CORRECTION (wave-11 P0).
+ *
+ * ONE ride pad placed 0.00 u from a street node severed 81 % of round 10's
+ * park A: 4 `blockers` FAILs, five rides and all seven stalls unreachable,
+ * `nodesReachableFromGate: 28/146`, a dead sim — about eleven points from one
+ * coordinate. And the validator ALREADY KNEW THE ANSWER: the mount-time
+ * `padOnStreet` lint printed `offPathCell(net, [-14.4, 54.48], { clear: 2.40 })
+ * → [-14.4, 52.8]` and then shipped the broken placement anyway.
+ *
+ * A lint that computes the fix and does not apply it guarantees the cascade,
+ * so this settle pass applies it, on exactly the wave-9 `queueAnchorIsHead`
+ * contract: MOVE the rig to the computed cell, REPORT it as a warning naming
+ * the value (so the author writes it into the park), and leave it §0-FATAL
+ * only when no legal cell exists or the rig is pinned. It runs on the same
+ * `_movables` the corridor resolver uses, BEFORE it — a pad in the street is
+ * a worse defect than a pad under a track, and the corridor pass then works
+ * from the corrected cell.
+ */
+export function resolvePadOnStreet(ctx: ParkStore, mgr: GameMgr): void {
+  const offenders = ctx._padOnStreet ?? [];
+  if (!offenders.length || !ctx.paths || !ctx._movables.length) return;
+  const half = ctx.size / 2;
+  const allRects = (): ParkFootRect[] => [
+    ...(mgr.footprints?.() ?? []),
+    ...ctx._extraFootprints,
+    ...(mgr.stalls?.() ?? []).map(stallFootRect),
+  ];
+  for (const off of offenders) {
+    // the rig that owns this pad — `mv.label` is `<name> (flat-ride rig)` /
+    // `<name> stall`, both prefixed with the registered name the lint used
+    const mv = ctx._movables.find((m) => m.label === off.name || m.label.startsWith(`${off.name} `));
+    if (!mv) {
+      // nothing movable owns it (a tracked circuit, a preview host) — the
+      // mount-time lint is advisory now, so the verdict has to be made here
+      ctx.reportLint(
+        'padOnStreet',
+        `${off.name}: its pad stands IN the street and nothing movable owns it (a tracked circuit cannot be shifted — its rails would not follow), so it CANNOT be auto-corrected. Move it to [${
+          off.to ? `${off.to[0].toFixed(2)}, ${off.to[1].toFixed(2)}` : 'a cell off the lattice'
+        }] in the park source (§0.14)`,
+        true,
+      );
+      continue;
+    }
+    if (mv.pinned) {
+      ctx.reportLint(
+        'padOnStreet',
+        `${off.name}: its pad stands IN the street and the rig is PINNED, so it was left there. Unpin it or move the pad to [${
+          off.to ? `${off.to[0].toFixed(2)}, ${off.to[1].toFixed(2)}` : 'a cell off the lattice'
+        }] yourself (§0.14)`,
+        true,
+      );
+      continue;
+    }
+    if (!off.to) {
+      ctx.reportLint(
+        'padOnStreet',
+        `${off.name}: its pad stands IN the street and NO cell within 4.8 u clears ${off.clear.toFixed(
+          2,
+        )} u — the street skeleton itself is too dense here, so there is nothing to auto-correct to. Re-plan the cell (or the streets: buildParkNet + a set-piece, §3.1)`,
+        true,
+      );
+      continue;
+    }
+    const dx = off.to[0] - off.at[0];
+    const dz = off.to[1] - off.at[1];
+    // the rig's OWN audited rects (the ones a shift carries with it)
+    const rects = mv.rects();
+    const ownLabels = new Set(rects.map((r) => r.label));
+    const others = allRects().filter((o) => !ownLabels.has(o.label));
+    const moved = rects.map((r) => ({ ...r, cx: r.cx + dx, cz: r.cz + dz }));
+    const outOfPlot = moved.some((r) => Math.max(Math.abs(r.cx), Math.abs(r.cz)) > half - 0.55);
+    // never TRADE a street intrusion for a footprint collision it did not have
+    const pre = new Set(others.filter((o) => rects.some((r) => obbOverlap(r, o))).map((o) => o.label));
+    const collides = others.some((o) => !pre.has(o.label) && moved.some((r) => obbOverlap(r, o)));
+    if (outOfPlot || collides) {
+      ctx.reportLint(
+        'padOnStreet',
+        `${off.name}: its pad stands IN the street, and the legal cell [${off.to[0].toFixed(2)}, ${off.to[1].toFixed(
+          2,
+        )}] the gate computed is ${outOfPlot ? 'outside the plot' : 'already occupied by another footprint'} — the auto-correction was REFUSED rather than trade one defect for another. Re-plan the cell (or the streets: buildParkNet + a set-piece, §3.1)`,
+        true,
+      );
+      continue;
+    }
+    mv.shift(dx, dz);
+    ctx.reportLint(
+      'padOnStreet',
+      `${off.name}: its ${off.kind} pad stood IN the street at [${off.at[0].toFixed(2)}, ${off.at[1].toFixed(
+        2,
+      )}] — AUTO-CORRECTED to [${off.to[0].toFixed(2)}, ${off.to[1].toFixed(2)}] = \`offPathCell(net, [${off.at[0].toFixed(
+        2,
+      )}, ${off.at[1].toFixed(2)}], { clear: ${off.clear.toFixed(2)} })\`, a shift of [${dx.toFixed(2)}, ${dz.toFixed(
+        2,
+      )}]. Uncorrected it severs the network behind it (round-10: 4 \`blockers\` FAILs, 5 rides + all 7 stalls unreachable, 28/146 nodes reachable from the gate, a dead sim — ~11 points from one coordinate). WRITE THE CORRECTED CELL INTO THE PARK: pads go on cell INTERIORS ≥ ${PAD_OFF_LATTICE.toFixed(
+        1,
+      )} u off every lattice node and edge centreline, and only the queue lane may touch a node (§0.14)`,
+      false,
+    );
+  }
 }
 
 export function resolveCorridorConflicts(ctx: ParkStore, mgr: GameMgr): void {
@@ -580,6 +880,46 @@ export interface RideRegisterProps {
   loadTime?: number;
   intensity?: number;
   price?: number;
+  /** what this ride's QUEUE LANE is paved with (default: RCT2 red).
+   *  A themed land passes `theme.queueSurface` — the lanes are a path, and from
+   *  the park camera an unthemed red lane is often the brightest paved surface
+   *  in the land: measured in Pulse District, `QUEUE_RCT2` (luma 78.8) is
+   *  brighter than the kerb meant to be its lightest line (75.0). */
+  queueSurface?: QueueSurface;
+  /** what this ride's EXIT PATH is paved with (default: `SURFACE_TARMAC`,
+   *  municipal grey). The exit path is an ORDINARY footpath, never the red
+   *  queue — RCT2's *"Construct a path from the ride exit"* (Ride.cpp:2076) —
+   *  so its default is the stock street, not the queue's colour. A themed land
+   *  passes `theme.pathSurface` here exactly as it passes `theme.queueSurface`
+   *  to the lane: an unthemed grey run through a nightclub street reads as
+   *  municipal infrastructure under a costume, which is the note
+   *  `queueSurface` exists to answer for the lane. */
+  exitSurface?: { pave: number; kerb?: number; seam?: number; paveTex?: string; kerbTex?: string; rough?: number };
+  /**
+   * ADDITIVE: WORLD-frame boarding anchor, overriding `layout.board`.
+   *
+   * A component's `layout.board` is a LOCAL offset baked in at
+   * `composableRide()` time, which cannot describe a platform whose height is
+   * an instance prop — an ELEVATED monorail station boards 2.45 u up on the
+   * beam, not 0.25 u off the pad. Pass the resolved world point instead.
+   */
+  board?: V3;
+  /**
+   * ADDITIVE — EXTRA PLATFORMS for a multi-station transport ride. RCT2 rides
+   * own an ARRAY of stations (`std::array<RideStation, kMaxStationsPerRide>`,
+   * ride/Ride.h:404) and the transport RTDs are why: the monorail
+   * (ride/rtd/transport/Monorail.h:19-84) sets neither `RtdFlag::hasOneStation`
+   * nor `hasSinglePieceStation`, so its station count is unlimited (the legacy
+   * RCT2 save format caps it at 4, rct12/Limits.h:21).
+   *
+   * The chassis DERIVES station 0 from `position`/`rotation`/`queue` as always.
+   * These entries are passed to `registerRide` verbatim in WORLD coordinates —
+   * one queue lane, entrance hut, exit hut and exit footpath each — because a
+   * park-spanning circuit's platforms are nowhere near the component origin and
+   * there is no local frame that could derive them. Publish the numbers
+   * (rules/park-generation-rides.md §4.2) and copy them.
+   */
+  stations?: GMRideStationConfig[];
 }
 
 /** local-frame access geometry a ride component ships with (all optional) */
@@ -592,7 +932,18 @@ export interface RideLayout {
    *  0.35, but when a street node sits ON the lane axis short of that the
    *  lane is TRIMMED so the tail lands exactly on the node (round-2). */
   front?: number;
-  /** exit hut spot in LOCAL [x, z] (default [-1.5, 1.35] — beside the front) */
+  /**
+   * exit hut spot in LOCAL [x, z]. Since the RCT2 entrance/exit fix this is a
+   * SIDE HINT, not a coordinate: the chassis puts the exit hut on the station
+   * face the QUEUE comes off, ONE TILE (1.2 u) beside the entrance hut and
+   * facing the same way out (the RCT2 layout — see `adjacentExitCells`), and all
+   * this value contributes is the SIGN of its local x, i.e. which side of the
+   * queue the catalog component wants its exit on. The old absolute cell
+   * (default `[-1.5, 1.35]`, "beside the front") could not know the RESOLVED
+   * queue direction — the orientation resolver may flip it — and so put derived
+   * huts 3.9-4.8 u out on bare grass with the exit doorway facing the OPPOSITE
+   * way from the entrance.
+   */
   exit?: [number, number];
   /** boarding anchor in LOCAL [x, y, z] (default [0, 0.25, 0]) */
   board?: V3;
@@ -618,6 +969,14 @@ export type ComposableRideBuilt = ComposableBuilt & {
    *  (SplineRideKit `rateCoaster`) — forwarded to registerRide so the ride
    *  handle can report Excitement/Intensity/Nausea. Informational only. */
   ratings?: { excitement: number; intensity: number; nausea: number; ratingBand?: string; nauseaExtreme?: boolean };
+  /** ADDITIVE, and the only channel that runs BACKWARDS — from the manager to
+   *  the visual. A build that has ground-level structure serving its huts (the
+   *  monorail's platform lifts and stair cores) cannot place it at build time:
+   *  the huts come from the PARK's authored `queueAnchor` / `exitPoint`, are
+   *  resolved against the access audit, and may be auto-shifted again. Called
+   *  once, straight after `registerRide`, with one entry per station in station
+   *  order, in WORLD xz. */
+  onAccessPlaced?: (stations: { entrance: [number, number]; exit: [number, number] }[]) => void;
 };
 
 /**
@@ -643,8 +1002,13 @@ export function registerComposedRide(
   const d = layout.defaults ?? {};
   const capacity = reg.capacity ?? d.capacity ?? 4;
   let front = (layout.front ?? 1.8) * sc;
-  let [lex, lez] = (layout.exit ?? [-1.5, 1.35]).map((v) => v * sc) as [number, number];
+  // `layout.exit` is now only a SIDE HINT (see RideLayout.exit): its local-x sign
+  // says which side of the queue face the catalog component wants its exit on.
+  const exitSideHint = Math.sign((layout.exit ?? [-1.5, 1.35])[0]) || -1;
   const [lbx, lby, lbz] = (layout.board ?? [0, 0.25, 0]).map((v) => v * sc) as V3;
+  // an ELEVATED platform (a monorail beam deck) cannot be described by a local
+  // offset frozen at composableRide() time — `reg.board` is the world override
+  const boardOverride = reg.board;
   // RCT2 RULE (RideConstruction.cpp:1584 — entrance/exit tiles sit flush
   // against a station edge on one of its four legal sides, doorway
   // perpendicular): measure the built visual's LOCAL footprint and keep the
@@ -656,11 +1020,12 @@ export function registerComposedRide(
   if (!foot.isEmpty() && Math.max(foot.max.x - foot.min.x, foot.max.z - foot.min.z) * sc <= 10) {
     const minHutFront = foot.max.z * sc + 1.27; // hut nearside (front−1.12) clears the +z edge
     if (front < minHutFront && minHutFront <= 6.5) front = minHutFront; // cap: boarding stays walkable
-    const flushX = foot.min.x * sc - 0.62; // exit hut flush on the −x edge
-    if (lex > flushX) lex = flushX;
-    // keep the exit ALONG that edge (never floating past the corner)
-    lez = Math.max(foot.min.z * sc + 0.6, Math.min(lez, foot.max.z * sc + 0.4));
   }
+  // NOTE the flush-to-the-−x-edge clamp that used to live here is GONE with the
+  // absolute `layout.exit` cell it clamped. The exit is now derived from the
+  // RESOLVED queue frame, at the entrance hut's own depth off the face, so it
+  // clears the ride body by exactly the same 1.27 u the entrance hut does —
+  // by construction, with nothing left to clamp.
   const ldz: XZ = [Math.sin(yaw), Math.cos(yaw)]; // local +z in world
   const dx: XZ = [Math.cos(yaw), -Math.sin(yaw)]; // local +x in world
   const w = (lx: number, lz: number): XZ => [x + dx[0] * lx + ldz[0] * lz, z + dx[1] * lx + ldz[1] * lz];
@@ -687,8 +1052,12 @@ export function registerComposedRide(
       );
   }
   let anchor = queue?.anchor ?? w(0, front);
-  let exit = w(lex, lez);
-  const board = w(lbx, lbz);
+  // the RCT2 exit cell — derived, never authored here: one tile along the
+  // station face from the entrance hut, facing the same way out. Re-derived
+  // after the orientation resolver settles `dz`/`anchor` below.
+  let exit = adjacentExitCells(anchor, dz, exitSideHint)[0].cell;
+  let exitDir: XZ = dz;
+  const board: XZ = boardOverride ? [boardOverride[0], boardOverride[2]] : w(lbx, lbz);
   // ---- `queue.anchor` IS THE HEAD, NOT THE TAIL (round-7 safeguard) --------
   // Round-7's park wrote `queue={{ anchor: [-12, 3.6], dir: [0, 1] }}` on five
   // rides, meaning "land the tail on the street node at (−12, 3.6)". `anchor`
@@ -697,6 +1066,17 @@ export function registerComposedRide(
   // cross every perpendicular edge. Detect the tell — an explicit anchor
   // sitting ON a street node — and print the head coordinate that WOULD have
   // put the tail there.
+  //
+  // WAVE-9 P1 — THE LINT NOW AUTO-CORRECTS THE ANCHOR. Round 8 recorded this
+  // §0-FATAL lint on two rides, PRINTED the right head coordinate, and then
+  // kept the broken lane: the lanes ran down the street, which cost 5
+  // `footprints` FAILs, 3 `padOnStreet`, 8 `blockers` and a DEAD sim
+  // (queued 0 / riding 0 — no guest could reach a queue at all). A lint whose
+  // remedy is a subtraction the code has already done should not be left to
+  // the author: the anchor is moved to `tail − dir·(laneLenOf(capacity) +
+  // 0.35)` and the lint is DOWNGRADED to a (still-reported) warning. The park
+  // gets a working queue and a report line naming the arithmetic — which is
+  // the pattern ("turn arithmetic into a block") that has worked all campaign.
   if (queue?.anchor && park.paths) {
     const streets = park.paths.net.nodes.slice(0, park.paths.streetNodes);
     const join = laneLenOf(capacity) + 0.35;
@@ -707,17 +1087,19 @@ export function registerComposedRide(
         break;
       }
     if (onNode >= 0) {
+      const tail: XZ = [anchor[0], anchor[1]];
       const head: XZ = [anchor[0] - dz[0] * join, anchor[1] - dz[1] * join];
+      anchor = head; // AUTO-CORRECT: the tail now lands on the node, as intended
       park.reportLint(
         'queueAnchorIsHead',
-        `${reg.name ?? d.name ?? 'Ride'}: queue.anchor [${anchor.map((v) => +v.toFixed(2)).join(', ')}] sits ON street node ${onNode} — but \`anchor\` is the queue HEAD (the entrance-hut end), not the TAIL. As written the lane runs FROM that node ${laneLenOf(
-          capacity,
-        ).toFixed(2)} u along [${dz.map((v) => +v.toFixed(2)).join(', ')}], i.e. down the street itself, and its railings cross every edge they meet. To land the TAIL on node ${onNode}, pass anchor [${head[0].toFixed(
+        `${reg.name ?? d.name ?? 'Ride'}: queue.anchor [${tail.map((v) => +v.toFixed(2)).join(', ')}] sits ON street node ${onNode} — but \`anchor\` is the queue HEAD (the entrance-hut end), not the TAIL. AUTO-CORRECTED to [${head[0].toFixed(
           2,
-        )}, ${head[1].toFixed(2)}] (node − dir·(laneLenOf(${capacity}) + 0.35) = node − dir·${join.toFixed(
+        )}, ${head[1].toFixed(2)}] = node − dir·(laneLenOf(${capacity}) + 0.35) = node − dir·${join.toFixed(
           2,
-        )}), or drop \`queue\` entirely and let the derived lane trim itself onto the node (§0.4)`,
-        true,
+        )}, so the lane now runs ${laneLenOf(capacity).toFixed(2)} u along [${dz
+          .map((v) => +v.toFixed(2))
+          .join(', ')}] and its TAIL lands on node ${onNode}. Uncorrected it would have run down the street itself with its railings across every edge it met (round-8: 5 footprints + 8 blockers FAILs and a dead sim). WRITE THE CORRECTED VALUE INTO THE PARK — pin the head, or drop \`queue\` entirely and let the derived lane trim itself onto the node (§0.4). Also re-check the PAD: it must sit ≥ 1.8 u off every lattice node and edge centreline (§0.14)`,
+        false,
       );
     }
   }
@@ -746,30 +1128,46 @@ export function registerComposedRide(
       anchorOf: (dd) => [x + dd[0] * frontFor(dd), z + dd[1] * frontFor(dd)],
       own: [{ cx: board[0], cz: board[1], hx: 0.45, hz: 0.45, yaw: 0, label: 'boardPoint pad' }],
       exit,
-      exitDir: [-dx[0], -dx[1]],
-      exitYawOf: (e) => Math.atan2(e[0] - board[0], e[1] - board[1]),
+      exitDir: dz, // the exit doorway faces the SAME way OUT as the entrance
+      exitYawOf: () => Math.atan2(dz[0], dz[1]),
       onLint: (kind, detail, fatal) => park.reportLint(kind, detail, fatal),
     });
     if (resolved.dir[0] !== dz[0] || resolved.dir[1] !== dz[1]) {
       dz = resolved.dir;
       front = frontFor(dz);
       anchor = [x + dz[0] * front, z + dz[1] * front];
+      // the exit rides the FACE, so a flipped lane re-derives it (the old code
+      // kept the stale cell, which is how a flip left the exit on the far side)
+      exit = adjacentExitCells(anchor, dz, exitSideHint)[0].cell;
+      exitDir = dz;
+    } else {
+      exit = resolved.exit;
     }
-    exit = resolved.exit;
   }
-  // ---- derived EXIT: snap to the pad edge nearest a WALKED path node --------
-  // (round-6 safeguard) `layout.exit` is a LOCAL cell, auto-flushed to the −x
-  // pad edge and then possibly nudged up to 2.4 u by the orientation
-  // machinery. On a big rig that stacks up: round-6 parks put derived exit huts
-  // 3.9-4.8 u from their ride, out in the grass/forest with no path in reach —
-  // unloaded guests re-appeared in a meadow. RCT2 exits sit FLUSH against a pad
-  // edge, doorway perpendicular (RideConstruction.cpp:1584), so re-pick among
-  // the ride's four flush edge cells (never the queue's own side) the one
-  // CLOSEST to a street node, and only move when it is a clear improvement
-  // (≥ 1 tile nearer the paving, or the current spot is wet). Dry, in bounds
-  // and clear of every audited footprint, or the derived spot stands.
-  if (!queue?.anchor && park.paths && !foot.isEmpty()) {
-    const streets = park.paths.net.nodes.slice(0, park.paths.streetNodes);
+  // ---- derived EXIT: WHICH SIDE of the entrance, and does its path reach? ----
+  //
+  // THE OLD RULE, AND WHY IT WAS WRONG. This block used to re-pick among the
+  // ride's FOUR flush pad-edge cells "never the queue's own side" — i.e. it
+  // deliberately put the exit on a DIFFERENT face from the entrance, and paired
+  // that with `exitDir: [-dx]`, the NEGATED queue direction, so the exit doorway
+  // faced the opposite way from the entrance. Nothing then led away from it.
+  // Measured over the seven reference parks: 26 rides, ZERO adjacent-and-outward
+  // pairs, 25 exits stranded on unpaved ground up to 14.4 u from the nearest
+  // paving, several at non-cardinal yaws RCT2 cannot even represent (an
+  // `EntranceElement` direction is one of four).
+  //
+  // THE RCT2 RULE. The exit takes the cell ONE TILE along the SAME station face
+  // as the entrance, facing the same way OUT, so the queue runs IN beside it and
+  // its own ordinary footpath runs OUT (see the header block). Both adjacent
+  // cells satisfy that; this picks BETWEEN them, on the two things that actually
+  // differ — whether the cell is legal (in bounds, dry, clear of every audited
+  // footprint) and whether an EXIT PATH can be cast from it (a street on its
+  // outward ray, `planExitLane`'s test, replicated here so the choice is made
+  // BEFORE registration rather than repaired after).
+  if (park.paths && !foot.isEmpty()) {
+    const net = park.paths.net;
+    const nStreet = park.paths.streetNodes;
+    const streets = net.nodes.slice(0, nStreet);
     const toPath = (p: XZ): number => {
       let best = Infinity;
       for (const [nx, nz] of streets) best = Math.min(best, Math.hypot(p[0] - nx, p[1] - nz));
@@ -786,41 +1184,50 @@ export function registerComposedRide(
     const cleanAt = (p: XZ): boolean => {
       if (Math.max(Math.abs(p[0]), Math.abs(p[1])) > halfP - 0.6) return false;
       if (park.groundAt(p[0], p[1]) <= wl + 0.12) return false; // terrainLint.isDry
-      const r = hutRectFor(p, Math.atan2(p[0] - board[0], p[1] - board[1]), 'exit hut');
+      const r = hutRectFor(p, Math.atan2(dz[0], dz[1]), 'exit hut');
       return ![...ownRects, ...others].some((o) => obbOverlap(r, o));
     };
-    // the four flush pad-edge cells, in the ride's own frame
-    const sides: { s: XZ; extent: number }[] = [
-      { s: ldz, extent: foot.max.z },
-      { s: [-ldz[0], -ldz[1]], extent: -foot.min.z },
-      { s: dx, extent: foot.max.x },
-      { s: [-dx[0], -dx[1]], extent: -foot.min.x },
-    ];
-    let best: XZ | null = null;
-    let bestD = toPath(exit);
-    const curDry = park.groundAt(exit[0], exit[1]) > wl + 0.12;
-    for (const { s, extent } of sides) {
-      if (Math.abs(s[0] * dz[0] + s[1] * dz[1]) > 0.9) continue; // the queue owns that side
-      const cand: XZ = [x + s[0] * (extent * sc + 0.62), z + s[1] * (extent * sc + 0.62)];
-      if (!cleanAt(cand)) continue;
-      const dCand = toPath(cand);
-      if (dCand < bestD - (curDry ? 1.2 : 0)) {
-        bestD = dCand;
-        best = cand;
-      }
-    }
-    if (best) {
+    const picked = pickAdjacentExitCell({
+      anchor,
+      dir: dz,
+      sideHint: exitSideHint,
+      net,
+      streetNodes: nStreet,
+      isClean: cleanAt,
+      tail: [anchor[0] + dz[0] * (laneLenOf(capacity) + 0.35), anchor[1] + dz[1] * (laneLenOf(capacity) + 0.35)],
+    });
+    exit = picked.cell;
+    exitDir = dz;
+    if (!picked.clean)
+      // NEITHER adjacent cell is legal — the station face is boxed in. The exit
+      // stands on the hinted cell facing outward anyway (a cardinal facing is the
+      // part RCT2 does enforce), and this is a RE-PLAN, not something to repair by
+      // moving it onto another face: that repair is what produced the stranded
+      // exits in the first place.
       park.reportLint(
-        'exitSnapped',
-        `${reg.name ?? d.name ?? 'Ride'}: its derived exit hut sat ${toPath(exit).toFixed(1)} u from the nearest walked path node (at [${exit
+        'exitFaceBlocked',
+        `${reg.name ?? d.name ?? 'Ride'}: NEITHER station-face cell beside the entrance hut is a legal exit — both are out of bounds, wet, or already occupied by an audited footprint. The exit is standing on [${exit
           .map((v) => +v.toFixed(1))
-          .join(', ')}]) — snapped to the flush pad-edge cell [${best.map((v) => +v.toFixed(1)).join(', ')}], ${bestD.toFixed(
-          1,
-        )} u from the paving. Author layout.exit / queue explicitly to control the side`,
+          .join(', ')}] facing [${dz
+          .map((v) => +v.toFixed(2))
+          .join(
+            ', ',
+          )}] anyway. RE-PLAN: move the ride so the face its queue comes off has TWO free tiles — one for the entrance, one beside it for the exit (§0.4)`,
         false,
       );
-      exit = best;
-    }
+    // report the paving distance the way the round-6 `exitSnapped` lint did, but
+    // only when the pick genuinely has no path out (with a lane it is 0 by
+    // definition — the run ENDS on the street)
+    if (!Number.isFinite(picked.reach))
+      park.reportLint(
+        'exitLaneUnreachable',
+        `${reg.name ?? d.name ?? 'Ride'}: its exit hut at [${exit.map((v) => +v.toFixed(1)).join(', ')}] faces [${dz
+          .map((v) => +v.toFixed(2))
+          .join(', ')}] with NO street on that ray inside 9 u (nearest paving ${toPath(exit).toFixed(
+          1,
+        )} u away), so the ride gets NO exit path and guests leaving it step onto bare ground. This is RCT2's STR_EXIT_NOT_CONNECTED — "has no path leading from its exit! Construct a path from the ride exit" (Ride.cpp:2076, reachability test Ride.cpp:2035 → Map.cpp:707) — and in RCT2 a guest put down off the paving falls to the terrain and wanders off lost (Guest.cpp:5092-5140 → Peep.cpp:781-890). FIX THE LAYOUT: aim the queue face at a street the exit path can reach too (the tail node's CROSS street is what the adjacent exit lane meets), or move the ride onto the lattice row (§0.4)`,
+        false,
+      );
   }
   // ---- derived lane length: land the TAIL ON the planned street node ------
   // (round-2 safeguard) The lane always ROTATED with the ride (its axis is
@@ -894,6 +1301,11 @@ export function registerComposedRide(
     loadTime: reg.loadTime ?? d.loadTime ?? 1.6,
     intensity: reg.intensity ?? d.intensity ?? 4,
     price: reg.price ?? d.price ?? 3,
+    // the world's queue theme — forwarded here, NOT swept into ...rest (the
+    // round-7 mistake this file documents), which is why it never reached the
+    // lane before and every themed land shipped RCT2-red queues
+    queueSurface: reg.queueSurface,
+    exitSurface: reg.exitSurface, // the world's STREET surface for the path OUT
     seatWorld: built.seatWorld,
     onStateChange: built.onStateChange,
     vehicleHandle: built.crashed ? { crashed: built.crashed } : undefined,
@@ -901,14 +1313,35 @@ export function registerComposedRide(
     queueAnchor: [anchor[0], y + 0.05, anchor[1]],
     queueDir: dz,
     laneLen, // trimmed so the tail lands on the planned street node
-    boardPoint: [board[0], y + lby, board[1]],
+    boardPoint: boardOverride ? [boardOverride[0], boardOverride[1], boardOverride[2]] : [board[0], y + lby, board[1]],
+    // ADDITIVE: every EXTRA platform, verbatim in world coordinates
+    ...(reg.stations && reg.stations.length ? { stations: reg.stations } : {}),
     exitPoint: [exit[0], y + 0.05, exit[1]],
+    // RCT2's outward exit facing (the reverse of the stored element direction) —
+    // WITHOUT this the manager falls back to `boardPoint → exitPoint`, which for
+    // the adjacent-cell layout is DIAGONAL and skews the hut off the grid
+    exitDir,
   });
   built.group.userData.rideRef = handle; // click -> RideViewer (rules/ui.md)
+  // hand the RESOLVED hut coordinates back to the visual. The entrance hut is
+  // not a field on the handle — it stands 0.62 back from the queue HEAD
+  // (GameManager/registry.ts:155), which is the same arithmetic groundRideAccess
+  // does just below — while the exit hut IS published, post-audit, as `exitAt`.
+  built.onAccessPlaced?.(
+    handle.stations().map((s) => ({
+      entrance: [s.queueAnchor[0] - s.queueDir[0] * 0.62, s.queueAnchor[2] - s.queueDir[1] * 0.62] as [number, number],
+      exit: [s.exitAt[0], s.exitAt[2]] as [number, number],
+    })),
+  );
   if (built.vehicle) built.group.userData.rideVehicle = built.vehicle;
   // ground the access assembly (berms/plinths) like <Coaster>/<FlatRide>
   const g = new t.Group();
   const join = laneLen + 0.35;
+  const crTail: [number, number] = [anchor[0] + dz[0] * join, anchor[1] + dz[1] * join];
+  // graded berm under a graded lane: the queue runs from this ride's own level
+  // down to the street its tail lands on (GameManager buildQueueLane)
+  const crTailY =
+    (park.paths as (ParkPathsInfo & { walkYAt?: (x: number, z: number) => number }) | null)?.walkYAt?.(crTail[0], crTail[1]) ?? y + 0.05;
   groundRideAccess(
     t,
     g,
@@ -917,14 +1350,15 @@ export function registerComposedRide(
       hut: [anchor[0] - dz[0] * 0.62, anchor[1] - dz[1] * 0.62],
       dir: dz,
       anchor,
-      tail: [anchor[0] + dz[0] * join, anchor[1] + dz[1] * join],
+      tail: crTail,
       tailNode: -1,
       exit,
-      exitDir: [-dx[0], -dx[1]],
+      exitDir,
       capacity,
     },
     y + 0.05,
     [handle.exitPoint()[0], handle.exitPoint()[2]],
+    crTailY,
   );
   const cleanupGround = park.addObject(g);
   // ---- the ride BODY as a blocker (round-6 safeguard) ----------------------
@@ -1027,7 +1461,13 @@ export interface ComposableRideProps extends ComposableProps {
   intensity?: number;
   price?: number;
   /** world-frame queue overrides — `anchor` [x,z] replaces the derived queue
-   *  HEAD, `dir` the lane axis (lane LENGTH always follows `capacity`) */
+   *  HEAD, `dir` the lane axis (lane LENGTH always follows `capacity`).
+   *
+   *  `anchor` IS THE HEAD (the entrance-hut end), never the tail:
+   *  `anchor = tailNode − dir·(laneLenOf(capacity) + 0.35)`. An anchor landing
+   *  ON a street node is the tail-instead-of-head mistake, and since wave 9 it
+   *  is AUTO-CORRECTED to that expression with a `queueAnchorIsHead` warning
+   *  naming the value — write the corrected number into the park. */
   queue?: { anchor?: XZ; dir?: XZ };
 }
 
@@ -1045,9 +1485,42 @@ export interface ConfigurableRideProps extends ComposableRideProps {
   intensity?: number;
   price?: number;
   /** world-frame queue overrides — `anchor` [x,z] replaces the derived queue
-   *  HEAD, `dir` the lane axis (lane LENGTH always follows `capacity`) */
+   *  HEAD, `dir` the lane axis (lane LENGTH always follows `capacity`).
+   *
+   *  `anchor` IS THE HEAD (the entrance-hut end), never the tail:
+   *  `anchor = tailNode − dir·(laneLenOf(capacity) + 0.35)`. An anchor landing
+   *  ON a street node is the tail-instead-of-head mistake, and since wave 9 it
+   *  is AUTO-CORRECTED to that expression with a `queueAnchorIsHead` warning
+   *  naming the value — write the corrected number into the park. */
   queue?: { anchor?: XZ; dir?: XZ };
 }
+
+/**
+ * THE CATALOG KIND for a ride mounted through <ConfigurableRide> DIRECTLY —
+ * derived from the chassis layout's own `defaults.name`, which is the one piece
+ * of catalog identity the chassis already has (`composableRide()` passes the
+ * real `displayName`, and a ride that arrives already tagged keeps it).
+ *
+ * WHY IT IS DERIVED AND NOT PASSED IN. `<ConfigurableRide>` takes no "kind"
+ * prop and must not grow one — its prop surface is public and additive-only
+ * changes there ship as version bumps. `defaults.name` is a `RideLayout` field
+ * every ride component already fills in (`{ name: 'Ferris Wheel', … }`), and
+ * squeezing out the spaces is exactly the mapping the eval harness already
+ * performs in the other direction (`catalog.mjs`'s defaultName → kind table):
+ * 'Ferris Wheel' → FerrisWheel, 'Top Spin' → TopSpin, 'Swinging Inverter
+ * Ship' → SwingingInverterShip.
+ *
+ * It is NOT guaranteed to equal the component's `displayName` — `<TwistRide>`
+ * ships `defaults.name: 'Twist'` and so reads 'Twist' here — and that is
+ * harmless by construction: `COMPONENT_THEME` (ParkBuilder/worlds.ts) only
+ * lists pieces whose SUBJECT MATTER belongs to one world, every one of those
+ * ride components goes through the `composableRide()` factory and is tagged
+ * with its exact displayName, and everything else is NEUTRAL either way. What
+ * the derived kind has to be is NON-EMPTY, so the world audit stops dropping
+ * the group (see `auditWorldThemes`).
+ */
+export const rideKindOfLayout = (layout?: RideLayout): string =>
+  (layout?.defaults?.name ?? '').replace(/[^A-Za-z0-9]/g, '') || 'Ride';
 
 /**
  * <ConfigurableRide> — the abstraction EVERY catalog ride delegates to
@@ -1081,6 +1554,21 @@ export function ConfigurableRide({
   useComposable(
     (t, park) => {
       const built = toBuilt(build(t, park)) as ComposableRideBuilt;
+      // ---- THE COMPONENT TAG, HERE AND NOT ONLY IN THE FACTORY (wave-16B) ---
+      // `composableRide()` tags inside the `build` it passes down, so a factory
+      // ride arrives here ALREADY tagged and keeps its exact displayName. A ride
+      // component that renders <ConfigurableRide> DIRECTLY was never tagged at
+      // all — FerrisWheel, Teacups, TwistRide, SwingRide, TopSpin,
+      // SwingingInverterShip and <TrackRide>, seven mounts — and
+      // `auditWorldThemes` skips an untagged group, so those rides were INVISIBLE
+      // to the world layer. Measured on wave-16B: Thornwood Twist stood at
+      // [55.66, −19.2], inside thornwick's rect, and the world still reported
+      // `rideCount: 0` / `built: false`, the gate raised `worldNotBuiltOut`, and
+      // axis 16's buildOut scored 0.67/1 — a park was docked for a district it
+      // had actually built. Tagging at the chassis fixes every one of them at
+      // once and cannot regress a factory ride (the guard below never overwrites
+      // a tag that is already there).
+      if (!built.group?.userData?.dsComponent) tagComponent(built, rideKindOfLayout(layout), 'ride');
       const wantsSim = (register || explicit !== undefined) && !built.invalid; // fatal tracks never register
       if (wantsSim && !(park as ParkStore)._previewHost) {
         const reg: RideRegisterProps = {
@@ -1142,7 +1630,13 @@ export function composableRide<P extends object>(
     const props = { ...rest, register } as unknown as P;
     return (
       <ConfigurableRide
-        build={(t, park) => build(t, props, park)}
+        build={(t, park) => {
+          const res = build(t, props, park);
+          // THE COMPONENT TAG — see composable.tsx's tagComponent: the WORLD
+          // THEME COHERENCE audit needs to know a ride group's catalog kind
+          tagComponent(toBuilt(res), displayName, 'ride');
+          return res;
+        }}
         layout={layout}
         register={register}
         pinned={pinned}
@@ -1173,8 +1667,11 @@ export interface StallRegisterProps {
   name?: string;
   price?: number;
   value?: number;
-  /** override what it sells ('food' | 'drink' | 'balloon') */
+  /** override what it sells ('food' | 'drink' | 'balloon' | 'wearable') */
   item?: StallItemKind;
+  /** override the 3D item buyers carry away / wear (GameManager
+   *  StallItemBuilder) — the stall's own recipe is the default */
+  heldItem?: StallItemBuilder;
 }
 
 /** props every stall component accepts on top of its own */
@@ -1196,8 +1693,11 @@ export interface ComposableStallProps extends ComposableProps {
 export interface ConfigurableStallProps extends ComposableStallProps {
   build: (t: typeof THREE, park: ParkContextValue) => THREE.Group | ComposableBuilt;
   /** the stall's sale defaults — `item` covers consumables ('food'/'drink')
-   *  AND accessories ('balloon', open for future kinds); see GameManager */
-  stall: { name: string; item: StallItemKind; price: number; value: number };
+   *  AND accessories ('balloon' / 'wearable', open for future kinds), and the
+   *  OPTIONAL `heldItem` is the themed 3D item a buyer carries away (a mini
+   *  hot dog, a floss cone) or wears (goggles). Omit `heldItem` and consumable
+   *  buyers fall back to the manager's generic burger / cup. See GameManager */
+  stall: { name: string; item: StallItemKind; price: number; value: number; heldItem?: StallItemBuilder };
 }
 
 /**
@@ -1210,6 +1710,14 @@ export function ConfigurableStall({ build, stall, register, pinned, name, price,
   useComposable(
     (t, park) => {
       const built = toBuilt(build(t, park));
+      // the SAME hole as <ConfigurableRide> above, one shop wide: `<Stall kind>`
+      // (Park/wrappers.tsx) routes through <ConfigurableStall> DIRECTLY, so a
+      // generic balloon stand never carried the component tag and never counted
+      // toward its world's `stallCount`. The stall's own catalog `name` is the
+      // kind here ('Balloon Stand' → BalloonStand); `composableStall()` has
+      // already stamped the real displayName by the time we get here.
+      if (!built.group?.userData?.dsComponent)
+        tagComponent(built, stall.name.replace(/[^A-Za-z0-9]/g, '') || 'Stall', 'stall');
       if (register && !(park as ParkStore)._previewHost) {
         const pos = position ?? ([0, 0] as XZ);
         const [x, z] = xzOf(pos);
@@ -1231,6 +1739,9 @@ export function ConfigurableStall({ build, stall, register, pinned, name, price,
           value: value ?? ro.value ?? stall.value,
           anchor: [x, y, z],
           dir: [Math.sin(rotation), Math.cos(rotation)],
+          // the stall's own themed 3D item for its buyers (overridable per
+          // placement) — undefined leaves consumables on the generic burger/cup
+          heldItem: ro.heldItem ?? stall.heldItem,
         });
         // ---- PAD vs the STREET LATTICE (round-7 safeguard) -----------------
         // Same defect as the flat rides, one wave earlier: round-7's family
@@ -1298,14 +1809,18 @@ export function ConfigurableStall({ build, stall, register, pinned, name, price,
 export function composableStall<P extends object>(
   displayName: string,
   build: (t: typeof THREE, props: P, park: ParkContextValue) => THREE.Group | ComposableBuilt,
-  stall: { name: string; item: StallItemKind; price: number; value: number },
+  stall: { name: string; item: StallItemKind; price: number; value: number; heldItem?: StallItemBuilder },
 ): React.FC<P & ComposableStallProps> {
   const Component: React.FC<P & ComposableStallProps> = (all) => {
     const { position, rotation, scale, deps, register, pinned, name, price, value, ...rest } = all as ComposableStallProps & Record<string, unknown>;
     const props = rest as unknown as P;
     return (
       <ConfigurableStall
-        build={(t, park) => build(t, props, park)}
+        build={(t, park) => {
+          const res = build(t, props, park);
+          tagComponent(toBuilt(res), displayName, 'stall');
+          return res;
+        }}
         stall={stall}
         register={register}
         pinned={pinned}

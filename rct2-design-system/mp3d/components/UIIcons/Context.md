@@ -1,5 +1,9 @@
 # UIIcons
 
+**CANONICAL IMPORT — copy exactly:** `import { UIIcon, UI_ICON_NAMES } from './components/UIIcons';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 The pixel-art icon set for ALL overlay UI (see `rules/ui.md`). Each icon is an
 original hand-drawn ~10x10 pixel grid (a few are 12x12) in the RCT2
 toolbar-pictogram spirit — 2-3 flat colours plus a dark outline — rendered as

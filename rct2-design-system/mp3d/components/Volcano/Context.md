@@ -1,5 +1,9 @@
 # Volcano
 
+**CANONICAL IMPORT — copy exactly:** `import { Volcano } from './components/Volcano';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 A park-scenery **landmark**: a basalt/ash cinder cone with a summit crater, a lava lake, two active flows down one flank, an older cooled flow, a lava pool at the base and a lava-filled ground fissure draining out of it.
 
 The look is modelled on the real thing, and the real thing is mostly BLACK: cooled pahoehoe crust is near-black basalt, and all the light comes out of the CRACKS between crust plates where the incandescent interior shows through. No mesh in this component is a uniformly glowing orange blob — every lava surface is a near-black albedo with an emissive **crack map**, so only the fissure network lights up, over a real white-yellow → orange → deep-red → black temperature gradient down each flow. Unlike every lamp in this design system, the glow is **day-and-night**: `nightKOf` lerps the emissive multiplier between a daylight value and a (stronger) night value — it never gates to zero, because lava glows in daylight too.
@@ -38,15 +42,19 @@ Two batched (`mergedBoxes`) block fields keyed off the same height field, skippi
 
 ## Effects & light budget
 
-**Exactly ONE real light**: `vent` (`THREE.PointLight`, `0xff6a1e`, range `R × 2.3`, decay 2), positioned in the crater. Everything else — flow segment materials, the lava lake, the crater wall — is emissive-material only, updated per-frame from `flowSegs`/`lakeMat`/`wallMat`.
+**Up to TWO real lights**: `vent` (`THREE.PointLight`, `0xff6a1e`, range `R × 2.3`, decay 2), positioned in the crater — always present, intensity 0 is fine, it never gets removed — plus an eruption `flash` (`0xff7a22`, range `R × 3.4`, decay 2), positioned just above the rim so its top-down light sells the blast on the OUTER flanks in daylight (the vent alone is buried inside the crater). `flash` is only ever allocated when `canErupt` is true (`eruptEvery > 0 && activity > 0.02`) — a dormant/extinct cone or one built with `eruptEvery={0}` costs exactly one light, matching the pre-eruption budget. Everything else — flow segment materials, the lava lake, the crater wall — is emissive-material only, updated per-frame from `flowSegs`/`lakeMat`/`wallMat`.
 
-Three `ParticleKit` emitters, ≤ **250 particles** total (inside the shared ≤ 300/component budget):
+**Five** `ParticleKit` emitters, **298 particle capacity total** (inside the shared ≤ 300/component budget) — three always-on idle emitters plus two eruption-only ones that are only built when `canErupt`:
 
 | emitter | max | gated by | reads as |
 | --- | --- | --- | --- |
-| `plume` | 150 | `plume` opt AND `activity > 0.02` | a dense, fairly opaque pale grey-white ash column off the summit (tight + opaque on purpose — `PointsMaterial` is unlit, so a thin puff simply vanishes in daylight) |
-| `embers` | 44 | same as `plume` | sparks launched white-hot (`0xffe2a0`), arcing on gravity 1.5 and cooling to deep red (`0xc42604`) as they fall |
-| `haze` | 56 | always present; rate scales with `max(0.15, activity)` | heat-shimmer/dust drifting off the base pool — not smoke, low-opacity (0.15) warm dust |
+| `plume` | 128 | `plume` opt AND `activity > 0.02` | a dense, fairly opaque pale grey-white ash column off the summit (tight + opaque on purpose — `PointsMaterial` is unlit, so a thin puff simply vanishes in daylight); rate ramps up through build-up and blast |
+| `embers` | 48 | same as `plume` | sparks launched white-hot (`0xffe2a0`), arcing on gravity 1.5 and cooling to deep red (`0xc42604`) as they fall; rate spikes hard during `env` |
+| `haze` | 22 | always present; rate scales with `max(0.15, activity)` | heat-shimmer/dust drifting off the base pool — not smoke, low-opacity (0.15) warm dust |
+| `ash` | 52 | only when `canErupt`; `rate = 0` at idle | the eruption ash column proper: huge (1.25 u → 3.4 u) soft billows launched from the RIM (not the crater floor, or the near rim hides them from the DS's high 3/4 camera), far taller/faster than the idle plume wisp |
+| `bombs` | 48 | only when `canErupt`; `rate = 0` at idle | lava bombs — big, fat (0.7 u), additive, genuinely ballistic ejecta (vy 3.3–7.1 u/s against gravity 6.0, ±1.9 u/s lateral spread) thrown clear out over the flanks, cooling from incandescent orange to deep red as they fall |
+
+The idle three were rebalanced DOWN from an earlier 150/44/56 to make room for the eruption pair (128+48+22 = 198 idle + 52+48 = 100 eruption = 298 ≤ 300). The blast itself costs **no extra capacity**: instead of raising `rate`, the discrete `PULSES` table below calls `emitter.burst(n)`, which spawns directly into each emitter's existing fixed-size ring buffer. Measured live-particle count (`/tmp/mp3d-render/volc-probe.mjs`, stepping `update()` 0→80 s at dt 1/30 with `eruptEvery={40}, seed=3`): **~155 alive at idle → peak 297** (right at the 298 capacity / ≤300 budget ceiling), then back down through decay.
 
 ## `activity` (0 → 1, default 1)
 
@@ -56,18 +64,60 @@ Scales the emissive glow multiplier, the vent light intensity and the plume/embe
 
 `update(time)` is a slow-motion effect on purpose — real lava creeps: one ~15 s breathing pulse across the whole crack network (`breathe = 1 + 0.11·sin(time·0.42+0.7)`), a slow surge travelling DOWN each flow (phase offset by the segment's position `u`), and a ~0.02 u/s crawl of every flow/lake/pool/fissure crust texture's `offset.y` downhill (the lake's crust+crack also drift `offset.x` for its lobed convection look). `GLOW_DAY = 1.0`, `GLOW_NIGHT = 1.85` — day glow is real, night glow is dramatic, neither is zero. Everything is hashed-sine deterministic (`hash01`/`hash2`); no `Math.random`/`Date.now`.
 
+## The eruption cycle
+
+On top of the idle creep above, the cone can run a periodic eruption: `eruptEvery` seconds between blasts (prop/opt, **default 120**; **`0` disables it entirely** — just the calm idle volcano, no flash light, no ring, no tremor, no `ash`/`bombs` emitters allocated at all). `canErupt = eruptEvery > 0 && activity > 0.02` — a dormant cone (`activity` at or below its 0.02 floor) or an `eruptEvery={0}` cone never erupts, full stop; that guard is checked once at build time and gates every eruption-only allocation (the `flash` light, the `ash`/`bombs` emitters, the base-surge ring mesh) as well as the runtime cycle math.
+
+**One period, in order** (constants are the source-of-truth `BUILD_T`/`BLAST_T`/`TAIL_T`/`RING_T` at the top of `index.tsx`; `s` = seconds since onset, `s = 0` at the start of the blast):
+
+| phase | window | what happens |
+| --- | --- | --- |
+| calm | most of the period | idle creep only — `breathe`/`wave`/crawl exactly as in Motion & determinism above |
+| build-up | `BUILD_T = 6.0 s` before onset (`bld` ramps `0→1` as `((s−(period−BUILD))/BUILD)²`) | thickening plume (rate ×`1+0.9·bld`), the vent brightening (`×1+1.1·bld`), flow-segment glow warming toward the hot end, and the cone starting to shudder (tremor `0.006·bld·S`) |
+| blast | `BLAST_T = 2.8 s` after onset, `env = 1` for the whole window | full-strength: flow glow surge, vent + flash lights near peak, plume/embers/ash/bombs rates all spike, the base-surge ring launches, the tremor is at its strongest |
+| tail / decay | `TAIL_T = 12.2 s` after the blast ends, `env = (1−k)^1.8` easing to 0 | a long, deliberately slow ease back to idle — nothing snaps off |
+
+So a period must be at least `BUILD_T+BLAST_T+TAIL_T = 21.0 s` to fit one full event; at the **120 s default** that is ~21 s of event to ~99 s of calm. Every one of those four window constants is scaled by `EW = min(1, eruptEvery/40)` (never above 1), so a short demo period (the "Eruption cycle" preview uses `eruptEvery={40}` ⇒ `EW = 1`, i.e. unscaled) still returns to a real idle state instead of erupting continuously; only periods **under 40 s** actually get squeezed.
+
+Within the blast/decay window, five **discrete pulses** (`PULSES`, `[secondsAfterOnset, bombs, embers, ash]`) each call `burst()` on the `bombs`/`embers`/`ash`/`plume` ring buffers exactly once as the frame crosses that instant (a `0 < te−lastTe < 0.5 s` guard skips a stalled tab instead of dumping every missed pulse at once):
+
+| # | s after onset | bombs | embers | ash |
+| --- | --- | --- | --- | --- |
+| 1 | 0.0 | 34 | 30 | 22 |
+| 2 | 0.85 | 16 | 13 | 9 |
+| 3 | 1.9 | 12 | 10 | 7 |
+| 4 | 3.2 | 9 | 8 | 5 |
+| 5 | 4.7 | 7 | 6 | 4 |
+
+Note the last two pulses (3.2 s, 4.7 s) land after `BLAST_T = 2.8 s`, i.e. during the early decay tail, not the full-strength blast window — the discrete ejecta pulses trail slightly behind the continuous `env` falloff.
+
+**Seed-hashed phase offset**: `phase0 = hash01(seed·7.13 + R·1.37 + H·2.71 + 2.9) × eruptEvery`, and the cycle runs on `te = time + phase0` (`s = te mod eruptEvery`). This is a pure function of `seed`/`radius`/`height`/`eruptEvery` — no build counter, no wall-clock — so the same volcano always erupts at the same absolute times and two differently-seeded/sized volcanoes in one park desync instead of blasting in lockstep. **Render-timing gotcha**: because the offset is hashed, the blast does NOT land at `t = 0`, `eruptEvery`, `2×eruptEvery`, … — with the demo preview's `eruptEvery={40}, seed=3` the blasts land at **t ≈ 9 s and t ≈ 49 s**, not t = 0/40/80. A naive screenshot script that does `--wait 40000` expecting to catch the blast at the period boundary will miss it entirely; step through the full period (or probe `update()` directly, as `/tmp/mp3d-render/volc-probe.mjs` does) to find the actual onset for a given seed before trying to render it.
+
+**What it looks like**: the vent + flash `PointLight`s flare from a **~0.5 daytime baseline to a measured peak of ~9.9**, then ease back down over the tail; the ash column and lava-bomb ballistic arcs use the `ash`/`bombs` emitters described above; an expanding **base-surge ring** (`RING_T = 2.6 s` life, `EW`-scaled) — a single unlit `MeshBasicMaterial` conical skirt, not particles, so it costs zero particle budget and still reads at night — sweeps out from the rim down over the flanks and fades; and the whole `body` group (everything solid — meshes only, not the lights or particles, which stay on the outer `group` so airborne ash never jitters with the rock) **shudders** by a couple of centimetres (`quake = (0.006·bld + 0.024·env·…) × S`) during build-up and blast.
+
 ## Exports
 
-- **`buildVolcano(t, opts?: VolcanoOpts) → VolcanoBuilt`** — the imperative builder. `VolcanoOpts`: `radius` (default 2.75), `height` (default 2.55), `seed` (default 1), `activity` (default 1; 0 = extinct, ~0.3 = dormant), `plume` (default true). `VolcanoBuilt` extends `ComposableBuilt` with `group`, `update(time)`, `dispose()`, `radius` (for blocker sizing), `pool: [x, z]` (local, rotate by the mount rotation) and `poolR`.
-- **`<Volcano position rotation scale radius height seed activity plume blocking>`** — the composable component (`components/Park/Context.md`). Mounts inside a `<Park>` or `<ScenePreview>`; y settles onto the plaza/terrain; registers the cone + lava-pool blockers unless `blocking={false}`.
+- **`buildVolcano(t, opts?: VolcanoOpts) → VolcanoBuilt`** — the imperative builder. `VolcanoOpts`: `radius` (default 2.75), `height` (default 2.55), `seed` (default 1), `activity` (default 1; 0 = extinct, ~0.3 = dormant), `plume` (default true), `eruptEvery` (default 120 seconds between eruptions; `0` = never erupts, just the calm idle volcano; needs `activity > 0.02`, see "The eruption cycle" above). `VolcanoBuilt` extends `ComposableBuilt` with `group`, `update(time)`, `dispose()`, `radius` (for blocker sizing), `pool: [x, z]` (local, rotate by the mount rotation) and `poolR`.
+- **`<Volcano position rotation scale radius height seed activity plume eruptEvery blocking>`** — the composable component (`components/Park/Context.md`). Mounts inside a `<Park>` or `<ScenePreview>`; y settles onto the plaza/terrain; registers the cone + lava-pool blockers unless `blocking={false}`.
 
 ## Previews (`Volcano.previews.tsx`)
 
-1. **3D rig** — the volcano by day: full cone, flows, pool and fissure, glow visible in daylight.
+1. **3D rig** — the volcano by day, default `eruptEvery` (120 s): full cone, flows, pool and fissure, glow visible in daylight.
 2. **Crater + lava lake** — close on the summit: crust plates + crack network, crater wall glow, the lake at its hottest, plume + embers.
-3. **Night eruption** — the same rig after dark, where the crack network + single vent light carry the most dramatic read.
-4. **Activity range** — two cones side by side, `activity={0.28}` (dormant, barely-lit cracks + thin plume) vs `activity={0}` (extinct: no glow, no plume, no light — plain black basalt).
+3. **Night eruption** — the same rig after dark, where the crack network + vent `PointLight` carry the most dramatic read.
+4. **Activity range** — two cones side by side, both built with **`eruptEvery={0}`** (cycle fully off — no bursts, no flash light, no ring, no tremor): `activity={0.28}` (dormant — cracks barely lit, thin plume) vs `activity={0}` (extinct — no glow, no plume, no light, reads as plain black basalt scenery).
+5. **Eruption cycle** — a single cone on a deliberately short **`eruptEvery={40}`** demo period (`seed={3}`), framed wider (`distance={16.5}`, `targetY={2.8}`) to keep the full blast in shot: one period runs ~19 s of the calm cone, the 6 s build-up (thickening plume, brightening vent, the first tremor), the blast (lava bombs on ballistic arcs, the surging ash column, the ember spray, the expanding base-surge ring, the daylight-readable light flare), then a 12 s decay back to the idle wisp.
 
 ## Verification (this pass)
 
-Re-rendered after the reboot wiped `/tmp` (harness rebuilt at `/tmp/mp3d-render`, and a stray 0-byte `.!16775!index.tsx` temp file left over from the crash was deleted from this directory). `check-all.mjs` bundles clean; day, crater close-up, night (`--night --nightwait=15000`), an alternate low/side angle and the activity-range preview all confirm: dark near-black crust with the crack network clearly glowing, a real white→orange→red→black gradient down each flow, the glow reads in daylight and goes dramatic at night, the ash plume and cooling embers are visible, and `activity=0` renders a genuinely dark, glow-free cone next to the lit `activity=0.28` one. Nothing clipped or missing; no code changes were needed.
+Confirmed the eruption code (already built and verified working by a prior pass) against the actual constants in `index.tsx` before writing this doc, and re-ran `/tmp/mp3d-render/volc-probe.mjs` — which steps `buildVolcano(THREE, { eruptEvery: 40, seed: 3 }).update(time)` from `time = 0` to `80` at `dt = 1/30` and counts live particles / max `PointLight` intensity twice a second — to get real numbers rather than re-deriving them from the source alone:
+
+| measurement | idle | peak | notes |
+| --- | --- | --- | --- |
+| live particles | ~155 | **297** | against a 298-capacity / ≤300-per-component budget; the blast reaches this via `burst()` into the existing `plume`/`embers`/`ash`/`bombs` ring buffers, not by adding capacity |
+| `PointLight` intensity (vent, and flash once `canErupt`) | 0.5 (daytime baseline) | **9.9** | eases back down over the `TAIL_T = 12.2 s` decay, not a hard cutoff |
+| blast timing | — | t ≈ 9 s and t ≈ 49 s | for `eruptEvery=40, seed=3` — the seed-hashed `phase0` offset means the blast does NOT land on the 0/40/80 s period boundary (see the render-timing gotcha above) |
+
+Also re-confirmed `emitters` went from 3 → **5** (`plume`, `embers`, `haze` idle + `bombs`, `ash` eruption-only), and that the only `Math.random` occurrence anywhere in `index.tsx` is a comment forbidding its use — determinism is intact.
+
+Screenshots at idle, peak and mid-decay (`eruptEvery={40}` demo preview, timed off the probe's t ≈ 9 s onset) confirm the visual read matches the code: **idle** — the calm cone exactly as in the pre-eruption verification (dark near-black crust, crack network glowing, gradient down each flow, ash plume + cooling embers, no bombs/flash). **Peak (blast)** — a visibly glowing crater, lava bombs on clear ballistic arcs out over the flanks, a tall ash column and an ember spray, the flanks lit by the rim flash but NOT washed out (the flash's daylight floor and falloff keep the crust legible, not blown to white). **Decay** — a tall drifting ash column still climbing while the bomb count thins out and the vent/flash light eases back toward the 0.5 baseline. `check-all.mjs` bundles clean; nothing clipped or missing; no code changes were needed for this documentation pass.

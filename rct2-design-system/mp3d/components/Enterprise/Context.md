@@ -1,5 +1,9 @@
 # Enterprise
 
+**CANONICAL IMPORT — copy exactly:** `import { Enterprise } from './components/Enterprise';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Enterprise: pink-spoked pod wheel that spins up and lifts toward vertical (ENTERP).
 
 Each pod's **glass cover is a CURVED canopy** — a partial cylinder concentric with the pod shell (radii +0.004, arc 1.86 rad lapping the shell's 1.8 rad opening by 0.03 on each side) with dark hood/sill trim bands above and below it, so the glass follows the pod's curvature and stays inside its silhouette (the old flat 0.2 × 0.3 plate had corners at radius 0.172, outside the 0.14 shell top radius, and jutted through the pod body).

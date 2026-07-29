@@ -4,6 +4,14 @@
 // queue lanes touching nodes. Substitute for the lost samples/arch-w6.tsx
 // (seed 5 alpine, probed with probe-seed.mjs: lake (14.0, 12.1) wl-r 4.6, node
 // grounds 0.09..0.34 → spread 0.25, so ONE flat path level, no auto-ramps).
+//
+// SEED STABILITY — MEASURED 2026-07-25, DO NOT RE-SEED. At THIS park's size
+// (48) seed 5 alpine is `probes 1` unguarded (§1's `probes 2` is the size-128
+// row — `probes` is SIZE-dependent); guarded by this park's 33 keepDry + 164
+// coasterPts it probes 64 / 0 violations / 11 clamp discs, and 12 realistic
+// one-cell keepDry edits moved the landform 0 times. The `probes 1` alpine
+// alternatives are not better here: 8 alpine probes 55, and 17 alpine leaves
+// a violation (probes 64, viol 1) under this exact guard list.
 import React from 'react';
 import {
   Park,
@@ -79,7 +87,9 @@ const KEEP_DRY: [number, number][] = [
   [3.6, 9.6], [-3.6, 9.6], [-3.6, -3.6], [3.6, -3.6], [-3.6, 3.6], [4.8, -6.6], // scenery
 ];
 
-const TREES: [number, number, string][] = [
+// literal union, not `string` — `tree()` takes exactly these four
+// (`node typecheck.mjs`; esbuild strips types without checking them)
+const TREES: [number, number, 'round' | 'pine' | 'palm' | 'willow'][] = [
   [-4.8, 19.2, 'pine'], [-8.4, 19.2, 'pine'], [4.8, 12.0, 'pine'], [-9.6, 6.0, 'pine'],
   [-9.6, 0.0, 'round'], [4.8, 0.0, 'round'], [-6.0, -6.0, 'pine'], [6.0, -4.8, 'pine'],
   [-9.6, -9.6, 'pine'], [9.6, -4.8, 'round'], [12.0, -3.6, 'pine'], [-3.6, 13.2, 'round'],
@@ -119,8 +129,6 @@ export default function ArchRef() {
           deck={[-2.4, 0]}
           queueTailNode={14}
           queueDir={[1, 0]}
-          exit={[19.2, -1.2]}
-          exitDir={[1, 0]}
         />
 
         {/* flats on CELL INTERIORS — 6.0 u off every node, lanes trim onto them */}

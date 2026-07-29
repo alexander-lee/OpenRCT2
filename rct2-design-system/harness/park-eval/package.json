@@ -3,11 +3,14 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@types/react": "^18.3.12",
+    "@types/three": "^0.169.0",
     "esbuild": "^0.24.0",
+    "playwright": "^1.48.0",
+    "puppeteer-core": "^23.11.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "three": "0.169.0",
-    "puppeteer-core": "^23.11.1",
-    "playwright": "^1.48.0"
+    "typescript": "^5.6.3"
   }
 }

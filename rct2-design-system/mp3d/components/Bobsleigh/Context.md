@@ -1,5 +1,9 @@
 # Bobsleigh
 
+**CANONICAL IMPORT — copy exactly:** `import { Bobsleigh } from './components/Bobsleigh';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Full bobsled ride built on SplineRideKit's `'bobsled'` profile: a closed Catmull-Rom spline swept as an icy pale-blue half-pipe chute (flat floor + steeply angled side plates, chrome edge rails) that banks hard through every curve, carried on a steel spine, crossribs and ground columns. The layout runs downhill from a top station through sweeping banked curves to a low hairpin, then a chain lift climbs the return leg.
 
 A 2-sled train runs energy-paced via `buildRideSpline(...).run()` — constant crawl on the lift, gravity speed through the valleys. Each sled is a compact pod in a realistic livery (steel-blue/gunmetal hull, silver nose cowl, chrome runners) with two `buildPeep` riders; the profile's default `wheelOffset` puts the runner bottoms exactly on the chute floor.

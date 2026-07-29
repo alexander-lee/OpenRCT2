@@ -21,11 +21,19 @@ the FIRST Park preview: a size-48 park whose streets are fused by
 `buildParkNet` from a `<FountainPlaza>` + `<Bazaar>` + `<Boulevard>` plus a
 13-node spine, with a PIECES-MODE §4.0-A flagship and every ride pad on a cell
 interior. `validatePark ok: true`, 0 failures. **Read it before you compose.**
-(Round-7 honesty note: until this wave the book pointed at `DemoPark`, a
-size-16 park with a hand-written lattice and a points-mode coaster — we
-documented one discipline and demonstrated the opposite, and every park in
-rounds 6-7 copied the example rather than the prose. `DemoPark` is still there
-as the COMPACT small-plot variant; it is NOT the layout to copy.) The
+(`DemoPark` is still there as the COMPACT small-plot variant; it is NOT the
+layout to copy.) **WAVE-8
+SCALE NOTE: `<DistrictPark>` is pinned `size={48}`, so it is a QUARTER of the
+default plot's width and a SIXTEENTH of its area.** Copy its DISCIPLINE — plans
+before mounts, `buildParkNet` fusing set-piece sub-nets, pads on cell interiors,
+a pieces-mode flagship — but do NOT copy its distances: on the default 128 every
+spread figure in §0.3 is different, and its whole footprint would sit inside one
+district.
+
+**THE DEFAULT-SIZE WORKED EXAMPLE IS `harness/park-eval/samples/worlds-ref.tsx`**
+— a size-**128** three-world park, `validatePark → ok: true`, zero failures,
+5/5 on the Worlds axis (§3.1). When a distance, a separation or a spread figure
+is in question, read THAT file, not `<DistrictPark>`'s 48-u numbers. The
 ParkBuilder preview (`components/ParkBuilder/ParkBuilder.previews.tsx`,
 `buildExamplePark`) is the same discipline written imperatively — the
 lower-level path for layouts the wrappers don't express. Study them, don't
@@ -39,1494 +47,1165 @@ pre-flight checklist (§0), the composition rules (§2), the legality lint
 (§5) and `validatePark` (§6) — a park that fails them is not finished,
 whatever it looks like.
 
-## 0. PRE-FLIGHT CHECKLIST (do this arithmetic before finishing)
+## 0.0 THE ONE-LINE BRIEF — "make me a cool theme park"
 
-You cannot run code or read the console — every check here is STATIC: do it
-on paper BEFORE you call the park done. **FATAL-WARNINGS POLICY: any
-`validatePark` failure, guard-probe rejection, grid warning, closure warning
-or `placeAccess` warning is FATAL — re-lay the layout on ANY of them. Never
-ship over a warning, never rationalise one.**
+**Assume you will be given NOTHING but that sentence.** No seed, no size, no
+roster, no archetype, no queue arithmetic. **This book is the brief**, and a
+prompt that spells any of it out is only repeating what is already here. Work
+this order; every step names the section that governs it, and none of it is
+optional or needs to be asked for.
 
-1. **Bounds** — sum piece lengths and placements on paper USING THE RUN-LENGTH
-   TABLE (§4): every coaster piece, pad, hut and queue lane inside ±size/2
-   (the DEFAULT plot is now 48 → x,z ∈ [-24, 24]; a compact size-16 park →
-   [-8, 8]). Lifts/drops run FAR longer than they look (≈ 1.6 + 3.9×height —
-   round-2 parks underestimated ~1.5× and broke). On the default plot bounds
-   are rarely the binding constraint — SPREAD is (see §0.3).
-2. **Closure = HEADING ALIGNMENT, not aim** — the LAST authored piece must
-   leave the cursor (a) heading within ~30° of the STATION ENTRY STRAIGHT's
-   heading (the direction you LEFT the station on) AND (b) within ~3 u of the
-   station start. Merely POINTING at the station from mid-park is wrong —
-   your heading is then ~180° off, the compiler synthesizes a long Dubins
-   return loop (radius 2.2 for coasters), and a synthesized closure over 40%
-   of the authored length is FATAL (translucent red track, no registration).
-   Worked example + verified archetypes: §4.
-3. **Ride pitch + USE THE LAND** — footprint table below: capacity-4 rides
-   on adjacent street nodes need centre-to-centre ≥ 6 units (the MINIMUM,
-   unchanged at any size). But the default plot is EXPANSIVE (48 — nine
-   16-parks of area): don't huddle at the minimum pitch around one plaza.
-   Lay out DISTRICTS (2-4 themed lands + the hub, §3) linked by long
-   approach boulevards, give every ride breathing room, and put the coaster
-   out in its own meadow. **4+ rides are expected on a default plot** —
-   a 3-ride cluster in one corner of 48 units reads abandoned, not cosy.
+> ### ⚠ 0.0-F YOU HAVE NO FILESYSTEM. A `§` OR A FILE PATH IS PROVENANCE, NOT A LOOKUP.
+>
+> **You receive injected rule TEXT and loaded SKILL BODIES — not a checkout of this
+> repository.** Round 13's park A searched the project for `monorail-ref` and for
+> `park-generation-rides.md`, found NEITHER, and reported: *"The rules files and
+> reference samples aren't in the project (they live in the design system bundle)."*
+> It then improvised the mandatory monorail from memory and wrote
+> `<Monorail start=… heading=…>`, two props that do not exist.
+>
+> Two consequences, and they bind on the AUTHOR of these documents as much as the
+> reader:
+>
+> 1. **Every code block a park needs must appear in the text you were given.** If a
+>    block is only reachable by cross-reference — "see §4.2-A of
+>    `park-generation-rides.md`" — then for you it does not exist, and you must
+>    **NOT reconstruct it from memory.** That is exactly how `start`/`heading`
+>    happened. The blocks that matter are inlined at their point of use: §3.1's
+>    skeleton carries the ring's full JSX, the five assertions, `place`, the
+>    `*Scenery` export table and the roster arithmetic.
+> 2. **Cite a file path only as evidence.** `harness/park-eval/samples/*.tsx`,
+>    `probe-*.mjs` and `components/**` line numbers say *where a number was
+>    measured*. They are never an instruction to open anything.
+>
+> If you find yourself needing a block that is not in front of you, the correct move
+> is to **use only what is** — a smaller verified park beats an improvised prop.
 
-   **DISTRICT OCCUPANCY — the static check (round-7).** Draw the four
-   quadrants of your plot (on 48: x ≶ 0 × z ≶ 0, each 24 × 24) and list what
-   each one contains. Rules: **at least 3 of the 4 quadrants hold something
-   built** (a district, the coaster ring, the water body's shore treatment or
-   a real planted grove — not one lonely bench), **no quadrant holds more
-   than half your rides**, and **district centres are ≥ 20 u apart**. A park
-   that fails this reads as a small park on a big empty field, whatever its
-   validator score. Also mind the SIM: the nearest ride queue must be
-   reachable from the gate well inside the 60 sim-s smoke run, so do not
-   exile every attraction to the far corner (`<DistrictPark>` keeps a gentle
-   flat ~7 u off the gate street for exactly this reason).
-4. **Queue tail** — the tail lands ON (or near) a street node, and the reach
-   is **`front + laneLenOf(capacity) + 0.35`** where
-   **`laneLenOf(c) = max(2.2, 1.1 + 0.56·c)`** and `front` = 1.8 by default
-   (`RideLayout.front`, auto-raised to `padFront + 1.27` on a compact rig, cap
-   6.5). **THE CODE IS TRUTH** — `ParkBuilder/placement.ts:79`. The old
-   documented `1.8 + 0.35·c + 0.35` was WRONG and under-reported the reach by
-   up to 3 u, which is why round-7 planned 6.0-u tails for capacity-10 rides
-   and collected a `laneTrim` warning on every one of them.
+**STOP-CHECK ZERO — BEFORE ANY OTHER LINE, INCLUDING THE HEADER.** Write down,
+in prose, **your three `WORLD_THEMES` presets and their three `<World>` rects**
+(id, centre, half-extents). Three presets, three rects, on the page, before you
+plan a street or pick a seed. A park that reaches its first JSX line without
+those six facts written down ships `worlds.declared: 0` and loses 5 points it
+can never recover at the end (§3, axis 16). This costs one sentence.
 
-   | capacity | `laneLenOf` | tail reach at `front` 1.8 | slots |
-   |---|---|---|---|
-   | 4 | 3.34 | **5.49** | 10 |
-   | 6 | 4.46 | 6.61 | 14 |
-   | 8 | 5.58 | 7.73 | 18 |
-   | 10 | 6.70 | **8.85** | 22 |
+**THE SKILLS ARE A DEEP REFERENCE, NOT A DEPENDENCY — THESE RULES STAND ALONE.**
+This design system ships five skills (`park-composition`, `park-skeletons`,
+`coaster-pieces`, `ride-and-stall-roster`, `park-troubleshooting`). Read them if
+your harness surfaces them: `park-skeletons` before you author a NODES table,
+`coaster-pieces` before any `pieces` array, `ride-and-stall-roster`
+when you pick the line-up, `park-troubleshooting` when `validatePark` reports
+anything. **But do not plan on them loading, and never treat a missing skill as
+permission to improvise.** Round 12's park B was told to load all four; its own
+tool trace shows **27 tool actions and ZERO skill loads** — the narration said
+"the rules say" and never named a skill, and five turns went on hunting for
+source files a loaded skill would have handed over. Every skill-unique behaviour
+was missing from the park. So everything that must not be got wrong is inlined
+HERE — the §4.2-A monorail block (§0.0 step 10), the archetype rules (§4.0), the
+prop-value ban (§0 check 22), the queue construction (§0.4). **If a rule and a
+skill ever disagree, the rule in these `park-generation*.md` files wins.**
 
-   **BUT THE REACH IS NOT COMPUTABLE FROM YOUR PROPS.** For any COMPACT rig
-   (built span ≤ 10 u — every catalog flat ride) the chassis auto-raises
-   `front` to `min(6.5, footMaxZ·scale + 1.27)` so the entrance hut can never
-   sink into the pad. `footMaxZ` is a property of the BUILT MESH, which you
-   cannot read while authoring. The measured values are 3.13 (Carousel), 3.50
-   (TwistRide) — not 1.8. **So do not compute the tail: PIN THE HEAD.**
+1. **`<Park>` AT THE DEFAULT SIZE — omit the `size` prop** (it is **128**).
+   Never shrink the plot to make a layout easy: every threshold in this book is
+   quoted at 128, `<DistrictPark>`'s 48 is the COMPACT variant, and a 48 park
+   shipped against a 128 rubric loses on spread, roster and world count at once.
+
+   **A SMALLER PLOT IS NOT A SAFE HARBOUR — IT EXEMPTS NOTHING.** Round 12's
+   park B pinned `size={48}` and licensed itself, in its own header, to skip the
+   transport ring — *"monorail is the 128 requirement"* — and then declared ZERO
+   worlds because it *"needs no monorail/3-world machinery to score"*. Both
+   claims are false, and they cost 5 points plus the monorail deduction plus the
+   whole TRANSPORT category:
+   * **`<World>` regions are SIZE-INDEPENDENT.** A world is a rect with a theme,
+     a ride, a stall and a scenery piece inside it; nothing in axis 16 reads
+     `size`. `worlds.declared: 0` is **0/5** at 48 exactly as at 128.
+   * **The monorail ring is required at EVERY size.** §4.2-B's scaling rule gives
+     the radius for size N — there is a verified variant for 48/64/96/160/192, so
+     "the block is written for 128" is a lookup, not an exemption.
+   * A small plot **forfeits** worlds, the ring and plot-utilisation headroom
+     while making nothing safer: every clearance, closure, queue-reach and
+     terrain rule is unchanged, and the spread floors get HARDER to clear because
+     the same rides must fit a sixteenth of the area.
+   So: **omit the `size` prop — the default is 128** — and if you ever ship a
+   smaller plot, ship it with the same three worlds and the same ring.
+2. **Write the §0 HEADER COMMENT and do its arithmetic BEFORE the first line of
+   JSX** — template below. The header is where you catch the bounds, the
+   separation, the queue reach and the gate walk while they are still cheap.
+3. **PIN a seed + climate from the §1 table** (§1). Every row lists **TWO water
+   bodies** — plan around BOTH, and the table is **PRE-`keepDry`**: the guards
+   re-pick the water, so **re-check every hand-placed cell with
+   `park.isDryCell()` AFTER composition** (§0.17).
+   **AND DO NOT WALK THAT ON PAPER — PASTE THE ASSERTION.** §1-W publishes every
+   row's two basin boxes and centroids as the const **`SEED_ROW_WATER`** and ships
+   **`assertKeepDryOffRow(KEEP_DRY, SEED_ROW)`**, which THROWS and names every
+   offending cell, in the same form and the same place in the file as the
+   cardinal-edge assertion. It also ships the **`<DryScatter>`** planting sieve, so
+   a wet prop cell is DROPPED rather than §0-FATAL-REFUSED. Copy both. A single
+   guarded cell inside either box — or within ~12 u of either centroid — RE-PICKS
+   that water body and is §0-FATAL (`waterRePicked`); the paper walk has been
+   attempted every round it was asked for and got it wrong every time, most
+   recently round 13's park B, whose whole guard list was
+   `const KEEP_DRY: XZ[] = [...NODES]` / `NODES.slice()` (**−7** across three axes,
+   and it shipped again in round 14: dominant 74.5 u, secondary 70.2 u). Use
+   `const GUARDS = keepDryOf(NET, SEED_ROW)` and pass GUARDS, never `NET.keepDry`.
+   **GUARD ONLY WHAT YOU PAVE — a street node is not automatically a `keepDry`
+   cell.** The first one-line-brief park transcribed
+   `secondary inlet box x[−56..−21] z[23..39]` into its own header and then put
+   16 `keepDry` cells at x −28.8, z 28.8-33.6 — *inside the box it had just
+   written down* — moving the secondary body 70.7 u and failing the gate. If a
+   district must live there, **pin a different seed row** whose boxes are clear
+   of it; do not "plan around the shoreline" of a body your guards will move.
+   **THE SAME LIST FLATTENS YOUR LAND, NOT JUST YOUR WATER.** Every `keepDry`
+   cell and every `coasterPts` point CAPS the hill peaks near it, so a fat or
+   badly-placed guard list ERASES the ranges the seed drew: two round-10 parks
+   on the SAME seed 7 / coastal / 128 measured relief **11.26** and **5.50**
+   purely on the difference between their guard lists, and the flat one read as
+   a green field. Walk the row's "mountain ranges" column the same way you walk
+   its water boxes, keep the guards out of those discs, and use **`noDress`**
+   (which touches nothing) rather than `keepDry` (which MOVES the heightfield)
+   where all you wanted was bare ground. The gate reports it as
+   **`terrainFlattened`** and names the guard cells; check it up front with
+   `node harness/park-eval/probe-relief-floor.mjs` or read
+   `comp.report.reliefFloor` (§1).
+   **AND WALK EVERY BUILT CELL AGAINST THE ROW'S `peaks`, NOT JUST YOUR
+   `keepDry` LIST.** The two are different checks and only one of them is about
+   guards: this one asks whether the GROUND under each structure is buildable at
+   all. For **every ride: the pad, BOTH huts, the queue tail, the queue lane and
+   the exit join** — plus every stall anchor and the restroom — read the §1 row's
+   peak discs `(x, z) h R` and confirm the cell is outside every one. **The
+   terrain gate charges ONE FAIL PER RECT**, so a single ride dropped inside a
+   peak is not one failure but about eleven: round-11's park B put one teacups rig
+   inside seed 91's published peak (15.2, −41.3) h 4.3 r 13.8 and collected
+   **11 `terrain` FAILs** from that one placement (hut ×2, lane ×2, pad, exit hut
+   ×2, exit lane ×2, join ×2) — and `ok: false`.
+   **A PARK THAT SHIPS `<Terrain />` BARE HAS NOT DONE THIS CHECK.** With no
+   `keepDry` list there is nothing to walk, so the check above is VACUOUSLY
+   satisfied while the ground under the rides is whatever the seed drew. `keepDry`
+   is not optional dressing — it is the list that says "I looked at the ground
+   here". Guard what you PAVE or stand a structure on (§4.2's tight-list rule),
+   and let that list BE the walk.
+   **AND THE LIST MUST COVER THE DRESSING, NOT JUST THE NODES AND THE PADS —
+   WHILE STILL NOT CLAIMING THE PLOT. Both halves, and they pull opposite ways
+   (§0.18 has the full statement):** every `<Scenery>` / `<Placed>` cell you
+   hand-site belongs in `keepDry` too — or must be re-checked with
+   `park.isDryCell([x, z])` AFTER composition and MOVED if it comes back wet.
+   Round 12's park B guarded nodes and pads only; the composer re-picked the body
+   into the quadrant where a gazebo, a picnic table and a tree already stood, and
+   all three were REFUSED as `plantedInWater`. But its over-broad guard elsewhere
+   left the park at **2 % water against the temperate 4-22 % band**, so `terrain`
+   FAILED as well, for a body too small to dominate its flank. **Guard your
+   dressing; do not claim the plot.**
+4. **WORLDS FIRST (§3).** Pick **≥ 3** presets from `WORLD_THEMES`. Build each
+   as a self-contained district — a THEMED structural set-piece plus that
+   world's OWN ride(s), stall and scenery from the §3 table — list every
+   hand-placed cell in `worldPlan({ include })`, mount `<World plan>`, and only
+   THEN connect them. **The five prefab LAND MACROS were REMOVED in v6.0:**
+   never import `BrassworkFoundry` / `PulseDistrict` / `ThornwickGlade` /
+   `EmberfallCaldera` / `TidewaterHollow` — the import alone is a black page.
+5. **STREETS: `buildParkNet` is MANDATORY** (§0.15, §3.1) — **and it feeds
+   `<Paths>` DIRECTLY; they are the SAME composition path, not two rival ones.**
+   Copy this and the question never arises (the full block with ports is in
+   §0.15):
 
    ```tsx
-   // tail = the street node you want the queue to open onto
-   // anchor = tail − dir·(laneLenOf(capacity) + 0.35)
-   // capacity 4 → laneLenOf = 3.34 → join = 3.69
-   <Teacups position={[7.2, 7.2]} rotation={-Math.PI / 2}
-            register={{ name: 'Willow Teacups', capacity: 4, rideDuration: 8 }}
-            queue={{ anchor: [3.69, 7.2], dir: [-1, 0] }} />   // tail (0, 7.2)
+   // PIECES FIRST — the cardinal assertion RESOLVES port refs against it (§0.15).
+   const PIECES = [HUB, VIEWPOINT, ...AVENUES];                 // the explicit ones
+   // NAME THE WORLD ROWS, never `...WORLDS.flatMap((w) => w.pieces)`: `WORLDS` reads
+   // the pads, the pads read `NET`, so it is declared BELOW the fuse and the flatMap
+   // spelling is a `const` TDZ ReferenceError at module scope (skeleton-a.tsx:374).
+   const ALL_PLANS: SetPiecePlan[] = [...PIECES, PULSE_ROW, WORKS_ROW, GLADE_ROW];
+   const portCell = (ref: NetRef): XZ => {
+     if (typeof ref === 'number') return NODES[ref];
+     const [id, name] = ref.split(':');
+     const p = ALL_PLANS.find((q) => q.id === id);
+     if (!p) throw new Error(`EDGES references '${ref}' but no plan has id '${id}'`);
+     return p.port(name);
+   };
+
+   // ASSERT CARDINAL EDGES on the RESOLVED cells, before the fuse. DO NOT SKIP THE
+   // STRING REFS — the pre-wave-16 form did, which made it blind on exactly the
+   // edges with a computed endpoint (round 13: ['pulseRow:W', 6] ran a diagonal).
+   // AND USE A TOLERANCE: port cells are `tiles·0.6 + 0.6`, and 7*0.6+0.6 is
+   // 4.799999999999999 in binary, so `!==` throws a FALSE diagonal on a legal park.
+   const EPS = 1e-6;
+   EDGES.forEach(([a, b]) => {
+     const A = portCell(a), B = portCell(b);
+     if (Math.abs(A[0] - B[0]) > EPS && Math.abs(A[1] - B[1]) > EPS)
+       throw new Error(`diagonal edge ${a}→${b}: [${A}] → [${B}]`); });
+
+   // A SET-PIECE'S `position` IS ITS SOLID CENTRE — never a node, never a queue
+   // tail. One shared coordinate cost round 13 ~11 points (edgeThroughSolid ×2, a
+   // dropped edge, an orphan island, accessibility, 5 footprints FAILs).
+   // Full assertion: §3.1's skeleton, `assertNodesOffPieces`.
+   assertNodesOffPieces(NODES, ALL_PLANS);
+
+   // PORT-REFS: every piece id — from `pieces:` AND from `worlds:` — must appear
+   // in EDGES as '<id>:<PORT>'; and a CHAIN piece (a port with prunable:false,
+   // i.e. both of <Boulevard>'s) owes BOTH of its ends or it dead-ends in grass.
+   const PORT_REFS = EDGES.flat().filter((x): x is string => typeof x === 'string');
+   ALL_PLANS.forEach((p) => {
+     const wired = new Set(PORT_REFS.filter((r) => r.split(':')[0] === p.id).map((r) => r.split(':')[1]));
+     if (!wired.size) throw new Error(`set-piece '${p.id}' has NO port-ref in EDGES — it is DECORATION`);
+     p.ports.filter((pt) => !pt.prunable).forEach((pt) => { if (!wired.has(pt.name))
+       throw new Error(`chain piece '${p.id}' has no '${p.id}:${pt.name}' ref — that end of the carriageway dead-ends in grass`); });
+   });
+
+   // WALK THE GUARDS AGAINST THE PINNED SEED ROW — §1-W ships the const and the fn
+   assertKeepDryOffRow(KEEP_DRY, SEED_ROW_WATER['1/temperate']);
+
+   // `pieces: ALL_PLANS` — EVERY plan, world rows included. `worlds:` is OPTIONAL
+   // (SetPieceKit/index.tsx:745) and unavailable here anyway: WORLDS reads the pads,
+   // the pads read NET. What is mandatory is the PIECE SET, not the keyword (§0.15).
+   const NET = buildParkNet({ nodes: NODES, edges: EDGES, pieces: ALL_PLANS, keepDry: KEEP_DRY });
+   <Paths nodes={NET.nodes} edges={NET.edges} plazas={NET.plazas} bins={NET.bins} walkers={8} />
    ```
 
-   `anchor` is the queue **HEAD** (the hut end), NEVER the tail — round-7's
-   park passed the tail node as `anchor` on five rides, which ran every lane
-   backwards down the street it was supposed to meet. That mistake now raises
-   a §0-FATAL `queueAnchorIsHead` lint printing the head coordinate you
-   should have used. Keep the pad ≥ `front + 0.62 + hutHalf` from the anchor
-   (a 6.0-7.2 u pad-to-node gap works for every capacity-4 catalog flat), and
-   note that explicit `queue` also opts you out of the lane trim, the queueDir
-   flip and the exit snap — you own the geometry.
+   That assertion is the ONE diagonal check that runs before the damage: a
+   diagonal `edges` pair is a FATAL `edgeDiagonal` plan lint, and **the elbow
+   `buildParkNet` inserts to repair it is a NEW node you did not plan — any pad or
+   queue you sited by hand can land on it, and a corridor sweep can cross it.**
+   That is what happened in round 12: one diagonal pair, one synthesised corner,
+   then a hand-sited pad on top of it and a corridor FAIL through it — ~2 points
+   and a cascade, from a coordinate a three-line assertion names for free. (It
+   throws, and §0's "plan builders never throw" still holds: it can only fire on a
+   park carrying a §0-FATAL lint you were required to re-lay anyway. **Fix the
+   coordinate — never delete the assertion to get the page back.**)
 
-   If you leave `queue` off, the DERIVED lane is trimmed so its tail lands on
-   whatever node sits on its axis short of the default reach, and reports a
-   (non-fatal) `laneTrim` lint naming the real `front` and reach. That is the
-   correct outcome when the ring/plot leaves no room for a full-length lane —
-   `<DistrictPark>`'s gate-side Waltzer ships exactly that way — but a trim
-   below `capacity` slots starves the queue, so read the slot count it prints.
+   **STOP-CHECK — COUNT THE PORT-REFS. EVERY SET-PIECE PLAN MUST APPEAR IN `EDGES`,
+   AND THE COUNT IS THE CHECK: you have N pieces, so `EDGES` needs at least N
+   entries of the form `'<id>:<PORT>'`. Count them before you ship.** This is not
+   the `<Boulevard>` rule restated — it binds **every** `bazaarPlan`,
+   `fountainPlazaPlan` and `boulevardPlan` id in the park, including a plaza you
+   add late and the world bazaars that came in through `worlds:`.
 
-   And since round 7 `queue`, `capacity`, `name`, `intensity`, `price`,
-   `rideDuration` and `loadTime` are actually FORWARDED by the catalog ride
-   factory; before that `composableRide` swept them into the visual builder's
-   props and they were silently ignored on every catalog ride.
-5. **rideDuration ≤ 12** unless you have a reason. The acceptance sim runs
-   60 sim-s and needs ONE FULL cycle: ~20 s gate→queue walk + load +
-   rideDuration + unload ≤ 60 — durations of 16-26 s FAIL the sim check.
-6. **Path level hugs the MEDIAN ground under your nodes**, never the max —
-   check node ground heights FIRST; a node sitting on a 2-3 u bulge means
-   MOVE the node or give that one spur a `nodeY` ramp. Never hoist the whole
-   street onto berms (the "causeway" failure). Since round 7 `<Paths>` derives
-   the level this way ITSELF and the thresholds are mechanical:
+   **AND THE COUNT ALONE IS NOT ENOUGH FOR A CHAIN PIECE.** A presence count of
+   ≥ 1 per piece PASSES on a `<Boulevard>` wired at one end only — round 13's park
+   B referenced `'ave:A'` and never `'ave:B'`, and since **both** Boulevard ports
+   are `prunable: false` (a structural carriageway end, which `buildParkNet` will
+   never shorten), the avenue was built to full length and stopped **7.2 u short of
+   the plaza**, in grass: `deadStreetNode`. The assertion above reads
+   `pt.prunable` off the plan, so it covers any future chain piece for free. And
+   **build both endpoints OFF the neighbours** —
+   `boulevardPlan({ from: HUB.port('W'), to: MARKET.port('E') })` — so the cells
+   MERGE in the fuse and cannot be 7.2 u apart in the first place.
 
-   | condition | what happens |
-   |---|---|
-   | node-ground spread ≤ 0.35, or you passed `nodeY`/`[x, z, elevation]` triples | level = **max** ground + 0.03 (the legacy behaviour, bit-identical) |
-   | spread > 0.35 | level = **median** + 0.03 and every outlier node gets an AUTO `nodeY` ramp — non-fatal `pathLevelMedian` lint listing them |
-   | level > median + 0.8 | §0-FATAL `causeway` lint |
-   | any span > 1.0 u over the ground beneath it | §0-FATAL `causeway` lint |
-   | any span > **2.0 u** up, or any span whose ground dips below the waterline | the EDGE IS NOT BUILT — §0-FATAL `causewayRefused` / `latticeInWater` |
+   **A PIECE PASSED ONLY VIA `pieces:` OR `worlds:` IS DECORATION, NOT A PLACE.**
+   `pieces:`/`worlds:` gets the piece's own interior sub-net into the graph; it does
+   NOT connect that sub-net to your streets. Nothing joins them but a port-ref in
+   `EDGES`, so an unreferenced piece composes as an ISLAND: its stalls are
+   unreachable, its plaza is not on the walk, and the gate says
+   `netWarnings: node … is in a SEPARATE island — no walkable route from the gate
+   street`. **This was round 12's single biggest loss, ~9 points.** That park's
+   `EDGES` referenced `hub:N`, `hub:E`, `hub:W` and **nothing else** — four pieces
+   (`pulseRow`, `worksRow`, `gladeRow`, `viewpoint`) had zero port-refs — and the
+   consequence chain was: **2 orphan islands · gate-reach 103/127 = 0.811 · three
+   Pulse Market stalls no guest could reach · one `edgeThroughSolid` · and
+   accessibility 1/10.**
 
-   An auto-ramp is not a licence to keep a bad node: it is un-audited against
-   the ramp-grade rules (max 0.5 per 1.2 tile, straight runs), so author the
-   ramp as an `[x, z, elevation]` triple or move the node. **And read the
-   REFUSED cases as one causal chain:** a refused span leaves a HOLE in the
-   street graph, so the next thing you see is `accessibility` /
-   `blockers`-unreachable failures for everything behind that hole. Those are
-   not a separate bug — fix the refused span and they go with it.
-7. **Gate ON the front-edge apron** — within ~1 unit of the park edge,
-   facing OUTWARD. A gate 3+ units inside the park is wrong.
-8. **Imports match the canonical block below.** NEVER mount a
-   `build<Name>Scene` preview builder inside a park (it ships its own
-   staging — the floating-oval failure); use the component
-   (`<LogFlume pieces={...}/>`) or its plain `build<Name>` builder.
-9. **Neon scale 0.4-0.7** for park signage — the default auto-scale is
-   giant. The backboard hugs the text bounds automatically — never build a
-   placard/panel behind a sign.
-10. **Counts** — ≥ 12 trees (auto-dressing's forest/beach/meadow planting
-    counts; add your own near the streets), ≥ 6 scenery pieces, ≥ 1 stall
-    per 2 rides, EXACTLY 1 water body covering ≤ ~12% of the park area,
-    gentle normal terrain (no moonscape, no billiard table). Mesh budget
-    scales with plot AREA: ~2500 per 16² of land (default 48 → ~22 500) —
-    exceeding it is a validator WARNING (§6), and warnings are FATAL (§0).
-11. **TRACK CORRIDOR (round-4 gate)** — walk your compiled coaster polyline
-    on paper and list every cell within **0.8 u** of it (a 1.6-u-wide
-    corridor): NO street edge, stall, or another ride's pad/hut/lane may sit
-    in that corridor unless the track is **≥ 2.2 u above** the path/obstacle
-    level there. Flying OVER a street on a high leg is the RCT2 look and
-    passes; a grade crossing or a roof-skim FAILs `validatePark` with a
-    `corridor` failure naming the offender. The ride's OWN station/pad/lane
-    is exempt.
-12. **THRILL target for the park's declared type (§4.0/§4.1)** — the flagship
-    coaster MUST come from the HIGH-THRILL shelf (§4.0: A E 6.12 / B E 5.27 /
-    C E 6.31). The small legacy rect/L-wrap shapes rate 0.6-1.1 and are
-    FILLERS only. A legal circuit is not automatically a RIDE.
-    Decide THRILL vs FAMILY, then aim the
-    flagship coaster at the §4.1 numbers (excitement ≥ 6.0 / ≥ 5.0, peak
-    +vertical ≥ 2.5 g / ≥ 1.8 g, highest drop ≥ 2.0 u / ≥ 1.2 u, lateral
-    always < 1.27 g, some airtime, nausea < 8.0) and CHECK it with
-    `rateCoaster` — never guess. Also span the intensity bands: a gentle
-    (≤ 3), a moderate (4-6) and an intense (≥ 7) ride alongside it.
+   And note what "wire by PORT" excludes: **an edge into a piece's POSITION is not
+   a port-ref.** That park's one attempt at wiring its second plaza was
+   `[10, 27]` where node 27 *was* `viewpoint`'s own centre — straight through the
+   fountain basin — which `buildParkNet` cut and retied to `'viewpoint:W'` as a
+   §0-FATAL `edgeThroughSolid`. Write `'viewpoint:W'` yourself.
 
-13. **SOLID OBJECTS (round-6 gate)** — guests cannot walk through anything
-    solid. Walk every street edge on paper: it must stay **≥ 1.2 u from a
-    fountain centre**, off every ride pad/body and shop body, and out of every
-    `<Fence>` run. Fencing a boundary a street crosses? Author TWO runs with a
-    **gateway gap** (or `<Fence inset>`). Queue lanes are railed on both sides
-    and only enterable at the TAIL, so the tail must land on a real street
-    node (item 4). A street through a blocker is a `blockers` FAIL (§6).
+   **AND CALL `buildParkNet` EXACTLY ONCE. Two fuses is a prohibition, not a
+   style.** Declare EVERY piece — including the plaza you thought of last — in that
+   single `pieces:` array, and pass the SAME net to `offPathCell` that `<Paths>`
+   receives. Round 12 built `NET` (no viewpoint plaza) and `NET2` (with it), fed
+   every `offPathCell` call from `NET` and `<Paths>` from `NET2`: the restroom and
+   **every scenery and tree cell in the park** were cleared against a net missing a
+   116 u² plaza, so "clear" meant nothing there. It also pays the whole composition
+   cost twice — a second fuse over a 27-node graph with four set-pieces is a
+   measurable settle delay for zero benefit. One fuse, one `NET`, everywhere.
 
-14. **RIDE PADS GO ON CELL INTERIORS (round-7 gate — the single biggest
-    defect of round 7).** A ride pad must sit **≥ 1.8 u from EVERY lattice
-    node and every edge centreline** (1.8 = a 2.4-u pad half-width 1.2 + the
-    1.1-u slab half-width 0.55 + 0.05). **Only the queue lane may touch a
-    node.** Round-7's park put five flat-ride pads straight ON its lattice
-    nodes — `COLS = [−18,−12,−6,0,6,12]` × `ROWS = [15.6,9.6,3.6,−3.6,…]`,
-    every "nice" ride cell being a junction — and collected **25 of its 34
-    failures** from that one mistake: 20 `blockers` FAILs (streets running
-    through the machines) plus 5 queue tails "only reachable through a solid
-    object". A pad in a slab now raises a §0-FATAL **`padOnStreet`** lint at
-    MOUNT time, and one that merely sits inside the 1.8 margin a
-    `padNearStreet` warning. Both print the nearest legal cell.
-    **Ask, don't guess:**
+   A hand-rolled NODES/EDGES lattice is a REJECTED layout. Wire set-pieces by
+   **PORT** (`facing: { port, toward }`), never by position or centre; `<Bazaar>`
+   has **only W and E** ports (the aisle axis). Boulevards run **N/S or E/W
+   only**. Close a **circulation LOOP**, not a star of spurs.
+
+   **AND `<Paths>` MUST CARRY `plazas` — the one absent prop cost 2.75 points.**
+   `NET.plazas` is where every open space in the park comes from: a park that
+   omits it measures `openSpace.count 0` / `plazaRects 0` and scores **zero on
+   axis 15's open-space point AND axis 2's plaza point**, however many plazas it
+   *looks* like it has. Ship **≥ 2 plaza rects, the largest ≥ 8 u², with
+   DIFFERING areas** (`areaSpread ≥ 1.8` — two identical squares fail the
+   spread), count them in the header's `PLAZAS` line, and remember that a
+   `<FountainPlaza>` publishes its own rect into `NET.plazas` for free, so two
+   plaza set-pieces of different `tiles` satisfies this by construction.
+
+   Three more things that cost the first one-line-brief park real points, all
+   avoidable on paper:
+   * **EVERY `boulevardPlan` needs `avoid` covering EVERY street node its
+     carriageway meets — its own TWO ENDPOINTS included, not just T-junctions —
+     at `clear: 2.6`.** A `<Boulevard>` plants its own verge trees at ±2.45 u;
+     where another slab (or the gate spur) runs under one, that is a hard
+     `scenery` FAIL naming the boulevard's own tree. The first park lost it on
+     `gateAve`'s node 0, the gate cell itself.
+   * **Never author a spine node within 2.4 u of a `<Bazaar>`'s stall rows** —
+     wire to its `W`/`E` PORTS only. Two `padNearStreet` lints in that park were
+     a hand-authored node landing beside the bazaar's own stalls.
+   * **Ask for only the ports you will wire** (`ports: ['N','E','W']`). An
+     unwired port is PRUNED and the prune is reported.
+6. **ENTRANCE/EXIT: leave `exit`/`exitDir` UNSET** on every ride so the chassis
+   derives the RCT2 pair (§0.4b). A missing or unroutable exit path is a HARD
+   `accessibility` failure.
+7. **QUEUES ARE CONSTRUCTED FROM THE TAIL OUTWARD — NEVER FITTED TO THE PAD
+   (§0.4).** **PLANT THE TAIL FIRST**, as a real authored street node (a member
+   of your `NODES` list or a set-piece PORT), and derive everything else FROM it,
+   in this order — with `out` = the unit direction from the TAIL toward the ride:
+
+   ```
+   pad    = assertPadFlat(offPathCell(NET, tail + out·(minReach(c) + 2.4), { clear: padMarginOf(rig) }))
+                                                      // the ride's `position` — the RESULT, always
+            //  minReach(c) = laneLenOf(c) + 0.35 + 0.62 + 0.50 + 0.45; `front` is NOT yours
+            //  cap 4 → 5.26 · 6 → 6.38 · 8 → 7.50 · 10 → 8.62 · 12 → 9.74, and ASSERT it
+            //  TWO lattice cells, not one — see the boardPoint note under step 7 below
+   anchor = tail + out·(laneLenOf(c) + 0.35)           // the queue HEAD
+   dir    = −out                                       // `queue.dir` runs head → tail
+   ```
+
+   **THE PAD IS NOT `tail + dir·laneLen`.** That is the candidate, and it lands on
+   the street you hung the tail off — the tail's own lattice column. Round 12's
+   park B shipped exactly that expression and put **four pads at 0.00 u from the
+   slab** (four `padNearStreet`/`padOnStreet` lints, ~4-5 points), while
+   `offPathCell` appeared NOWHERE in the file even though every lint printed the
+   call AND the answer it would have returned. **Only the queue LANE may touch a
+   node; the PAD may not.** (Two exemptions, both because the geometry is already
+   verified: a §4.0 archetype's `start` pose and the §4.2-A monorail's `position`
+   are PUBLISHED POSES with their tails and clearances measured — copy those
+   verbatim and do NOT put them through `offPathCell`. Everything you site
+   yourself — every flat-ride pad, stall anchor, restroom and prop — goes through
+   the call.)
+
+   **NEVER compute `anchor` from the pad.** That single inversion is the biggest
+   scored loss in the corpus: it lands the derived TAIL on top of the machine and
+   caps ride spacing at **0/8**. Audited tail → pad-centre minima —
+   **cap 4 → 5.26 · cap 6 → 6.38 · cap 8 → 7.50 · cap 10 → 8.62 · cap 12 → 9.74 u**
+   (author MIN + **TWO** lattice cells: 7.66 / 8.78 / 9.90 / 11.02 / 12.14; assert
+   at MIN + one: 6.46 / 7.58 / 8.70 / 9.82 / 10.94) — and **write
+   the row per ride in the §0 header** (§0.0-H) *and* assert it in `place`, because
+   round 13 wrote the header and shipped a 4.43-u reach anyway. **`<Discotron>` and
+   `<AetherBalloons>` both default to capacity 12,** so a court sized for a Carousel
+   holds neither. On `<Coaster>`/`<FlatRide>` skip the arithmetic
+   altogether: pass `queueTailNode={NET.node(TAIL)}`. **No two rides share a
+   tail node**, and a tail that is not a cell in `NODES` means NO QUEUE WAS
+   PLACED (§0.4).
+
+   **AND IF YOU WRITE A HELPER FOR THIS, THE HELPER MUST END WITH `offPathCell` —
+   A DERIVED PAD IS NOT A LEGAL PAD.** This is the round-12 version of the mistake
+   and it is subtler than getting the formula wrong: that park's helper derived the
+   pad tail-first, **correctly**, and then returned the raw sum. Three of its six
+   pads therefore needed a `padOnStreet` auto-move, and the auto-moved Hollow Hall
+   landed **on top of Pulse Spinner** — the park's single OBB overlap and **5
+   `footprints` FAILs**, i.e. ride spacing capped at 0/8. Write the helper so the
+   call cannot be forgotten:
+
+   ```tsx
+   // `front` IS NOT A PARAMETER — it is the component's frozen `layout.front`
+   // (default 1.8; <Discotron> 4.0, <BumperCars> 2.6), unreadable while authoring.
+   // ASSERT THE FLOOR INSTEAD. And the RIDE-PAD clearance is `padMarginOf(rig)`,
+   // NEVER a constant: `max(1.8, padHalf + pathWidth/2 + 0.05)` on the rig's
+   // RENDERED half-span, so it is a MESH property and capacity never enters it.
+   // 3.2 is ONLY the compact-flat default (padHalf 2.6 ⇒ 2.6+0.55+0.05); the
+   // audited demands run 2.95-8.4 u, and `rig` is why `place` takes four
+   // arguments. The 12-row table is `-skeletons.md` §3.1-A step 5 (`PAD_MARGIN` /
+   // `padMarginOf`) — paste it above this helper.
+   // laneLenOf is imported from './components/ParkBuilder', NOT the Park barrel.
+   const minReachOf = (c: number) => laneLenOf(c) + 0.35 + 0.62 + 0.5 + 0.45;
+   //  cap 4 → 5.26 · 6 → 6.38 · 8 → 7.50 · 10 → 8.62 · **12 → 9.74**
+   //  WORKED: cap 12 ⇒ laneLenOf 7.82; 7.82+0.35+0.62+0.50+0.45 = 9.74 u.
+   //  Round 13's Discotron pad ended 4.43 u from its tail against that floor:
+   //  9 padOnStreet lints, 6 footprints FAILs, spacing 0/8.
+   // FOUR ARGUMENTS — `rig` is the COMPONENT NAME ('HauntedMansion'), and it is
+   // what `padMarginOf` is keyed on. Dropping it is a ReferenceError at module
+   // scope, i.e. a blank page. Identical signature in `-skeletons.md` §3.1-A.
+   function place(tail: XZ, out: XZ, capacity: number, rig: string) {
+     const clear = padMarginOf(rig);                    // NOT 1.8, NOT a flat 3.2
+     const join = laneLenOf(capacity) + 0.35;
+     const reach = minReachOf(capacity) + 2.4;          // the FLOOR + TWO lattice cells
+     const cand: XZ = [tail[0] + out[0] * reach, tail[1] + out[1] * reach];
+     const onStreet = (offPathCell(NET, cand, { clear }) ?? cand) as XZ;
+     const pad = assertPadFlat(onStreet, clear, rig);   // ← THE LAST LINE
+     const got = Math.hypot(pad[0] - tail[0], pad[1] - tail[1]);
+     if (got < minReachOf(capacity) + 1.2)
+       throw new Error(`pad [${pad}] sits ${got.toFixed(2)} u from its tail — the cap-${capacity} floor is ` +
+         `${(minReachOf(capacity) + 1.2).toFixed(2)} u (the ${minReachOf(capacity).toFixed(2)} u board-pad floor plus ` +
+         `one cell for the rig's own board offset). Move the TAIL outward or open the court.`);
+     return { pad, anchor: [tail[0] + out[0] * join, tail[1] + out[1] * join] as XZ,
+              dir: [-out[0], -out[1]] as XZ };
+   }
+   ```
+
+   **`minReachOf(cap) + 1.2` IS NOT ENOUGH — AUTHOR `+ 2.4` AND ASSERT AT `+ 1.2`
+   (measured wave-17).** The floor is enforced against the **`boardPoint` pad**, and
+   on a `composableRide` that pad is NOT at `position`: it sits at `position` +
+   rotated **`layout.board`**, and `layout.board` points out the rig's local **+z**,
+   which is the face the queue runs into — i.e. **back toward the tail.** So the
+   distance the validator measures is `tail→position − board.z`, always SHORTER than
+   the reach you authored. `<Discotron>` ships `board: [0, STAGE_H, 1.4]`
+   (`components/Discotron/index.tsx`), so at cap 12 a `reach = minReachOf(12) + 1.2`
+   = 10.94 pad put the boardPoint **9.54 u** from its tail against the audited
+   **9.74 u** floor and took a `footprints` FAIL — *"entrance hut overlaps
+   boardPoint pad"* — on arithmetic that looked correct in the header. `board` is
+   frozen into the component exactly as `front` is and is equally unreadable while
+   authoring, so **do not look it up: author two cells of slack and assert one.**
+   (Skeleton B, below, ships this `place` verbatim.)
+
+   `offPathCell` audits the streets, not your other rides, so still check the
+   returned pads against each other at pitch ≥ 6 u (§0.14). The two exemptions are
+   unchanged and are the ONLY two: a §4.0 archetype's `start` pose and §4.2-A's
+   monorail `position`, both published poses with measured clearances.
+
+   **STEP 7b — EVERY PAD, STALL ANCHOR AND PROP CELL GOES THROUGH `offPathCell`,
+   one call, not an eyeballed margin** (§0.14, §0.19):
+   `offPathCell(NET, [x, z], { clear: 1.2 })` for a prop, **`{ clear: 1.8 }`** for a
+   BUILDING, **`{ clear: 0.75 }`** for the TREE SCATTER, and **`{ clear: padMarginOf(rig) }`**
+   for a RIDE PAD (`max(1.8, bodyHalf + 0.55 + 0.05)`; 3.2 is only the compact-flat default —
+   1.8 is under every flat-ride rig in the catalog, whose audited demand is 2.95-4.77 u). **"1.5 u off a node" READS SAFE AND IS 0.00 u FROM
+   THE EDGE SLAB** — the slab is 1.1 wide, so its centreline owns ±0.55 and a pad
+   half-width of 1.2 reaches 0.05 u past it at 1.5 u out. Round-11's park B
+   authored all three themed stalls at exactly 1.5 u and needed a `padOnStreet`
+   auto-move on every one; the auto-move is §0-FATAL and the number it moved them
+   to is the number `offPathCell` would have returned for free.
+8. **SIM (§0.3).** The NEAREST ride's queue tail — whichever queue is closest
+   to the gate, the one that has to carry the smoke window, NOT every ride —
+   sits within **15 u** of the gate cell (`[0, 63.6]` at 128), 20 u absolute
+   maximum; other rides may sit much farther out. A ride's hut must not
+   overlap its own pad.
+9. **FLAGSHIP COASTER: copy a §4.0 archetype VERBATIM** — pieces, start pose,
+   `heading`, the corridor table, and `queueDir` pinned to that heading.
+   **THE ARCHETYPE ARRAYS, THE LEGAL START RANGES AT 128 AND THE `<Coaster>`
+   WIRING BLOCK ARE ALL IN §4.0 OF `park-generation-rides.md` — copy from THERE.**
+   (The `coaster-pieces` skill is the same material in more depth; read it if it
+   loads, but §4.0 is sufficient on its own and is what you are scored against.)
+   The
+   archetypes **grow WEST; the start is the EASTmost point**, so respect the
+   published LEGAL START range for the size you shipped. **ANNOTATE, DON'T
+   CAST** — see §0.0-T below; an un-annotated array literal is 6 type errors.
+   **CALL `rateCoaster` and paste its line into the header — never hard-code a
+   `ratings=` prop** and never retype a figure from this book (§0.16, §4.1).
+
+   **AND THIS RULE IS NOT ABOUT THE FLAGSHIP — IT IS ABOUT EVERY `pieces` LIST IN
+   THE PARK.** `<Coaster>`, `<TrackRide>`, `<LogFlume>`, `<RiverRapids>`,
+   `<Monorail>`, `<Chairlift>`, `<Bobsleigh>`, `<GoKarts>` — every
+   ride that takes `pieces` compiles through the SAME `compileTrackPieces` gate
+   with the SAME closure rule, so **every `pieces` list you ship is COPIED FROM A
+   PUBLISHED BLOCK IN §4.** An improvised list does not fail loudly: the compiler
+   SYNTHESIZES a Dubins return leg to close the circuit, and **a synthesized
+   closure over 40 % of the authored length is FATAL — translucent red, NEVER
+   REGISTERED, no station, no queue, and the CATEGORY YOU THOUGHT YOU FILLED IS
+   EMPTY** with nothing in the report but a console line. Round-11's park B lost
+   BOTH of its tracked rides exactly this way: `<TrackRide>` closed with **20.7 u
+   of synthesized return against 31.1 u authored (66 %)** and `<LogFlume>` with
+   **19.2 u against 25.5 u (75 %)** — −7 on thrill, −0.5 on roster, and an empty
+   WATER category, from two hand-written arrays.
+
+   **THE PAPER CHECK, before you mount anything with `pieces`:** sum the authored
+   run lengths from §4's run-length table and walk the cursor; **if the LAST piece
+   does not leave the cursor pointing back at the station straight (within ~30°
+   of the heading you left the station on, and within ~3 u of the start), the
+   closure WILL exceed 40 % and the ride will not register.** Pointing AT the
+   station from mid-park is the classic version of this mistake and is ~180° wrong
+   (§0 check 2).
+
+   **AUTHOR `pieces` FOR THESE — THE STOCK LAYOUT IS THE SAME IN EVERY PARK.** `<LogFlume>`,
+   `<RiverRapids>`, `<Chairlift>`, `<Bobsleigh>` and `<GoKarts>` each ship a
+   working stock layout and only call `compileTrackPieces` **if you pass
+   `pieces`** — so `<LogFlume position={…} register={{…}} />` is a registered,
+   rated WATER ride with zero closure risk, and there is **no published flume
+   circuit to copy** (§4.0-D has the table of what is and is not published). Only
+   `<Coaster>`/`<TrackRide>` always need a circuit, and §4.0 has three.
+10. **A PARK-SPANNING MONORAIL, EVERY TIME (§4.2) — THE BLOCK IS INLINED HERE SO
+    COPYING IS CHEAPER THAN REASONING.** The §4.2-A four-platform block, the
+    deck/tail/`queueDir` table and the per-platform a4b gate are all below and in
+    `park-generation-rides.md` §4.2 — you need no skill to ship the ring.
+    (`ride-and-stall-roster` covers the same ground plus the catalog; read it if it
+    loads.) Every park ships one transport ring
+    whose circuit passes EACH declared world, with a PLATFORM in each
+    (§3/§3.1). **Do not weigh it, do not audit it, do not call it "the riskiest
+    piece" and ship without it** — that is what the six-word-brief park did, and
+    it cost the ride, the TRANSPORT category and a point of roster novelty at
+    once.
+
+    **AND IT IS NOW A PRE-BUNDLE GATE, BECAUSE THE PROSE FAILED TWICE.**
+    `harness/park-eval/preflight.mjs` REFUSES TO BUNDLE a park at `size >= 64`
+    with no `<Monorail>` — same class of gate as the missing `<Park roster>` prop,
+    exit 1, no page, no `validatePark` line, no evidence. Round 13's park B
+    reached for *"pragmatic simplifications… flat/self-contained rides where
+    possible"* and dropped the ring after being told twice in this book that
+    pasting §4.2-A is zero-risk. There is now no version of the park that ships
+    without it. Paste this, at size 128, exactly:
 
     ```tsx
-    import { offPathCell, pathClearance } from './components/Park';
-    pathClearance(NET, [-12, 9.6]).clearance          // 0 → that cell IS a node
-    offPathCell(NET, [-12, 9.6], { clear: 1.8 })      // → [-13.8, 10.8]
+    const MONO_PIECES: TrackPiece[] = [ /* THE 17-PIECE RING — copy it VERBATIM from
+      `rules/setup.md` §0-P.4, which is now the ONE canonical copy. It was duplicated in
+      SIX files; five could drift and none was authoritative. The monorail is the one ride
+      you must NOT re-author: a hand-written list once synthesized 52 % of its arc and
+      shipped an unboardable ride. */ ];
+
+    <Monorail
+      position={[-42.6, 0, -9.7]} pieces={MONO_PIECES} beamY={2.6} loopSeconds={12} pinned
+      name="Grand Circle Monorail" capacity={6} rideDuration={12} intensity={1} price={0}
+      queue={{ anchor: [-40.81, -8.4], dir: [1, 0] }}
+      register={{
+        board: [-42.6, 2.6, -8.4],                       // platform 0 — W
+        stations: [
+          { label: 'North', boardPoint: [0, 2.6, 34.2],   queueAnchor: [0, 0.05, 32.41],
+            queueDir: [0, -1], exitPoint: [-1.2, 0.05, 33.03], exitDir: [0, -1] },
+          { label: 'East',  boardPoint: [42.6, 2.6, -8.4], queueAnchor: [40.81, 0.05, -8.4],
+            queueDir: [-1, 0], exitPoint: [41.43, 0.05, -7.2], exitDir: [-1, 0] },
+          { label: 'South', boardPoint: [0, 2.6, -51.0],  queueAnchor: [0, 0.05, -52.79],
+            queueDir: [0, -1], exitPoint: [1.2, 0.05, -52.17], exitDir: [0, -1] },
+        ],
+      }}
+    />
     ```
 
-    `offPathCell` audits the STREETS plus dryness and bounds — it does NOT
-    know about your other pads, stalls or scenery, so check its answer against
-    your own committed footprints (pitch ≥ 6 u, footprint table) before
-    committing. If it returns `null`, the skeleton itself is too dense there:
-    re-plan the streets (or use a set-piece, §3.1) rather than shrinking the
-    rule — that is exactly what a 6-u uniform grid does to a capacity-10 rig.
+    The four platforms, and the STREET NODE each queue tail needs (capacity 6 ⇒
+    `laneLenOf(6)` 4.46, join **4.81**). **W/N/E use `queueDir === left` = the ring
+    INTERIOR; the SOUTH platform is the one exception and queues OUTWARD** — see
+    "WHY THE SOUTH PLATFORM QUEUES OUTWARD" below, it is measured, not stylistic:
 
-    A SHOP is the exception §3 already states: kiosks belong on cells
-    **abutting** the street with the serving front toward it (the counter
-    reaches 0.42 out, the guest attach point 0.72 out), so a stall only has to
-    keep its SOLID BODY (hx 0.6, hz 0.42 on the anchor) out of the slab —
-    which is why a `<Bazaar>`'s stalls may flank its own aisle. Same fatal
-    lint if a street crosses the body.
-15. **USE THE SET-PIECES — `buildParkNet` is MANDATORY for any park with ≥ 2
-    zones (round-7 gate).** A HAND-ROLLED UNIFORM GRID IS A REJECTED LAYOUT.
-    Round 7 had `buildParkNet`, `<FountainPlaza>`, `<Bazaar>`, `<Boulevard>`
-    and `rateCoaster` live in the artifact and still hand-wrote a 6×6 grid of
-    nodes — tools that prevent defects are worth nothing if the composition
-    doesn't reach for them. Required, not optional:
-    - **plaza hub → `<FountainPlaza>`**, **shop cluster → `<Bazaar>`**,
-      **long avenue between districts → `<Boulevard>`**;
-    - fuse every street with **`buildParkNet({ nodes, edges, pieces, keepDry })`**
-      and feed its `nodes` / `edges` / `plazas` / `bins` / `keepDry` straight
-      into `<Terrain>` and `<Paths>` (see §3.1);
-    - your own hand-authored nodes are for SPINES and SPURS between pieces —
-      a dozen nodes, not a lattice.
-    Districts must READ as separate places: **≥ 20 u between district centres
-    on a size-48 plot** (§0.3).
-16. **THE §0 HEADER IN YOUR FILE MUST CONTAIN A PASTED `rateCoaster` RESULT
-    LINE for the flagship** — excitement / intensity / nausea / highest drop /
-    maxLatG / airtime, copied from the measured output, not retyped from this
-    book and not predicted. If you cannot produce that line, you have not
-    measured the ride and the park is not finished (§4.1). Ride and shop names
-    must be THEMED too: a park shipping "Burger Shop", "Soda Stand" and
-    "Balloon Stand" reads unfinished — `register={{ name: 'Cinder Soda' }}`.
-17. **RE-READ THE COMPOSED WATER AFTER COMPOSITION.** The §1 seed table lists
-    **PRE-GUARD** coordinates: `parkComposition`'s guards RE-PICK the water
-    body whenever your `keepDry` list overlaps the listed disc, and the new
-    lake can land anywhere. Round 7 planned around a river at (18.1, −5.9)
-    while the lake actually settled at ~(9, 12…15), then bridged it on stilts
-    and planted a tree in it. Either probe it headlessly WITH your guards
-    (`parkComposition(THREE, seed, 48, climate, { keepDry, coasterPts })` →
-    `comp.waterCentre` / `comp.basins`, waterline ≈ 0.74·radius) or query it
-    at runtime from a `usePark()` child:
+    | platform | deck centre | heading | `queueDir` | tail NODE (author it) | `queueAnchor` (the HEAD) |
+    |---:|---|---:|---|---|---|
+    | 0 W | [−42.6, 2.6, −8.4] | 0° | **[1, 0]** | [−36.0, −8.4] | [−40.81, −8.4] |
+    | 1 N | [0, 2.6, 34.2] | 90° | **[0, −1]** | [0, 27.6] | [0, 32.41] |
+    | 2 E | [42.6, 2.6, −8.4] | 180° | **[−1, 0]** | [36.0, −8.4] | [40.81, −8.4] |
+    | 3 S | [0, 2.6, −51.0] | 270° | **[0, −1]** OUTWARD | [0, −57.6] | [0, −52.79] |
 
-    ```tsx
-    const park = usePark();
-    park.terrain?.water        // { x, z, r } — the ACTUAL body, post-guard
-    park.isDry([9, 12])        // false — that "meadow" is the lake now
-    park.isDryCell([9, 12])    // the whole 1.2-u cell, not just its centre
-    ```
-
-    A lattice span over water is REFUSED (§0.6) and a prop planted in open
-    water is REFUSED (§5) — both §0-FATAL.
-18. **`keepDry` covers the WHOLE SPINE, not just the nodes.** List every
-    street node AND every edge midpoint, every ride pad / queue-lane cell /
-    hut cell, every stall and every scenery cell. The runtime AUTO-keepDry
-    pass (§2) will re-clamp under the registered footprints and the planted
-    scenery, but a layout that NEEDED the self-heal was mis-planned.
-
-### Footprint table — ride spacing you can compute on paper
-
-Each registered ride occupies roughly (local frame, +z = queue face):
-
-| part | extent | source |
-|---|---|---|
-| pad | ~2.4 × 2.4 around the position (the BODY blocker is the built mesh's own box) | `registerComposedRide` |
-| queue lane | out the queue face: **`laneLenOf(capacity) = max(2.2, 1.1 + 0.56·capacity)`**, starting at `front` and + 0.35 to its street node | `placement.ts:79` |
-| `front` | 1.8 by default, but auto-raised to `min(6.5, footMaxZ·scale + 1.27)` for any rig spanning ≤ 10 u — i.e. NOT knowable from props (§0.4) | `configurableRide.tsx` |
-| exit hut | ~1×1 at local `[-1.5, 1.35]`, auto-flushed to the −x pad edge and re-picked toward the nearest street node (`exitSnapped`) | `registerComposedRide` |
-| stall | solid body hx 0.6 × hz 0.42 on the anchor; audited apron hz 1.01; guest attach 0.72 out the serving front | `GameManager/registry.ts:210` |
-
-Worked example, two capacity-4 rides on the same street: `laneLenOf(4)` =
-3.34, so the tail node sits `front + 3.69` out (5.49 with the 1.8 default,
-6.82 for a Carousel whose real `front` is 3.13); pad half-width 1.2 plus the
-exit hut reaching to local x ≈ −2.0. Two such footprints only clear each
-other at centre-to-centre pitch **≥ 6 units** (5 lattice steps of 1.2) —
-closer and the SAT sweep collides. Stagger rides on opposite street sides to
-pack tighter, and keep every pad ≥ 1.8 u off the lattice itself (§0.14).
-
-### Canonical imports (copy exactly — wrong sources broke round-1 parks)
-
-```tsx
-import { Park, GameManager, Terrain, Paths, Gate, Coaster, TrackRide,
-         FlatRide, Stall, Restroom, Fountain, Neon, DanceFloorR, Scenery,
-         Lights, Placed, usePark,
-         offPathCell, pathClearance,          // the §0.14 placement API
-         Station, Straight, Lift, Drop, Hill, TurnL, TurnR, HelixL, HelixR,
-         Corkscrew, SBend } from './components/Park';
-// SET-PIECES — mandatory for any park with ≥ 2 zones (§0.15, §3.1)
-import { buildParkNet } from './components/SetPieceKit';
-import { FountainPlaza, fountainPlazaPlan } from './components/FountainPlaza';
-import { Bazaar, bazaarPlan } from './components/Bazaar';
-import { Boulevard, boulevardPlan } from './components/Boulevard';
-import { FerrisWheel } from './components/FerrisWheel'; // NEVER from './Park'
-import { BurgerShop } from './components/BurgerShop';
-import { Torch } from './components/Torch';
-import { Fence } from './components/Fence';   // park fencing / queue railings
-import { LogFlume } from './components/LogFlume';
-import { RiverRapids } from './components/RiverRapids';
-import { Monorail } from './components/Monorail';
-import { Bobsleigh } from './components/Bobsleigh';
-import { Stage, box, cyl, ball, mat, mergedBoxes } from './components/Stage';
-// utilities — these sources are EXACT (round-2 broke on a wrong one):
-import { rideColourPreset, RCT2_COLOURS, shade } from './components/ColorKit'; // NEVER from SplineRideKit
-import { compileTrackPieces } from './components/SplineRideKit'; // the piece compiler (piece JSX is from Park)
-import { buildScenery, SCENERY_NAMES } from './components/SceneryPack';
-import { tree, rock } from './components/Kit';
-```
-
-Only the Park wrappers + track-piece JSX come from `./components/Park`;
-every catalog ride/stall/prop imports from its OWN folder
-(`./components/<Name>`). `rideColourPreset` lives in ColorKit ONLY —
-SplineRideKit consumes it, it does not export it.
-
-### Catalog inventory — if it exists, USE it (reinventing is a defect)
-
-A round-2 park hand-built a "carousel", "teacups" and trees out of raw
-primitives — black blobs and crashes. Custom one-off ride/tree/prop builders
-are a DEFECT, not creativity: **if it's in the catalog, use the component.**
-What exists (each in `./components/<Name>`, composable, `register`-ready):
-
-- **Rides**: Carousel, Teacups, FerrisWheel, DropTower, SwingRide,
-  PirateShip, Enterprise, TopSpin, TwistRide, SpaceRings, MotionSimulator,
-  BumperCars, HauntedMansion, GhostTrain, FlyingSaucers, LaunchedFreefall,
-  SwingingInverterShip, ObservationTower, GoKarts, Helicycles, PaddleBoats,
-  Chairlift, Monorail, Bobsleigh, LogFlume, RiverRapids — plus `<Coaster>` /
-  `<TrackRide>` (from `./components/Park`) for anything track-shaped, and
-  `<FlatRide>` for a genuinely new flat ride with a documented builder.
-
-  **THE UNDER-USED HALF OF THE SHELF (round-7).** Every generated park so far
-  drew from the same six spinners. These are `register`-ready components with
-  their own catalog defaults — a park with 4+ rides should reach past the
-  spinners for at least one of them. `pieces` takes the same
-  `compileTrackPieces` vocabulary as `<Coaster>`:
-
-  | component | mode | catalog defaults (name / cap / dur / int / price) | siting |
-  |---|---|---|---|
-  | `<Monorail pieces>` | piece-composed, `profile: 'monorail'`; vertical pieces are STRIPPED | Monorail / 6 / 12 / 1 / 2 | the best plot-spanning device there is: a long circuit that RIDES OVER the districts. It registers ONE station, so put that station on the hub street |
-  | `<Chairlift pieces riders>` | piece-composed, `profile: 'monorail'` on a flattened profile | Chairlift / 6 / 10 / 2 / 3 | ONE station; the out-and-back cable is internal geometry, not two districts. Reads best up a hill flank |
-  | `<LogFlume pieces>` | piece-composed, `profile: 'flume'` | Log Flume / 4 / 12 / 5 / 4 | **builds its OWN water** (the trough ribbon). Wants DRY FLAT LAND — the composed lake is thematic adjacency only |
-  | `<RiverRapids pieces>` | piece-composed, `profile: 'rapids'` | River Rapids / 6 / 12 / 5 / 4 | **builds its OWN channel + splash pond.** Dry flat land |
-  | `<PaddleBoats>` | flat rig | Paddle Boats / 4 / 12 / 1 / 2 | **builds its OWN pond** (sandy bank r 2.5→2.6, bed r 2.42). Put it on DRY GROUND — on the real lake it trips the wet-pad guard |
-  | `<Bobsleigh pieces>` | piece-composed, `profile: 'bobsled'`, bank 0.55 | Bobsleigh / 4 / 10 / 6 / 4 | alpine/frontier hill flank; a real tracked circuit (corridor + crash checks apply) |
-  | `<GoKarts pieces riders>` | piece-composed, `profile: 'gokart'`; vertical pieces STRIPPED | Go-Karts / 4 / 12 / 5 / 4 | FLAT ground only — it is a ground-level track |
-  | `<GhostTrain riders>` | flat rig (dark ride) | Ghost Train / 6 / 11 / 5 / 4 | a building: fairground or main street |
-  | `<MotionSimulator>` | flat rig | Motion Simulator / 4 / 7 / 6 / 3 | small footprint, fits a plaza edge |
-  | `<ObservationTower riders>` | flat rig | Observation Tower / 8 / 10 / 1 / 2 | a landmark — put it where the skyline reads |
-  | `<Helicycles riders>` | flat rig | Helicycles / 2 / 8 / 2 / 2 | kiddie corner; capacity 2, so pair it with a real gentle ride |
-
-  Any `pieces`-mode ride registers a CIRCUIT with `validatePark`, so it is
-  subject to the 1.6-u corridor sweep and the crash replay exactly like a
-  coaster (§0.11) — budget its footprint with the run-length table.
-- **Stalls**: BurgerShop, HotDogStand, SodaStand, CottonCandyStand,
-  BalloonStand — all `composableStall` components taking
-  `register={{ name, price, value }}`. **Vary them:** three shops from the
-  same two components is a smell; a park with ≥ 4 rides wants ≥ 3 DIFFERENT
-  shop kinds (food + drink + a treat), each with a themed name, plus a
-  `<Bazaar>` when they cluster. The generic `<Stall kind>` wrapper is a
-  DIFFERENT contract: it only knows `kind="balloon"` and it takes **`sell`**,
-  not `register` (`<Stall kind="balloon" sell={{ name: 'Cinder Balloons' }}/>`).
-  Note also that `components/Restroom` exports a BUILDER + a preview
-  composable — the registering component is the Park wrapper `<Restroom>`.
-- **Amenities/dressing** (Park wrappers): Restroom, Fountain, Torch, Neon,
-  DanceFloorR, Scenery, Lights, Placed — plus **Fence**
-  (`./components/Fence`): `<Fence from to style="wood"|"metal"|"hedge"/>` or
-  `<Fence points/>` for a polygon. World xz, no `position`; every run is a
-  guest BLOCKER, so leave a GATEWAY where a street crosses a boundary.
-- **SceneryPack names** (`<Scenery name>` / `buildScenery(t, name)`):
-  marbleStatue, birdbath, picnicTable, planterBox, topiarySpiral,
-  topiaryElephant, signpost, tvMonitorPost, parkClock, flagpole, ironArchway,
-  brickWall, picketFence, lionStatue, cactusCluster, fallenLog,
-  mushroomCluster, wishingWell, gazebo, hotAirBalloon.
-- **Kit props**: `tree(t, { shape: 'round'|'pine'|'palm'|'willow' })` and
-  `rock(t, scale)` (+ RockCluster) — the ONLY trees/rocks a park plants.
-
-## 1. Pick the park's CLIMATE and composition first
-
-Climate is one word that re-seeds everything downstream — terrain palette,
-water story, sand coverage, scenery species and land names:
-
-| climate | water story | ground | scenery | zone flavour |
-|---|---|---|---|---|
-| `temperate` | one big lake (or lazy river), beach flank | green lawns | rounds + pines, palms at the shore | Main Street / Lakeside Boardwalk / Alpine Frontier / Fairground |
-| `desert` | ONE small oasis | sand almost everywhere, dune patches on the flats | palms AT the water only, cactus clusters + rock out on the flats | Oasis Boardwalk / Mesa Frontier / Dune Fairground |
-| `alpine` | a small dark tarn, NO beach | darker grass, snow-capped summits, extra rock outcrops | pines everywhere | Tarn Promenade / Summit Frontier / Meadow Fairground |
-| `coastal` | the biggest water — a lagoon chain or bay hugging one flank, a WIDE palm beach | lush green | palms + rounds | Boardwalk Bay / Headland Frontier / Seaside Fairground |
-
-`parkComposition(t, seed, size, climate?, guards?)` composes an
-RCT2-scenario-style landform under these rules and PROBES terrain-noise
-seeds until they hold (climate hashed from the seed when omitted —
-`climateOf(seed)`). `guards` is YOUR layout: pass `keepDry` (every world
-cell you will pave or place on — street nodes + edge midpoints, pads, huts,
-lanes) and `coasterPts` (planned control points `[x, yAboveRef, z]`) so the
-probe rejects any terrain seed that would sink, drown or bulge under what
-you are about to build, and hill peaks are pre-capped clear of your track:
-
-- **Mostly gentle, buildable terrain** — low amplitude (~0.38), broad scale,
-  and a FIRM SHORE (`buildTerrain firmShore: true`): outside the authored
-  basins the ground never dips to the water table, so raw noise can never
-  pool stray puddles. Relief is AUTHORED, never uniform noise.
-- **Seeded MOUNTAIN RANGES, an archetype per seed** (`comp.mountainStyle`):
-  `'alpine'` one dominant 4-6-peak ridge, `'rolling'` 2-4 low broad hill
-  ranges, `'sentinel'` mostly flat with one steep landmark peak, `'twin'`
-  2-3 medium ranges — placed on seeded edge/corner slots, never over the
-  water and never burying the forecourt (peaks are capped under the apron,
-  under every `keepDry` cell and — `capPeakForCoaster` — under a planned
-  track profile). Drama scales with the plot: a 48-park earns real ranges, a
-  16-park gets proportional hills.
-- **ONE dominant water body whose CHARACTER varies per seed**
-  (`comp.waterStyle`): a big `'central'` lake, a `'corner'` lagoon hugging a
-  beach, a winding `'river'` inlet chain or the classic NE `'flank'` lake —
-  flood-filled and enforced: exactly one connected below-waterline region,
-  never a scatter of ponds. Candidates are probed in seeded preference order
-  and the first whose rules fully hold under YOUR guards wins, so a guarded
-  layout is never composed under water.
-- **Themed terrain SECTIONS** — `comp.landZones` (`{ kind, center, radius }`:
-  sand always adjoining the water, forest discs, one mountain zone per
-  range, a representative meadow) + the `comp.zoneAt(x, z)` classifier.
-  `tintTerrainForClimate(..., comp)` paints them (cream/gold sand, saturated
-  meadow, darker forest floor, grey-brown rock above `comp.treeline`, snow
-  above that on alpine) and `dressTerrain(t, comp, heightAt, { obstacles })`
-  plants them — forest tree clusters, mountain outcrops + scree, beach
-  dunes/palms, meadow loners — deterministically, clear of `keepDry` cells,
-  the coaster envelope and your obstacle discs. `<Terrain>` runs BOTH
-  automatically; imperative parks call them in step §2.1.
-- **A sand/beach flank** adjoining the water on the boardwalk side (climate
-  scaled: coastal wide, desert everywhere, alpine none).
-- **A FLAT front apron** (relief suppressed ~3 cells deep) with the park gate
-  CENTRED on it and the main street aimed straight at the plaza hub.
-- **Guards are POST-ENFORCED** — when no probed seed fully satisfies the
-  rules, the composition CLAMPS the terrain instead of merely warning:
-  blend-radius discs raise every wet guarded cell dry (`clampPeaks`) and
-  shave bulges flat under guarded footprints/coaster footings
-  (`clampBasins`). `comp.report.violations` reflects the POST-CLAMP ground
-  (empty = clean); `report.clampedCells` says how much clamping was needed.
-- **WATER-FRACTION GUARD (round-5)** — guard clamping is never allowed to
-  starve the ONE water body below the climate ideal (≥ ~3% of the plot /
-  the climate's minimum): wet guarded cells now raise on TIGHT steep-bank
-  discs (the berm costs less water than the old wide blend), and when
-  filled-back severed lobes still leave the body too small, the composition
-  GROWS it back with probed edge basins on its open side — still exactly
-  one body, never under your guarded cells, the coaster or the forecourt.
-- **AUTO-keepDry (round-5) — your `keepDry` list is a HINT, not a
-  requirement.** After every `<Park>` child has mounted, the runtime
-  collects EVERY registered footprint from the GameManager — pads, huts,
-  queue lanes, stalls, including the derived/trimmed/flipped/auto-shifted
-  rigs no static plan could predict — plus the as-built coaster polylines,
-  and re-runs the guard clamp over them (`reclampTerrain`): wet samples are
-  raised into dry banks, bulges shaved, the one-body and water-fraction
-  rules re-enforced, and ground can never bury built rails. `<Terrain>`
-  then rebuilds the mesh/colours/heightAt in place before `validatePark`
-  reads anything. Still pass an honest `keepDry`: the runtime self-heal
-  reads as landscaped berms, but a layout that NEEDED it was mis-planned
-  (the `[Park] AUTO-keepDry` console line tells you it fired).
-
-### Seed table — PIN a seed, place around the KNOWN lake (round-5)
-
-> **ROUND-7 WARNING — THESE COORDINATES ARE PRE-GUARD.** The table below was
-> composed UNGUARDED. The probe picks the first water candidate that keeps
-> YOUR `keepDry` cells dry, so the moment your layout overlaps the listed
-> disc the composition RE-PICKS and the lake moves somewhere else entirely.
-> Measured example: seed 7 lists a river at (18.1, −5.9) wl-r 4.3; with a
-> keepDry list covering an east-apron coaster queue the water re-picks to
-> **centre (14.7, 14.7)** with basins (9.6, 9.6) wl-r 4.5 + (10.1, 13.3)
-> wl-r 6.1 — the OPPOSITE CORNER. Round 7 laid its lattice and a tree into
-> exactly that re-picked lake. Either keep your layout off the listed disc
-> (then the listed candidate wins and the table holds), or re-probe WITH your
-> guards and place against the result (§0.17):
->
-> ```ts
-> const comp = parkComposition(THREE, seed, 48, climate, { keepDry, coasterPts });
-> comp.waterCentre; comp.basins;   // waterline radius ≈ 0.74 · basin.radius
-> ```
->
-> At runtime the same truth is on the Park context: `usePark().terrain.water`,
-> `park.isDry(cell)`, `park.isDryCell(cell)`.
-
-Composed headlessly from `parkComposition(THREE, seed, 48, climate)` (the
-DEFAULT size 48, unguarded — recomputed 2026-07 for the expansive-plot
-rework; all 8 seeds compose with zero violations). PIN one of these and lay
-your park around the listed water disc instead of guessing where the lake
-will land. IMPORTANT: the probe picks the first water candidate that keeps
-YOUR `keepDry` cells dry — keep your layout OFF the listed water disc and
-the same candidate wins; pave over it and the composition re-picks (a
-different lake spot than listed). `wl-r` is the approximate waterline
-radius around the listed centre. Note the DISTRICT-sized numbers: lakes are
-now 8-16 u across and every seed offers big flat build fields — most seeds
-list TWO distinct meadows (size ≥ 32 plots compose multiple flat zones);
-spread your lands across them.
-
-| seed × climate | water | mountains | flat build zones | put the coaster |
-|---|---|---|---|---|
-| 1 temperate | lake ~(3.7, −3.3) wl-r 8.1, 12% | alpine ×2 ~(−12.4, −15.3) + (2.1, −16.2) | ~(−20.5, 18.5) r 13.8 + ~(17.0, −18.6) r 8.3 | back-east meadow |
-| 7 temperate | river ~(18.1, −5.9) wl-r 4.3, 10% | twin ×3 ~(−17.4, −3.3) + (−17.7, 12.0) + (−14.1, −15.4) | ~(9.3, 19.2) r 12.1 + ~(−9.1, 20.3) r 5.5 | centre-west |
-| 31 temperate | lake ~(−14.7, −14.7) wl-r 7.3, 9% | alpine ×2 ~(−15.8, 9.7) + (14.9, 8.6) | ~(17.0, −16.3) r 6.9 + ~(−4.7, −19.8) r 6.0 | back-east |
-| 2 coastal | river ~(−12.7, −5.9) wl-r 4.3, 11% | rolling ×3 ~(16.4, −3.6) + (16.3, 9.5) + (−0.9, −16.4) | ~(−8.7, 15.7) r 10.3 + ~(14.2, −15.7) r 4.4 | front-west field |
-| 11 coastal | river ~(−13.4, −5.9) wl-r 4.3, 10% | sentinel ×3 ~(0.1, −17.8) + (15.3, −13.5) + (15.0, 10.4) | ~(−14.1, 20.5) r 7.5 + ~(−18.9, −18.7) r 5.1 | front-west field |
-| 3 desert | lake ~(17.3, −17.3) wl-r 4.8, 4% | twin ×4 (back + west + east flanks) | ~(−5.6, −5.7) r 5.3 + ~(−17.6, −5.8) r 5.3 | centre/west flats |
-| 5 alpine | tarn ~(14.0, 12.1) wl-r 4.6, 4% | alpine ×2 ~(−12.0, −16.0) + (12.9, −14.3) | ~(−16.1, 19.4) r 19.3 + ~(8.0, 21.0) r 5.0 | huge front-west meadow |
-| 42 alpine | tarn ~(3.6, 1.4) wl-r 5.7, 5% | rolling ×4 (all four flanks) | ~(−1.6, 16.6) r 5.3 | front, wrap a flank |
-
-(Compact size-16 parks keep composing EXACTLY as before — bit-identical to
-the old table, e.g. seed 1 temperate still puts its lake at ~(1.2, −1.1) —
-so existing 16-parks are untouched; re-derive with the same headless probe
-if you pin a non-default size.)
-
-Build the real terrain from the winning seed (`buildTerrain` with the
-composed `peaks + clampPeaks` / `basins + clampBasins` — `<Terrain>` does
-this for you), add ONE `buildWater` sheet at the water level, and treat
-`terrain.heightAt(x, z)` as the single source of ground truth for every
-later placement. If you compose terrain manually instead, you still owe
-the same rules — validatePark flood-fills your heightfield.
-
-## 2. The build order (always the same, whatever the layout)
-
-**Step 0 — PLAN THE DISTRICTS AS SET-PIECES (§3.1) and fuse them with
-`buildParkNet` BEFORE you write any JSX.** The plans are pure, so the street
-graph, the paving rects, the bins and the keepDry list all exist as data
-before the first component mounts — which is why the pieces, the terrain
-guard and the queue tails cannot disagree. On a park with ≥ 2 zones this step
-is mandatory (§0.15).
-
-1. **Terrain + climate** — `parkComposition` (with your `guards`) →
-   `buildTerrain` (peaks + clampPeaks, basins + clampBasins, `firmShore:
-   true`) → `buildWater` (§1). Bias the vertex palette with
-   `tintTerrainForClimate(t, terrain.mesh, climate, comp.basins, comp)` — it
-   recolours the stock shoreline-sand band toward the climate grass, keeps a
-   real beach ring around the composed basins, snows above the alpine
-   snowline, and (given `comp`) paints the terrain SECTIONS: gold sand,
-   saturated meadow, darker forest floor, bare rock above `comp.treeline`.
-   Then `dressTerrain(t, comp, terrain.heightAt, { obstacles })` — the
-   sections' forest clusters, mountain outcrops + scree and beach
-   dunes/palms plant themselves (deterministic, budget-aware; feed its
-   returned `obstacles` into your scenery sampler so later planting never
-   overlaps). `<Terrain>` does ALL of this automatically in JSX parks.
-2. **Park entrance** — `buildParkEntrance(t)` at the gate node CENTRED on
-   the flat apron and ON the front edge (within ~1 u of it), +z (outside)
-   facing OUT of the park — never several units inside. Add the group AND
-   `registerParkEntrance` it with the GameManager later — once registered it
-   is the SOLE spawn/despawn point. In JSX, a bare `<Gate/>` defaults to
-   exactly this: the lattice cell hugging the front edge — z =
-   `1.2·round((size/2 − 0.8)/1.2)`, i.e. **z 22.8 on the default 48** (7.2
-   on a compact 16, 46.8 on 96) — facing out; put a street node under that
-   cell.
-3. **Path skeleton** — YOUR layout decision (spine, fan, figure-eight,
-   double loop, hub-and-spoke…), but always ON the RCT2 tile lattice:
-   nodes at multiples of 1.2, edges N/S/E/W only. `snapNetToGrid(net, 1.2)`
-   as the safety pass, render with `buildPathNetwork(t, net, { width: 1.1,
-   y: pathY, groundAt, grid: true, plazas: [[cx, cz, w, d]] })` — a
-   composed park must produce ZERO grid warnings (warnings are FATAL, §0).
-   Check node ground heights FIRST, then pick ONE path level hugging the
-   MEDIAN ground under your nodes (+0.03) — a node on a bulge gets moved or
-   its own elevation ramp, never a street-long berm. **Elevation API**: give
-   an elevated/ramped node its height as an `[x, z, elevation]` TRIPLE
-   (preferred — the height travels with the node through `snapNetToGrid`
-   merging; a parallel `nodeY` array still works). Everything follows
-   automatically: the sloped edges render as flat inclined RIBBONS at
-   constant grade (kerbs/seams on the slope, knuckle pads bevelled flush —
-   never a solid wedge), elevated spans/pads grow RCT2 wooden scaffolds,
-   guests walk UP the ramps (`park.paths.walkYAt` feeds the GameManager),
-   and `<Stall>`/`<Restroom>` deck-match a nearby elevated node (within
-   1.75 u; explicit `elevation` prop overrides) onto a scaffold + plank
-   deck. Ramp rules (console lint — warnings are FATAL, §0): max one 0.5
-   step per 1.2 tile (grade ≈ 0.42), sloped runs go STRAIGHT (no bends or
-   junctions mid-slope), and every elevated node needs a walkable-grade
-   ramp route down to the ground network (an unreachable deck warns).
-   Close gaps with `bermNetToGround(t, g, net, pathY, groundAt, nodeY?)`
-   (earth berms under LOW spans + footings under nodes; a grounded ramp
-   gets an inclined embankment UNDER its ribbon — anything lifted > 0.35
-   above the terrain is skipped because `buildPathNetwork`, given
-   `groundAt`, plants RCT2 wooden support scaffolds under those spans/pads
-   itself) and `plinthUnder` beneath off-path bases (above the same 0.35
-   lift it plants a wooden scaffold tower + plank deck instead of an earth
-   plinth, and `groundRideAccess` does the same for huts/lanes beside
-   elevated queues). Give the plaza its centre-tile rectangle; queue
-   tails land exactly ON street nodes.
-4. **Themed lands** (§3) — 2-4 zones + the hub; place rides/stalls/scenery
-   in-zone with the legality lint (§5).
-5. **Simulation wiring** — ONE `createGameManager(t, { groundAt, net, laneY,
-   bins })` given the SAME `{nodes, edges}` object the network rendered
-   (network first; `attachWalkers` before the manager). `registerRide` /
-   `registerStall` / `registerRestroom` / `registerParkEntrance`, then
-   `spawnGuests(n)` with no area. Tag every ride's visual group
-   `userData.rideRef = handle` (+ `userData.rideVehicle = a train car` where
-   one exists) — guests are tagged by the manager automatically — so
-   Stage `onPick` clickability works (rules/ui.md; SETUP.md §7).
-6. **One combined updater** — collect every sub-updater (water, lights,
-   walkers, crowd, coaster run, rotors, `manager.update`) and return a single
-   `(time) => void`.
-7. **`validatePark` MUST pass before the park "opens"** (§6).
-
-## 3. Themed lands — zones give parks their identity
-
-Partition the buildable land around the composition (2-4 lands + the hub).
-On the default 48 plot the lands are REAL DISTRICTS: anchor each one on a
-different composed flat field (the seed table lists two meadows per seed),
-link them with long approach boulevards off the hub, and let the walk
-between lands breathe — trees, torches and scenery line the avenue, not
-another ride crammed against the last one. Each land decides ride
-ASSIGNMENT, scenery SPECIES and COLOURS:
-
-- **The hub / Main Street** — gate street + plaza: fountain on the plaza's
-  centre tile, kiosks on cells ABUTTING the street (serving front toward
-  it), balloon stand, light poles + string lights (`buildStringLights` only
-  between real `buildLightPole` hooks), the plaza crowd.
-- **The waterside land** (Lakeside Boardwalk / Oasis / Bay) — the
-  water-flavoured ride by the shore + sand; `rideColourPreset(seed + zone,
-  'water')` (LogFlume/RiverRapids naturals). Boardwalk flavour: a
-  `buildDanceFloor` terrace and/or a `buildNeonSign` marquee on a plaza or
-  stall front (both night-gated already) — flavour, not clutter: one of
-  each per park at most.
-- **The hills land** (Alpine/Mesa/Summit/Headland Frontier) — the coaster
-  hugging the hill cluster's foothills, rock outcrops on the park-side
-  flank; `rideColourPreset(seed + zone, 'wooden')` threaded through
-  `buildRideSpline({ colours, vehicleSchemes })` AND `buildCoasterCar`.
-- **The open fairground** — flat rides on podium cylinders sunk to the
-  ground, centred on grid cells; `rideColourPreset(seed + zone, 'steel')`
-  (karts take `'kart'`).
-- **Scenery species follow the climate** (§1 table) with a per-zone mix —
-  pines cluster at hills, palms at water, cacti on desert flats
-  (`buildScenery(t, 'cactusCluster')`), rounds in the open. Seeded rejection
-  sampling; never on water, steep rock, paths, pads, poles or the coaster
-  envelope. NOTE: `dressTerrain` (§2.1 — automatic under `<Terrain>`)
-  already covers the terrain sections (forest/mountain/beach/meadow); YOUR
-  planting pass dresses the built-up middle ground near streets and rides —
-  don't double-plant the forest discs.
-
-Which rides fit which zone/climate: coasters want the hill flank (wooden
-reads alpine/frontier, steel reads fairground/coastal); spinners/scramblers/
-drop-type flats want the open fairground; a Ferris wheel or carousel reads
-boardwalk. Desert parks favour mine-train/kart energy; alpine favours
-bobsled/wooden; coastal favours the wheel + water rides. **The water rides do
-NOT go in the water:** LogFlume, RiverRapids and PaddleBoats each BUILD their
-own water (trough ribbon, channel + splash pond, and a whole pond with a
-sandy bank) and need dry flat land — put them NEAR the lake for the theme,
-never on it, or the wet-pad guard fails the park.
-
-## 3.1 SET-PIECES — the mandated way to build a district (round-7)
-
-**`buildParkNet` is MANDATORY for any park with ≥ 2 zones, and a hand-rolled
-uniform grid is a REJECTED layout (§0.15).** A set-piece bundles several
-primitives, their interior paths, their stalls and their GameManager
-registrations into ONE correct-by-construction unit, and the whole point is
-that you never hand-compute interior geometry again. PLAN FIRST, MOUNT
-SECOND:
-
-```tsx
-// 1. PURE plans — the whole district exists as data before anything mounts
-const HUB    = fountainPlazaPlan({ id: 'hub', position: [-6, 7.2], ports: ['N', 'S', 'E'], seed: 7 });
-const MARKET = bazaarPlan({ id: 'market', position: [-6, -9.6], rotation: Math.PI / 2,
-                            stalls: ['burger', 'soda', 'cottonCandy'], seed: 5 });
-const AVE    = boulevardPlan({ id: 'ave', from: HUB.port('S'), to: MARKET.port('W'), seed: 4 });
-
-// 2. FUSE the streets: your own spine nodes keep their indices, piece
-//    sub-nets are appended, port cells merge, crossed edges split, dangling
-//    ports are pruned
-const NET = buildParkNet({
-  nodes: MY_SPINE,                                   // a dozen nodes, not a lattice
-  edges: [[0, 1], [1, 'hub:N'], ['hub:E', 2], …],    // endpoints: index OR 'pieceId:PORT'
-  pieces: [HUB, MARKET, AVE],
-  keepDry: [...RIDE_PAD_AND_LANE_CELLS],
-});
-
-// 3. ONE graph into the park, then the pieces mount from the SAME plans
-<Terrain keepDry={NET.keepDry} coasterPts={PTS} />
-<Paths nodes={NET.nodes} edges={NET.edges} plazas={NET.plazas} bins={NET.bins} walkers={6} />
-<FountainPlaza plan={HUB} /> <Boulevard plan={AVE} /> <Bazaar plan={MARKET} />
-```
-
-- **`<FountainPlaza>` for a plaza hub**, **`<Bazaar>` for a shop cluster**,
-  **`<Boulevard>` for a long avenue between districts** — required, not
-  optional. Ports are named connector cells one lattice cell OUTSIDE the
-  piece footprint, so a street or a queue lane meets a port without ever
-  overlapping the piece (`plan.port('W')`, `plan.portDir('W')`).
-- **A port nobody wires is PRUNED** ("a spur dead-ending in grass"), so if a
-  ride's queue tail is meant to land on a port, wire that port to something.
-  Ask for the ports you will actually use (`ports: ['N', 'S', 'E']`).
-- Rotations are quarter turns: a `bazaarPlan` with `rotation: Math.PI / 2`
-  runs its aisle N/S, and its `'W'` port then faces NORTH — ask the plan
-  (`plan.port(...)`), don't assume compass names.
-- `NET.warnings` reports diagonal edges and disconnected islands; `NET.pruned`
-  lists what it dropped. Both are FATAL under §0's warnings policy.
-- Declare set-pieces AFTER `<Paths>` (their dressing settles onto the paving).
-
-The worked example is `<DistrictPark>` (`components/Park/Park.previews.tsx`,
-preview 1): three pieces + a 13-node spine on a size-48 plot, `ok: true`.
-
-## 4. Rides are RIDEABLE or they don't exist
-
-- **Every tracked ride goes through `buildRideSpline` (SplineRideKit)** —
-  `checkCoasterDesign` (per-type slope/bank whitelists, windowed pitch-rate,
-  bank-rate, a real station flat) must report NO failing violations, and
-  `validateSpline` clearance ≥ 0.9. Ride the control points on ONE ground
-  reference plane (80th-percentile ground along the circuit), not per-point
-  terrain. TrackKit/CoasterBuilder are for grid-piece demos only;
-  `WoodenCoaster` is deprecated.
-- **The 1.5 g derail guard is real** — an unbanked fast hairpin WILL crash
-  the train (Vehicle.TrackMotion.cpp:58-122). Default parks must NEVER
-  crash: validatePark replays the runner's energy-paced lateral-G sweep and
-  requires a 15% margin under 1.5 g. Design wide, ride your fast turns high
-  (slow) or banked, and give the station approach a dead-straight tail. Wire
-  `vehicleHandle: { crashed: () => handle.crashed() }` anyway — if a custom
-  layout is forced past the limit the SIM must know.
-- **Prefer PIECES over raw control points** — `compileTrackPieces`
-  (SplineRideKit) is the piece grammar behind `<Coaster pieces|children>`,
-  the generic `<TrackRide profile>` and the `pieces` prop on LogFlume /
-  RiverRapids / Monorail / Bobsleigh. Vocabulary: `station` (FIRST piece,
-  flat boarding straight), `flat`/`straight`, `lift`/`drop` (rampPoints-eased
-  — pitch-legal by construction), `hill`, `turnL`/`turnR` (`angle`, `radius`
-  ≥ 1.5 in parks), `helixL`/`helixR`, `corkscrewL`/`corkscrewR` (STEEL
-  coasters only), `sbend`. Both syntaxes work: a `pieces` array
-  (`['station', { type: 'lift', height: 2 }, 'turnR', 'drop']`) or JSX piece
-  children (`<Station/><Lift height={2}/><TurnR/><Drop/>` — children win).
-  Composing tips for the agent:
-  - **RUN-LENGTH TABLE (verified against the compiler) — do the closure
-    arithmetic on paper with THESE numbers**, not by eye:
-
-    | piece | cursor advance |
-    |---|---|
-    | `station` | 2.6 straight (default length) |
-    | `flat`/`straight` | its `length` (default 1.3) |
-    | `lift`/`drop` h | **≈ 1.6 + 3.9×h** (h ≤ ~1.5) — auto-extended for pitch legality; a shorter `length` is IGNORED. h 0.6 → 3.9, 0.9 → 5.1, 1.0 → **5.5**, 1.2 → 6.3, 1.5 → 7.4, 1.8 → 8.0, 2.0 → 7.9. Past 2.0 it grows ~1.3/unit: 3.2 → 8.9, 3.6 → 9.5, 4.2 → 10.27, 5.1 → 11.43, 5.5 → **11.94**, 6.0 → 12.6 |
-    | `hill` h | max(`length`, 3.6, 6.3×√h) — default h 0.9 → **6.0** |
-    | `turnL`/`turnR` 90° | cursor moves R along the OLD heading + R along the NEW (R default 1.5); heading ±90°; arc length 2.36 |
-    | `helixL`/`helixR` 360° | returns to its ENTRY point (net zero advance), ±`height`; sweeps a ~3 u circle to the side |
-    | `corkscrewL/R` | forward max(`length`, 4R) — default **2.4** (R 0.6), level |
-    | `sbend` | forward max(2.4, `length`, default 3.6); lateral `radius` (default 1.2, +ve left) |
-
-    So station + lift h + drop = `2.6 + 2×(1.6 + 3.9h)` of dead-straight
-    run — 13.6 u at h 1.0 (the shallowest lift that clears the `shortDrop`
-    stat gate), 15.1 u at h 1.2, 26.5 u at h 5.5. A lift-1.0 rectangle circuit
-    spans 5.0 × 17.8 u; the §4.0 lift-5.5 rectangle spans 37.6 × 37.6 — budget
-    the land BEFORE picking heights.
-  - The compiler AUTO-CLOSES the circuit (eased ramp home + shortest
-    arc–straight–arc; closure radius **2.2 for coasters**, 1.5 other
-    profiles) onto the START POSE — the station start point AND the heading
-    you left it on. Coaster closures land via a synthesized **1.2-u straight
-    brake tail** before the station (round-4: an arc welded directly onto
-    the station concentrated the spline's curvature at the weld — the
-    fastest, least-banked track — and the crash replay read a lateral-G
-    spike there). **The ~30° rule is HEADING ALIGNMENT (§0.2)**: end
-    within ~30° of the station ENTRY heading and within ~3 u of the start.
-    A synthesized closure over 40% of the authored length is FATAL — the
-    ride renders translucent red and is NOT registered. "Pointing at the
-    station" from mid-park fails exactly this way (verified: it synthesizes
-    `turnR 4°, straight 8.0, turnR 176°` → fatal).
-  - **LAND STRAIGHT, not from a curve**: when YOUR OWN last pieces reach the
-    start (gap ≤ 0.5, so the compiler synthesizes nothing), the final
-    authored piece must be a **straight brake tail ≥ ~1.2 u along the
-    station axis, landing ~0.3 u short** — a turn that lands directly on
-    the station leaves the weld curved and unbanked at full speed and the
-    crash replay FAILS it (verified: the old un-tailed L-wrap read 1.31 g
-    against the 1.27 g margin at u = 1.00; the compiler now WARNS "the
-    circuit lands on the station from a curve" — that warning is FATAL,
-    §0). The re-verified archetypes below all end with this tail.
-  - **Closure-synthesized pieces COUNT toward the park bounds.** Land the
-    final authored leg **~0.3 u SHORT of the start** — a leg that OVERSHOOTS
-    the start pose makes the Dubins closure loop around from the far side
-    (verified on the L-wrap: f-leg +0.4 over is still fine, +0.8 over
-    synthesizes a 268° wrap that reaches ±10.8 u and is FATAL twice over —
-    bounds + self-intersection). Short is safe: the closing arcs stay inside
-    the authored span.
-  - **Worked example — compact rectangle WITH the brake tail, the arithmetic
-    shown** (heading starts +z at (0,0); tail g = 1.2; lift **1.0** — the
-    shallowest lift that clears the `shortDrop` stat gate, see below):
+    **THE RING'S 16 GROUND CELLS — WALK THEM AGAINST YOUR SEED ROW'S WATER BASINS
+    *BEFORE* YOU PIN THE SEED (§1).** These are the cells the ring puts in
+    `keepDry`, and `keepDry` does not dodge water, it **pushes the body out of
+    every cell you claim** — so one deck inside a basin shrinks that body and can
+    fail `terrain` on a park where nothing else is wrong:
 
     ```
-    station 2.6            → (0, 2.6)
-    lift 1.0 (run 5.5)     → (0, 8.1)    y +1.0
-    drop     (run 5.5)     → (0, 13.6)   y back to 0
-    turnR                  → (−1.5, 15.1)  heading −x
-    straight 2.0           → (−3.5, 15.1)
-    turnR                  → (−5.0, 13.6)  heading −z
-    straight 14.8  ← station leg 13.6 + brake tail 1.2
-                           → (−5.0, −1.2)
-    turnR                  → (−3.5, −2.7)   heading +x
-    straight 2.0           → (−1.5, −2.7)
-    turnR                  → (0, −1.2)  heading +z = the entry heading
-    straight 0.9           → (0, −0.3) — the brake tail, 0.3 short. Closed.
+    decks          [−42.6, −8.4]  [0, 34.2]  [42.6, −8.4]  [0, −51.0]
+    start pose     [−42.6, −9.7]
+    queue tails    [−36.0, −8.4]  [0, 27.6]  [36.0, −8.4]  [0, −57.6]
+    queue anchors  [−40.81, −8.4] [0, 32.41] [40.81, −8.4] [0, −52.79]
+    exit huts      [−1.2, 33.03]  [41.43, −7.2]  [1.2, −52.17]
     ```
-  - **PICK THE RIGHT SHELF FIRST.** There are two shelves of verified
-    archetypes and choosing the wrong one is the single most common
-    park-composition defect:
 
-    | shelf | shapes | excitement | use it for |
-    |---|---|---:|---|
-    | **LOW-THRILL LEGACY** | compact rectangle h1.0, L-wrap h1.0 | **0.6 – 1.1** | a SECOND/THIRD small coaster, a kiddie circuit, a filler on a cramped plot (size ≤ 20). **NEVER a flagship.** |
-    | **HIGH-THRILL (§4.0)** | apex-turn rectangle A / B / C | **5.3 – 6.3** | the FLAGSHIP of any park. A + C for a THRILL park, B for a FAMILY park. |
+    **MEASURED, AND THIS IS OUR OWN TWO ARTEFACTS COLLIDING.** On **seed 7
+    temperate** the West deck `[−42.6, −8.4]` sits **6.66 u** from the secondary
+    tarn's basin centre `(−48.6, −11.3) r 12.6` — i.e. **2.64 u inside its 9.3-u
+    waterline**. `keepDry` lifted it, the tarn shrank **405 → 144 u²**, `secondFrac`
+    fell to **0.15 against the 0.16 floor**, and round 12 collected **two `terrain`
+    FAILs** — which made `ok: true` unreachable. Seed 7 puts a tarn under that deck
+    in **every** climate that draws one: temperate `(−48.6, −11.3) r 12.6`, desert
+    `(−48.6, −11.3) r 7.8`, coastal `(−41.1, −9.6) r 7.5` (deck **1.92 u** from the
+    centre). **Do not pin seed 7 for a park that carries the ring, in any climate.**
+    On seed 7 coastal there is no rescue by translation either: the east river chain
+    covers deck-E z ∈ (−34.1, 23.5), which contains the whole legal start range.
 
-    A park whose best coaster rates 0.6 excitement fails the rubric's Thrill
-    axis no matter how tidy it is. If your park has ONE coaster, it must come
-    from the HIGH-THRILL shelf.
-  - **LOW-THRILL LEGACY archetypes** (RE-VERIFIED 2026-07 round-6 END-TO-END
-    through the FULL `validatePark` gate — accessibility, terrain, footprints,
-    coaster legality + clearance + the crash replay, corridor, bounds,
-    scenery, autofix and the sim smoke — in a real minimal size-48 park, on
-    wooden AND steel, **at lift 1.0**, `<Coaster>`'s pieces-mode bank
-    (wooden 0.42 / steel 0.7). Both end with the **1.2-u brake tail landing
-    0.9 (= g − 0.3) short of the start** — the round-4 fix for the
-    station-weld lateral-G spike. `run(1.0)` per the table: 5.5.
-    **LIFT 0.6 AND 0.7 ARE RETIRED**: their first drop measures 0.70/0.79 u,
-    under RCT2's 0.9-u `shortDrop` stat gate — a `shortDrop` warning is FATAL
-    (§0), and the gate HALVES all three ratings anyway. Lift 1.0 is the
-    SHALLOWEST legal lift for these two shapes (0.95 also clears, 1.0 is the
-    published value). The verified starts below are REFERENCE placements —
-    the compiled geometry is start-relative and size-independent, so on the
-    default 48 plot translate `start` (+ the corridor table) by lattice
-    multiples of 1.2 into whichever district the coaster owns):
-    - *Compact rectangle + tail, h 1.0* (span 5.0 × 17.8; needs size ≥ 20 at
-      the reference start below, or any district of a 48):
-      ```
-      ['station', { type: 'lift', height: 1.0 }, 'drop', 'turnR',
-       { type: 'straight', length: 2.0 }, 'turnR',
-       { type: 'straight', length: 14.8 }, 'turnR',
-       { type: 'straight', length: 2.0 }, 'turnR',
-       { type: 'straight', length: 0.9 }]
-      ```
-      Return straight = station leg + the tail = 2.6 + 2×5.5 + 1.2 = **14.8**.
-      VERIFIED start `[2.4, 0.55, −6.0]`, `heading: 0` → X −2.60..2.40,
-      Z −8.74..9.06, maxY 1.55, closure synthesizes NOTHING.
-      **wooden**: E 0.63 / I 0.86 / N 0.38, first drop 1.00 u, +G 1.98,
-      worst lateral **0.99 g**, length 43.27, clearance 2.31.
-      **steel**: E 1.11 / I 1.02 / N 0.32, +G 2.41, lateral **0.59 g**.
-    - *L-wrap + tail, h 1.0* (5 turnR + 1 turnL + tail; span 12.8 × 12.3 —
-      still fits a compact size 16):
-      ```
-      ['station', { type: 'lift', height: 1.0 }, 'turnR', 'drop', 'turnR',
-       { type: 'straight', length: 2.0 }, 'turnL',
-       { type: 'straight', length: 1.3 }, 'turnR',
-       { type: 'straight', length: 4.3 }, 'turnR',
-       { type: 'straight', length: 9.8 }, 'turnR',
-       { type: 'straight', length: 0.9 }]
-      ```
-      Parameterize (a = station leg 2.6 + run(h) = 8.1, b = drop run 5.5,
-      c = 2.0, d = 1.3, g = 1.2): closure needs `c + e = a − 3 + g` →
-      **e = 4.3**, and `f = 3 + b + d` → **f = 9.8**; the 0.9 tail then lands
-      0.3 u short of the start. VERIFIED start `[6.0, 0.55, −3.6]`,
-      `heading: 0` → X −6.78..6.02, Z −6.32..5.98, maxY 1.55, closure
-      synthesizes NOTHING.
-      **wooden**: E 0.62 / I 0.84 / N 0.39, first drop 0.99 u, +G 1.98,
-      worst lateral **1.01 g**, length 46.54, clearance 2.47.
-      **steel**: E 1.10 / I 1.02 / N 0.35, +G 2.39, lateral **0.79 g**.
-      The old UN-TAILED L-wrap (f = 3 + b + d − 0.3, no tail) stays RETIRED:
-      its final turn landed on the station from a curve and the crash replay
-      read 1.31 g at the weld against the 1.27 g margin.
+    **THE VERIFIED PINS, MEASURED — re-compose with ONLY the ring's `keepDry`
+    cells and compare `waterCentre` / `waterCentreSecond` / `terrainSeed` /
+    `probesTried` with the unguarded §1 row. THREE of the sixteen published rows
+    are fully RING-CLEAN WITH DRY DECKS. The full table is in §1
+    (`park-generation-composition.md`); the headline is:**
 
-  - **CORRIDOR CELL TABLES (round-5) — copy, don't derive. They are
-    SIZE-INDEPENDENT.** For each verified archetype × reference start,
-    these are the 1.2-grid cells inside the RUNTIME-DERIVED track corridor
-    (within 1.6 u of the compiled polyline where the rails run < 2.2 u up —
-    computed headlessly from `compileTrackPieces` + the same sweep
-    `validatePark` runs; identical for wooden and steel). Lay streets,
-    stalls and flat-ride rigs OFF these cells BY CONSTRUCTION — every
-    listed cell is a guaranteed corridor FAIL for anything at grade.
-    **Size-independence (verified headlessly 2026-07):** the corridor
-    depends ONLY on the compiled polyline — pieces + `start` + `heading` —
-    never on the park size (`compileTrackPieces` output is bit-identical at
-    bounds 16 vs 48, and the swept cell set is identical clipped at ±24,
-    ±48 or unclipped). **Translation-invariant too:** shift `start` by
-    lattice MULTIPLES OF 1.2 and every cell shifts rigidly with it
-    (verified) — so one table serves any placement on any plot.
-    **FRAME (round-6, unambiguous):** every cell below is an **offset from
-    the reference `start`**, in the compiled frame (heading 0, station
-    straight running +z). A row `x −4.8: z −3.6..15.6` means the cells
-    `(start.x − 4.8, start.z − 3.6) … (start.x − 4.8, start.z + 15.6)` at
-    1.2 steps. The round-5 tables for lift 0.6/0.7 are DELETED with those
-    lifts (§4 retired them).
-    - *legacy rect h 1.0 @ start `[2.4, 0.55, −6.0]`* (103 cells; the whole
-      circuit is below 2.2 u so nothing over-flies anything):
-      ```
-      x −6.0: z −2.4..14.4
-      x −4.8: z −3.6..15.6
-      x −3.6: z −3.6..15.6
-      x −2.4: z −3.6..−1.2, 14.4..15.6      ← the alley between the two legs
-      x −1.2: z −3.6..15.6
-      x  0.0: z −3.6..15.6
-      x  1.2: z −2.4..14.4
-      ```
-      The alley (x −2.4, z 0.0..13.2) is CLEAR but fenced in on both sides —
-      don't put anything needing street access there.
-    - *legacy L-wrap h 1.0 @ start `[6.0, 0.55, −3.6]`* (113 cells):
-      ```
-      x −14.4: z 0.0, 2.4
-      x −13.2: z −3.6..4.8
-      x −12.0: z −3.6..6.0
-      x −10.8: z −3.6..−1.2, 3.6..6.0
-      x  −9.6: z −3.6..−1.2, 3.6..9.6
-      x  −8.4: z −3.6..−1.2, 3.6..10.8
-      x  −7.2: z −3.6..−1.2, 4.8..10.8
-      x  −6.0: z −3.6..−1.2, 8.4..10.8
-      x  −4.8: z −3.6..−1.2, 8.4..10.8
-      x  −3.6: z −3.6..−1.2, 8.4..10.8
-      x  −2.4: z −3.6..−1.2, 8.4..10.8
-      x  −1.2: z −3.6..10.8
-      x   0.0: z −3.6..9.6
-      x   1.2: z −2.4..9.6
-      ```
-      Clear pockets: the whole band x −6.0..−2.4 × z 0.0..7.2 (inside the
-      wrap) and everything at x ≥ 2.4 or z ≤ −4.8.
-    - *§4.0-A THRILL rect @ start `[16.8, 0.55, −3.6]`* (175 cells). The
-      apex legs FLY (rails 2.2–6.05 u up), so only the four valley floors and
-      the station leg obstruct anything at grade — **the whole 30 × 30 middle
-      of the ring is free**:
-      ```
-      x −38.4/−37.2: z −7.2..13.2          ← west leg valley + hills
-      x −28.8..−8.4: z −16.8..−14.4        ← south leg valley + hills
-      x −26.4..−9.6: z  20.4..22.8         ← north leg valley + hill
-      x −1.2/+1.2:   z −7.2..7.2           ← station leg (own ride: exempt)
-      x   0.0:       z −7.2..8.4
-      ```
-      (the north band starts at x −26.4 and the south at x −28.8; both stop
-      one cell before the west/east columns because the ramps are already
-      above 2.2 there.) Streets, stalls and flat rides go in
-      `x −36.0..−2.4 × z −13.2..19.2` (the interior) or on the east apron
-      `x ≥ +2.4`, and may cross UNDER the apex legs freely.
-    - *§4.0-B FAMILY rect @ start `[14.4, 0.55, −2.4]`* (160 cells):
-      ```
-      x −30.0/−28.8: z −6.0..10.8
-      x −27.6:       z −4.8..10.8
-      x −22.8..−6.0: z −14.4..−12.0
-      x −18.0..−6.0: z  15.6..18.0
-      x −1.2/+1.2:   z −7.2..7.2
-      x   0.0:       z −7.2..8.4
-      ```
-      Interior free block: `x −26.4..−2.4 × z −10.8..14.4`.
-    - *§4.0-C INVERTING rect @ start `[16.8, 0.55, −3.6]`* (149 cells):
-      ```
-      x −36.0:       z  0.0..14.4
-      x −34.8:       z −1.2..14.4
-      x −33.6:       z  0.0..14.4
-      x −27.6..−12.0: z −15.6..−13.2
-      x −25.2..−9.6: z  21.6..22.8
-      x −1.2/+1.2:   z −7.2..7.2
-      x   0.0:       z −7.2..8.4
-      ```
-      Interior free block: `x −32.4..−2.4 × z −12.0..20.4`.
-    The §4.0 band rows are rounded OUTWARD by at most one cell at each end
-    (the generated per-column table is one cell narrower on the two extreme
-    columns of each valley band) — erring towards "blocked" is always safe.
-    On the default 48 plot, TRANSLATE an archetype into its district — e.g.
-    the size-48 reference park `broadmoor` runs the legacy rect h 1.0 shifted
-    by (+12.0, −14.4) into the back-east meadow, full gate green — and carry
-    the cell table along with the same offset.
-  - **VERIFIED queueDir (round-6 — re-derived, the round-5 note was
-    incomplete).** Every reference start above leaves the station straight
-    running **+z**, so the lane the resolver keeps is perpendicular:
-    **`queueDir [1, 0]` pinned TOGETHER WITH `heading: 0`** (the pair is what
-    was verified; at any other heading, re-derive or rotate both). A
-    `[0, ±1]` queueDir spears the station straight and WILL be auto-flipped
-    (a §0-FATAL `queueDirFlip` lint).
-    **But `[1, 0]` alone is not enough — the TAIL NODE distance is part of
-    the archetype.** The manager plans the queue HEAD at
-    `tail − dir·(laneLenOf(capacity) + 0.35)` and the entrance hut a further
-    0.62 back, and `laneLenOf(c) = max(2.2, 1.1 + 0.56·c)`. The station
-    straight's own no-go rect reaches `start.x + 0.55`, so with capacity 4
-    (`laneLenOf = 3.34`) the hut's inner edge lands at `tail − 4.91` and the
-    tail must satisfy
-    **`tailX ≥ start.x + 5.46`** (in general `start.x + laneLenOf(capacity) + 2.12`).
-    Round-6 verified: a tail at `start.x + 4.8` (only 1.2 u east of the
-    station in the old round-5 parks) FLIPS — `[1,0] → [−1,0]` or `[0,−1]` —
-    and that flip is now a FATAL `autofix` lint. **Every §4/§4.0 archetype
-    is published with its tail node at exactly `start.x + 6.0`, same
-    `start.z`, and ran unflipped and untrimmed.** Publish-and-copy — don't
-    re-derive.
-  - It always runs `checkCoasterDesign` + `validateSpline`; every warning is
-    FATAL (§0) — a self-intersecting compile means the pieces need spreading
-    out; re-lay, don't ship.
-  - For a park `<Coaster>`, compile ONCE up front —
-    `compileTrackPieces(pieces, { type, start: [sx, 0.55, sz], heading })`
-    (from `./components/SplineRideKit`) — and hand the points to
-    `<Terrain coasterPts>` (peaks pre-capped under the circuit) + `keepDry`,
-    then give `<Coaster>` the SAME `pieces`/`start`/`heading` (`start`
-    accepts the same `[x, y, z]` tuple — the y is ignored). Skipping the
-    terrain pre-cap lets ground clamps kink the compiled profile into
-    pitchRate violations.
-  - **Prefer PIECES mode; points mode gets NO leniency** — a raw `points`
-    circuit faces the SAME fatal gate (design/clearance/closure checks +
-    park bounds; translucent red, never registered) as compiled pieces,
-    without the pieces grammar's by-construction legality.
-  - **Banking SATURATES at the type's bankLimit** (`coasterBankCap`: wooden
-    25°, steel/inverted 55°) — geometry, design check and validatePark's
-    re-check all build with the same clamped cap, so the DEFAULT bank (no
-    `bank` prop) is always legal, on wooden too. Auto-banking is what soaks
-    the lateral G through the compiled turns — don't fight it with a low
-    `bank`. Modest lifts (≤ ~1.4) keep the closing-leg speed comfortably
-    under the crash margin at ANY turn placement; past that, the turns have
-    to be ridden HIGH (§4.0) — validatePark replays the sweep either way.
-- **Every ride registers with the ONE GameManager**: entrance/exit huts on
-  pad edges adjacent to the platform at platform height, entrance doorway
-  facing the path spur, queue lane along a lattice axis with its TAIL on a
-  street node. Catalog rides + `<FlatRide>` AUTO-DERIVE queue/boarding/exit
-  from `position`+`rotation` — never hand-build huts; override only via the
-  `register`/`queue` props. A WET pad fails validation: any audited
-  footprint cell with ground < waterLevel + 0.18 is a violation — `keepDry`
-  SHOULD cover every pad, hut and lane cell (round-5: the AUTO-keepDry
-  settle pass re-clamps the terrain under whatever footprints actually
-  registered, so a derived/trimmed/shifted rig no longer sinks a park — but
-  plan honestly; the self-heal is a safety net, not a design tool). Plan the assembly with `planRideAccess(nodes, tailNode, dir,
-  capacity, exit, exitDir)` (ParkBuilder — applies the manager's lane-length
-  formula) and settle it with `groundRideAccess(t, g, groundAt, acc, padTop,
-  resolvedExit)` after registering (pass `handle.exitPoint()`, the
-  audit-resolved spot). The manager's `placeAccess` audit SAT-checks
-  hut/lane/pad footprints and auto-shifts a colliding exit; its warnings are
-  FATAL (§0) — respace the rides. **Queue-orientation safeguard (round-4):**
-  `<Coaster>` and the register wrappers now pick a sane lane orientation UP
-  FRONT — a derived/authored `queueDir` whose lane or entrance hut would
-  spear the ride's own boardPoint pad/station (or leave the park) is
-  auto-FLIPPED to the first clean orientation of dir/−dir/perpendiculars,
-  and the exit hut is relocated if the re-oriented lane runs over its cell.
-  Every choice is `console.warn`ed and those warnings are FATAL (§0): the
-  auto-fix keeps the park functional, but a layout that NEEDED it was
-  mis-planned — fix the `queueDir`/`rotation`/exit so the warning goes
-  away. **Corridor auto-resolution (round-5):** at settle time — every
-  child mounted, every circuit registered — `<Park>` sweeps the coasters'
-  1.6-u track corridors over every MOVABLE object (stalls + flat-ride rigs;
-  never streets or the coasters themselves) and self-heals the collisions
-  no static plan could predict: an exit hut alone in the corridor is
-  relocated by itself; a whole rig shifts outward along the least-move axis
-  to the first clear cell (≤ 4 cells, dry preferred, never onto another
-  footprint); a derived queue lane too long to fit anywhere is trimmed
-  (fewer slots) as a last resort. Every fix is `console.warn`ed with the
-  exact move; pass `pinned` on a ride/stall to opt out (it will then FAIL
-  where it stands); street grade crossings are never auto-fixed — reroute
-  the street or raise the track. Plan against
-  `manager().corridorCells(name?)` — the 1.2-grid cells inside the LOW
-  corridor of the registered circuits — or copy the §4 cell tables so the
-  resolver has nothing to do. Keep `rideDuration ≤ 12` (§0.5) or the
-  60 sim-s acceptance run cannot complete a cycle.
-- Stalls sell (`registerStall({ item: 'food'|'drink', price, value, anchor,
-  dir })`), restrooms work (`registerRestroom({ anchor, yaw })`), bins at
-  2-3 junction verges (`bins`), and guests walk ONLY on the shared graph.
+    | row | ring-only re-compose | verdict |
+    |---|---|---|
+    | **1 temperate** | bit-identical — probes 17→17, terrainSeed 16, viol 0, clamps 0+0; relief 12.13 / stdH 1.09 unguarded → 10.23 / 1.03 with the ring, **in band**; water 9.4 % (4-22), `secondFrac` **0.38** | **RING-CLEAN.** The default pin. It used to be published as paying an "unavoidable" non-fatal `terrainFlattened`; that was the SOUTH platform's queue side, it is FIXED, and the warning fires on neither reference skeleton — see the SOUTH-QUEUE note in §1 |
+    | **31 temperate** | bit-identical — probes 1→1, terrainSeed 406; **relief 12.02 / stdH 1.32 with the ring, ABOVE the band**, so `terrainFlattened` cannot fire at all; water 17.8 %, `secondFrac` 0.36 | **RING-CLEAN, and the row to PREFER for a NEW skeleton** — its **13 % SW lake** occupies the whole south-west and forces a different plan, which is novelty for free |
+    | **91 desert** | bit-identical — probes 1→1, terrainSeed 1186, viol 0, clamps 0+0; 8.15 / 0.76 → **0.63 stdH** with the ring (below band, non-fatal); water 2.4 %, `secondFrac` 0.22 | **RING-CLEAN.** What `samples/monorail-ref.tsx` ships |
+    | 53 coastal | centroids hold — probes 1→1, terrainSeed 692 — **but the WEST DECK STANDS IN WATER (`h −0.06`)** | **UNUSABLE for a ring park.** A stable water centroid is not the same as a dry deck; this row passes the re-compose diff and still cannot carry the ring |
+    | *the other 12* | **NINE move a water body 24–117 u**; the remaining three hold their centroids while changing the landform identity (83 temperate `terrainSeed` 1082→2052, 37 desert 484→581) or paying 36-90+ clamp discs (17 alpine, 5 alpine — the latter with 2 post-clamp violations) | **REFUSE all twelve.** Magnitudes from the 15-cell run: 42 alpine **117.1 u** · 71 temperate **96.4 u** · 3 desert **62.5 u** · 19 desert **61.6 u** · 7 coastal **60.9 u** · 8 alpine **55.8 u** · 23 coastal and 73 coastal **25.0 u** · 3 desert's secondary **24.2 u** |
 
-### 4.0 HIGH-THRILL archetypes — the FLAGSHIP shelf (round-6)
+    **PIN `seed={1} climate="temperate"`** for mid-band ground and water with real
+    headroom, **`seed={31} climate="temperate"`** if you are deriving a NEW skeleton
+    (its relief sits above the band, so the one warning skeleton B cannot shake is
+    unreachable there), or **`seed={91} climate="desert"`** to match the reference
+    park. **Check any row yourself with
+    `node harness/park-eval/probe-guard-stability.mjs`** — and read the DECK
+    HEIGHTS, not just the centroids, because 53 coastal is exactly the row that
+    passes a centroid diff and drowns a platform. Either way **walk YOUR OWN street
+    nodes too**: seed 1's SE corner lake reaches `[22.8, −27.6]` and its NW inlet
+    chain reaches `[−31.2, 30.0]`, and the same re-compose with those two added
+    moves the dominant body **77.3 u**.
 
-Copy one of these VERBATIM. They are the only shapes in the catalogue that
-clear the §4.1 thrill targets. **All three are the same discovery**: RCT2's
-stat gates only pay for a BIG first drop (steel wants ≥ 14 z-steps = 3.5 u)
-and ≥ 2 drops, but the 1.27 g lateral margin then forbids fast turns — so put
-**every turn AT THE APEX**, where the energy-paced speed is 1.4–4.8 u/s, and
-spend the whole ground level on straight drops and camelbacks. The shape is a
-RECTANGLE with a 90° turn at each corner, each corner ridden at the top of a
-lift, each leg carrying one drop → hills → climb excursion to grade. Worst
-lateral comes out **0.27–0.90 g** — a 30–70 % margin under the gate, not the
-2 % the old wide-ground-turn layouts ran.
+    **THE FOUR QUEUE TAILS ARE DEAD ENDS BY CONSTRUCTION — DO NOT RUN A STREET PAST
+    ONE.** Each tail sits 6.6 u from its deck along the lane axis, so a street that
+    continues one more cell
+    past `[−36, −8.4]`, `[36, −8.4]` or `[0, −57.6]` runs through the platform pad
+    6.6 u further on and the gate says *`blockers`: street edge runs THROUGH … pad*
+    — which is precisely how r12a failed. Author each of the three as a **leaf**:
+    W and E approached from the ring's INTERIOR, **SOUTH from OUTSIDE, laterally
+    along z −57.6**. **The NORTH tail `[0, 27.6]` is the one
+    exception and the only one:** its deck is at `z 34.2` with the beam overhead, so
+    a street row along `z 27.6` passes under the beam and misses the pad — the north
+    tail may be a through node. Skeleton B relies on exactly this.
 
-**PUBLISHED STATS ARE ±0.1, AND CLEANLINESS IS TERRAIN-DEPENDENT (round-7).**
-The excitement/intensity/nausea figures below come from `rateCoaster` on the
-compiled points in isolation. Mounted in a real park the station sits on the
-composed ground, so the numbers shift slightly — §4.0-A measures **E 6.06**
-where this table says 6.12. Treat every published figure as ±0.1 and paste
-YOUR measured line into the §0 header (§0.16). More important: the same
-archetype at the same verified start is NOT clean on every landform — on
-seed 5 alpine, whose SW quadrant carries a 4.7-6.7 u peak cluster under the
-ring, §4.0-A fails `checkCoasterDesign` with `pitchRate 0.59 rad/unit`
-(limit ~0.55), while on seed 7 temperate it passes with room to spare. So:
-VERIFY the flagship on the seed you actually ship, and if it violates, move
-the ring to flatter ground rather than re-tuning the archetype.
+    **WHY THE SOUTH PLATFORM QUEUES OUTWARD — AND DO NOT "TIDY" IT BACK.** Inward,
+    its tail `[0, −44.4]` and the street column paved down to it stand **5.3–5.8 u**
+    from the summit of the composer's biggest range on seed 1 temperate: the guard
+    list FLATTENS it (**h 8.59 → 0.83**), `terrainFlattened` fires and `stdH` drops
+    under axis 7's **0.75** floor. Outward, measured on BOTH reference skeletons:
+    `terrain.stdH` **0.73 → 0.81** and **0.71 → 0.79**, `reliefFloor.kept`
+    **0.74 → 0.82** and **0.73 → 0.81**, the warning **GONE from both**, axis 7
+    **7.5/9 → 9/9**, totals **96.18 → 97.68** and **91.90 → 93.40**, all fifteen
+    other axes byte-identical, `ok: true` / 0 failures preserved. **The POSE is
+    unchanged** — only this station's queue side flips.
+    `capPeakForCells(p, keep, 0.35)` shaves a peak to `0.35 / s(d)`, so **a guard
+    cell must stand ≥ 10.62 u from a summit to cost that peak nothing**; the deck
+    `[0, −51.0]` is 9.70 u out and cannot move, so 3.45 of the 8.59 survives — this
+    pose's ceiling, and enough. **Do NOT shift the ring west to recover the rest**
+    (it drops the West deck 4.2 u inside a world rect and trades `crossThemeCount 0`
+    for terrain). Bring the approach down the ONE dry corridor, **x ≤ −23** — the
+    ridge's skirt is continuous from x −23 to x +38.6 and the far side is the SE
+    lake (§1's pinned-row note).
 
-RE-VERIFIED 2026-07 round-6 END-TO-END through the FULL `validatePark` gate
-(accessibility, terrain, footprints, coaster design + clearance + crash
-replay, corridor, bounds, scenery, autofix, sim smoke) in a real **size-48**
-park: `ok: true`, `warnings: []` — zero lints, no queueDir flip, no exit
-relocation, no lane trim, no corridor shift. `type="steel"` and
-`<Coaster>`'s default pieces-mode bank (0.7, saturating at the steel 55° cap)
-for all three: **do not pass a `bank` prop** — a lower bank re-opens the
-lateral-G gate.
+    **AND `everyWorldTouched` IS MEASURED ON THE MONORAIL GROUP'S BOUNDING-BOX
+    PERIMETER.** `probe.mjs` walks that perimeter and asks which world rects it
+    crosses, so a world entirely outside `x ±44` / `z −52.8…36` reads
+    `worldsTouched: 1` however grand it is. The fix costs nothing: give that world
+    **one `include` cell aimed at the ring** (e.g. `[-38.4, 33.6]`). `include` cells
+    are not placements — nothing is built on them, they are not guarded, and they
+    only widen the rect the audit reads.
 
-Evidence: `/tmp/park-eval/samples/arch-w6.tsx` cycles all three plus both
-corrected legacy shapes (× wooden/steel) through `<Park validate>` at size 48;
-`node eval.mjs samples/arch-w6.tsx` prints `ok:true (FULL gate) warnings=[]`
-for **all seven** combos.
+    **AND THE RING MAY BE TRANSLATED RIGIDLY IF A BASIN COLLIDES.** `position` is
+    free anywhere in §4.2-B's published legal start range — x ∈ [−63.6, −21.6],
+    z ∈ [−22.8, 20.4] at 128 — and every one of the 16 cells above, plus the
+    corridor table, moves with it by the same offset in lattice multiples of 1.2.
+    Translating the ring is a one-line edit and re-pinning the seed is a one-line
+    edit; **shrinking a water body is neither.**
 
-**Shared rules for all three (do not vary these):**
+    **§0 STOP-CHECK — answer THREE, in writing, before you call the park
+    finished:** *`<Monorail>` mounted?* · *does every declared world have a
+    platform in it — i.e. platform count ≥ declared world count, and
+    `probe.monorail.everyWorldTouched: true`?* · *do all 16 ring cells above clear
+    both of your seed row's water bodies?* **If the answer to any is no, the park
+    is not finished.** (Station count is free up to 4, so a 3-world park
+    either keeps the 4th platform for the hub or drops one `station` back to
+    `{ type: 'straight', length: 2.6 }` without touching the closure — §4.2-B.)
 
-- `heading: 0` (station straight runs **+z**), `type="steel"`, no `bank` prop.
-- `queueDir: [1, 0]` and the queue TAIL NODE **exactly 6.0 u EAST of the
-  station column** (`start.x + 6.0`, same z as `start.z`) — see the
-  "VERIFIED queueDir" bullet in §4 above for why 6.0 and not less.
-- Exit hut at `[start.x + 2.4, start.z + 2.4]`, `exitDir: [1, 0]`.
-- `capacity: 4`, `rideDuration: 10` (§0.5), `intensity: 7`.
-- The circuit closes ITSELF: the final `{ type: 'straight', length: 1.5 }`
-  brake tail lands at `(start.x, start.z − 0.3)` — 0.3 u short, heading +z.
-  `report.closure.synthesized` is **empty** for all three.
+    **THE RING MUST PASS THROUGH *EVERY* DECLARED WORLD, NOT MOST OF THEM.** Four
+    platforms and three worlds is not automatically a pass: the check is whether
+    each world's RECT contains a deck, and round 12 shipped `everyWorldTouched`
+    **2 of 3** with all four platforms mounted, because one world's rect sat off the
+    ring. **`worldsTouched` IS A COUNT, NOT A LIST** (`probe.mjs:908` —
+    `touched.length`): compare it to `monorail.worldsDeclared`, or just read the
+    boolean `everyWorldTouched`, and take the NAMES out of the sibling
+    `monorail.worldsTouchedIds`. If a world is missing, move that WORLD's rect onto
+    the ring — the four deck cells are fixed by the block. The cheapest way to move
+    a rect is the `include` cell above, not a relocated district.
 
-#### 4.0-A THRILL steel rectangle — E 6.12 (flagship of a THRILL park)
+    **§0 STOP-CHECK — `<Park roster={{…}}>` MOUNTED?** This sits beside the
+    monorail check because it costs the same way: **without the prop
+    `harness/park-eval/preflight.mjs` REFUSES TO BUNDLE the park, so nothing
+    renders and there is no evidence at all.** Round 12's park wrote a correct §0
+    header AND a correct roster line in the comment block and then never wired the
+    prop — the round's whole evidence trail was lost to one missing attribute. It is
+    `<Park roster={{ rides: [...names], stalls: N, categories: N }}>` (§0.16), and
+    the names are counted off the `register={{…}}` calls that actually mount.
+
+    **THE FALLBACK IS A FLOOR, NOT AN OPTION — the TRANSPORT category must never
+    be empty.** The ring is the requirement, and dropping it costs axis 13's
+    monorail deduction whether or not you replace it. This clause exists only so
+    that a park which somehow arrives at the end without one does not ALSO lose a
+    whole category: mount **`<Chairlift>` spanning two worlds** (piece-composed,
+    `profile: 'monorail'`, one station, catalog defaults 6 / 10 / 2 / 3, reads best
+    up a hill flank — and its `pieces` come from a published block like every
+    other tracked ride). Read the two costs honestly: **skipping the ring = −1;
+    skipping the ring AND leaving TRANSPORT empty = −1 and a category and the
+    roster-novelty floor.** Neither is the plan. Paste §4.2-A.
+
+    `beamY: 2.6` (the beam must fly **≥ 2.2 u** over the streets it crosses, and
+    the 1.2 default does not), `price: 0`, `pinned`. **`position` is the START
+    POSE, not the ring centre** — the ring grows **EAST** from it.
+
+    **§4.2-A IS VERIFIED, SO PASTING IT IS A ZERO-RISK ACTION.** Measured:
+    4 platforms, worst clearance **16.66** (gate 0.9), `closure.gap` **1.800**,
+    **nothing synthesized**, `fatal` unset, **0 compiler warnings**, and
+    `validatePark → ok: true` on the reference park. There is no risk to weigh
+    here and no audit to run: **not** pasting it is the only move with a cost —
+    a guaranteed **−1** plus an **empty TRANSPORT category** plus the roster-
+    novelty floor. (What *was* fatal, twice, is IMPROVISING a circuit — see the
+    §4.2 footnote. That has nothing to do with copying the verified block.)
+
+    **AND THE RING NEVER CONFLICTS WITH A SEED'S WATER, SO DO NOT DROP IT TO
+    DODGE A LAKE.** `beamY: 2.6` flies the beam over everything — streets, water,
+    stalls — and the piers auto-extend to grade. Round-11's park B talked itself
+    out of the ride with *"rather than fight seed-91's water intersecting the
+    monorail ring, I'll DROP the monorail (transport category optional)"*: both
+    premises are false — the water does not intersect an elevated beam, and the
+    category is not optional. The only thing a lake asks of you is that the four
+    platform QUEUE TAILS (ground-level street nodes) sit on dry cells.
+
+    Check `probe.monorail`: `registered: true`, `circuitClosed: true`,
+    `synthesizedCount: 0`, `everyStationQueued`/`everyStationExitConnected`
+    `true`, `everyWorldTouched: true`. §4.2-B has the one-number scaling rule for
+    any other plot size. **THE RING DOES NOT SATISFY THE GATE-WALK BUDGET** —
+    even its closest platform sits 24 u from the turnstile, past the 20-u
+    practical maximum, so pair it with a separate NON-monorail ride whose queue
+    tail is inside 15-20 u of the gate to carry the smoke cycle (§0.3 check 1,
+    §4.2). Do NOT claim in the header that guests "travel" on it to
+    anywhere — RCT2 has no transport routing (§4.2's honest-limit note); claim
+    only what `probe.sim.transfers` measures.
+11. **Fill the ROSTER and the DRESSING to the §0.0b targets** — ride count,
+    category spread, stalls, scenery, trees, spread. They are numbers, not
+    aspirations.
+12. **`validatePark` runs as the LAST build step** and its verdict plus one line
+    per failure is logged (§6). **The measured failure catalogue with the exact
+    fix per check is `park-generation-validation.md` §6, and §6.1 triages the case
+    where there is NO verdict line at all** (`park-troubleshooting` is the same
+    catalogue as a skill; read it if it loads). `ok: true`,
+    **ZERO failures, ZERO fatal warnings**, coaster crash-free — or the park is
+    not finished.
+
+#### §0.0-T ANNOTATE EVERY TOP-LEVEL ARRAY — DON'T CAST, AND DON'T LEAVE IT BARE
+
+TypeScript widens a bare array literal, so `[[0, 63.6], [6, 56.4]]` infers as
+`number[][]` and **is not assignable to `XZ[]`**. Casting it (`as XZ[]`,
+`as any`) silences the checker and hides real typos; leaving it bare is a type
+error. **Annotate the declaration instead** — it type-checks AND still catches
+the typo. This is not optional polish: the first one-line-brief park shipped
+**6 type errors, every one of them a bare literal**, on a file whose own header
+claimed "copied VERBATIM (no casts)".
 
 ```tsx
-const A_PIECES = ['station',
-  { type: 'lift', height: 5.5 }, { type: 'straight', length: 4.84 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 5.5 }, { type: 'hill', height: 1.2 },
-  { type: 'lift', height: 5.1 }, { type: 'straight', length: 2.34 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 5.1 }, { type: 'hill', height: 0.6 }, { type: 'hill', height: 0.6 },
-  { type: 'lift', height: 5.1 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 5.1 }, { type: 'hill', height: 0.6 }, { type: 'hill', height: 0.6 },
-  { type: 'lift', height: 5.1 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 5.1 }, { type: 'straight', length: 1.5 }];
-// VERIFIED: start [16.8, 0.55, -3.6], heading 0, type "steel", cars 5,
-// capacity 4, queueTailNode at [22.8, -3.6], queueDir [1, 0],
-// exit [19.2, -1.2], exitDir [1, 0].
+import type { V3, XZ } from './components/Park';          // ONE canonical line for both
+import type { NetRef } from './components/SetPieceKit';   // net edge endpoints only
+import type { TrackPiece } from './components/SplineRideKit';
+
+const A_PIECES: TrackPiece[]        = ['station', { type: 'lift', height: 5.5 }, /* … */];
+const A_START:  V3                 = [16.8, 0.55, -3.6];   // 3-tuple, not number[]
+const GATE:     XZ                 = [0, 63.6];
+const NODES:    XZ[]               = [[0, 63.6], [6, 56.4], /* … */];
+const EDGES:    [NetRef, NetRef][] = [[0, 1], ['pulseRow:E', 2], /* … */];
+const KEEP_DRY: XZ[]               = [[13.73, 56.4], /* … */];
 ```
 
-- **rateCoaster (cars 5, bank 0.7):** excitement **6.12**, intensity 9.32
-  (*intense*), nausea 3.43 (*moderate*), highest drop **5.47 u**, total drop
-  24.30, **9 drops**, +G **6.26**, −G −3.86, **maxLatG 0.36 g** (limit 1.275 —
-  71 % margin), airtime **1.06 s**, inversions 0, length 158.63, duration
-  24.59 s, vmax 10.91, vavg 7.76, turns `banked[3] = 4`.
-- **Footprint (at the verified start):** X −20.81..16.80, Z −19.33..18.28,
-  maxY 6.05 — worst |coord| **20.81** on a ±24 plot. This archetype OWNS a
-  48 plot: it is a 37.6 × 37.6 ring around the park with a clear middle. Run
-  the streets and the other rides in the RING'S INTERIOR (the whole centre is
-  outside the low corridor, see the table below) and along the east apron.
-- **Closure arithmetic** (local frame, start (0,0), heading +z; advances from
-  the run-length table: lift/drop 5.5 → 11.94, 5.1 → 11.43, hill 1.2 → 6.90,
-  hill 0.6 → 4.88, turnR 90 R2.5 → 2.5 along the old heading + 2.5 along
-  the new):
+Rule of thumb: **anything you hand to a design-system API gets a type
+annotation on its `const`.** `as const` is acceptable where a literal must stay
+narrow, but the annotation is preferred because it is checked in both
+directions. `as any` / `as unknown as X` is never acceptable.
 
-  ```
-  station 2.6         → (0, 2.6)
-  lift 5.5   (11.94)  → (0, 14.54)      y +5.5   ← the lift hill
-  straight 4.84       → (0, 19.38)
-  turnR R2.5          → (−2.50, 21.88)  heading −x   ← corner 1, AT the apex
-  drop 5.5   (11.94)  → (−14.44, 21.88) y back to 0  ← the 5.47-u first drop
-  hill 1.2   (6.90)   → (−21.34, 21.88)              ← airtime crest
-  lift 5.1   (11.43)  → (−32.77, 21.88) y +5.1
-  straight 2.34       → (−35.11, 21.88)
-  turnR R2.5          → (−37.61, 19.38) heading −z   ← corner 2, at the apex
-  drop 5.1   (11.42)  → (−37.61, 7.96)
-  hill 0.6   (4.88)   → (−37.61, 3.08)
-  hill 0.6   (4.88)   → (−37.61, −1.80)
-  lift 5.1   (11.43)  → (−37.61, −13.23)
-  turnR R2.5          → (−35.11, −15.73) heading +x  ← corner 3, at the apex
-  drop 5.1            → (−23.68, −15.73)
-  hill 0.6            → (−18.80, −15.73)
-  hill 0.6            → (−13.92, −15.73)
-  lift 5.1            → (−2.50, −15.73)
-  turnR R2.5          → (0, −13.23)      heading +z  ← corner 4, at the apex
-  drop 5.1            → (0, −1.80)
-  straight 1.5        → (0, −0.30) — brake tail, 0.3 short. CLOSED.
-  ```
-
-#### 4.0-B FAMILY steel rectangle — E 5.27, gentle forces (flagship of a FAMILY park)
+**AND NEVER CAST — OR SLICE — A `V3` INTO AN `XZ`.** `keepDry`, `NODES`,
+`offPathCell` and every net API take `XZ` = **TWO numbers, `[x, z]`**; a start
+pose is `V3` = `[x, y, z]`. So the guarded cell under a station is
+**`[START[0], START[2]]`** — never `START.slice(...)`, never a cast. Round 12's
+park B wrote `A_START.slice(0, 3) as unknown as XZ`, which type-checked itself
+into silence and guarded **`[x, y]`** — the wrong cell entirely, at z = 0.55.
+`slice` returns `number[]`, which is why the cast was needed at all: **the cast
+is the tell.** Write the pair out.
 
 ```tsx
-const B_PIECES = ['station',
-  { type: 'lift', height: 3.6 }, { type: 'straight', length: 2.56 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 3.6 },
-  { type: 'lift', height: 3.2 }, { type: 'straight', length: 5.46 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 3.2 }, { type: 'hill', height: 0.9 },
-  { type: 'lift', height: 3.2 }, { type: 'straight', length: 1.5 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 3.2 }, { type: 'hill', height: 0.9 },
-  { type: 'lift', height: 3.2 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 3.2 }, { type: 'straight', length: 1.5 }];
-// VERIFIED: start [14.4, 0.55, -2.4], heading 0, type "steel", cars 3 (the
-// default — no `cars` prop needed), capacity 4, queueTailNode at
-// [20.4, -2.4], queueDir [1, 0], exit [16.8, 0.0], exitDir [1, 0].
+const FLAG_CELL: XZ = [A_START[0], A_START[2]];   // ✓ the station cell
+// const BAD = A_START.slice(0, 2) as unknown as XZ;   ✗ [x, y] — guards nothing
 ```
 
-- **rateCoaster (cars 3, bank 0.7):** excitement **5.27**, intensity **6.25**
-  (*thrilling* — the moderate/family band, not *intense*), nausea 2.25
-  (*gentle*), highest drop **3.58 u**, total drop 14.95, **6 drops**,
-  +G **3.51** (vs A's 6.26 — this is the "gentler forces" archetype),
-  −G −1.97, **maxLatG 0.27 g** (79 % margin), airtime 0.56 s, inversions 0,
-  length **120.87** (well past the wooden 54-u length gate too), duration
-  26.47 s, vmax 9.05, vavg 5.98, turns `banked[3] = 4`.
-- **Footprint:** X −14.52..14.40, Z −15.67..14.75, maxY 4.15 — worst |coord|
-  **15.67**. 28.9 × 30.4: it fits inside HALF a 48 plot, so a family park can
-  still fit a hub, a boulevard and 3-4 flat rides beside it.
-- **Closure arithmetic** (advances: lift/drop 3.6 → 9.49, 3.2 → 8.97,
-  hill 0.9 → 5.98):
-
-  ```
-  station 2.6         → (0, 2.6)
-  lift 3.6   (9.49)   → (0, 12.09)      y +3.6   ← the lift hill
-  straight 2.56       → (0, 14.65)
-  turnR R2.5          → (−2.50, 17.15)  heading −x   ← corner 1, at the apex
-  drop 3.6   (9.49)   → (−11.99, 17.15) y back to 0  ← the 3.58-u first drop
-  lift 3.2   (8.97)   → (−20.96, 17.15) y +3.2
-  straight 5.46       → (−26.42, 17.15)
-  turnR R2.5          → (−28.92, 14.65) heading −z   ← corner 2, at the apex
-  drop 3.2   (8.97)   → (−28.92, 5.68)
-  hill 0.9   (5.98)   → (−28.92, −0.30)
-  lift 3.2            → (−28.92, −9.27)
-  straight 1.5        → (−28.92, −10.77)
-  turnR R2.5          → (−26.42, −13.27) heading +x  ← corner 3, at the apex
-  drop 3.2            → (−17.45, −13.27)
-  hill 0.9            → (−11.47, −13.27)
-  lift 3.2            → (−2.50, −13.27)
-  turnR R2.5          → (0, −10.77)      heading +z  ← corner 4, at the apex
-  drop 3.2            → (0, −1.80)
-  straight 1.5        → (0, −0.30) — brake tail, 0.3 short. CLOSED.
-  ```
-
-#### 4.0-C INVERTING steel rectangle — E 6.31, TWO corkscrews (highest rated)
+**AND THE NO-CAST BAN COVERS THE COMPILE REPORT, WHICH IS WHERE IT KEEPS GETTING
+BROKEN.** `compileTrackPieces` already returns `points: [number, number, number][]`
+— i.e. `V3[]`, exactly what `<Terrain coasterPts>` and `rateCoaster` want. Casting
+its report to a hand-written shape THROWS THAT AWAY and re-widens the points to
+`number[][]`, which is not assignable to `V3[]`: one cast, one type error, and a
+`coasterPts` prop the checker can no longer verify. The wave-12 park wrote
 
 ```tsx
-const C_PIECES = ['station',
-  { type: 'lift', height: 5.5 }, { type: 'straight', length: 5.2 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 5.5 }, { type: 'hill', height: 0.6 },
-  { type: 'lift', height: 4.2 }, { type: 'straight', length: 2.72 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 4.2 }, { type: 'hill', height: 0.6 },
-  { type: 'lift', height: 4.2 }, { type: 'corkscrewL' }, { type: 'straight', length: 4.0 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 4.2 }, { type: 'hill', height: 0.6 },
-  { type: 'lift', height: 4.2 }, { type: 'corkscrewR' }, { type: 'straight', length: 2.0 }, { type: 'turnR', angle: 90, radius: 2.5 },
-  { type: 'drop', height: 4.2 }, { type: 'straight', length: 1.5 }];
-// VERIFIED: start [16.8, 0.55, -3.6], heading 0, type "steel" (corkscrews are
-// STEEL-ONLY), cars 3 (default), capacity 4, queueTailNode at [22.8, -3.6],
-// queueDir [1, 0], exit [19.2, -1.2], exitDir [1, 0].
+// WRONG — the cast re-widens points to number[][] and breaks coasterPts
+const FLAG_PTS = (FLAG_COMPILE && (FLAG_COMPILE as { points?: number[][] }).points) || undefined;
 ```
 
-- **rateCoaster (cars 3, bank 0.7):** excitement **6.31**, intensity 9.64
-  (*intense*), nausea 3.60 (*moderate*), highest drop **5.47 u**, total drop
-  19.87, **7 drops**, +G 5.41, −G −4.00, **maxLatG 0.90 g** (29 % margin),
-  airtime **1.71 s**, **inversions 2**, length 152.17, duration 22.72 s,
-  vmax 10.91, vavg 7.78, turns `banked[3] = 4` + `sloped[1] = 5`,
-  `sloped[2] = 1`.
-- **Footprint:** X −18.42..16.80, Z −18.16..18.64, maxY 6.05 — worst |coord|
-  **18.64**. 35.2 × 36.8.
-- **WHY THE CORKSCREWS SIT WHERE THEY DO** — a corkscrew's own curvature
-  reads ~0.21 effective κ, so at grade (v ≈ 10.9) it measures **2.35 g** and
-  is FATAL. It must be ridden within ~2.5 u of the apex. It is also LEVEL and
-  rises ~1.13 u above its entry, so if you put it straight after the lift hill
-  its top becomes the global maximum, `detectLiftHill` swallows it and the
-  train CRAWLS through the inversion at chain speed. Hence: `H1 = 5.5` on the
-  station leg and `Hn = 4.2` on the others, corkscrews on the leg-3 and leg-4
-  climb tops (4.75 + 1.13 = 5.88 < the 6.05 apex). **Do not move them, do not
-  deepen `Hn`, do not raise `H1`.** (Verified: `Hn = 4.6` puts a corkscrew top
-  at 6.28 > the apex; three corkscrews reach 1.06 g; the mid-slope placements
-  all breach 1.275 g.)
-- **Closure arithmetic** (advances: lift/drop 5.5 → 11.94, 4.2 → 10.27,
-  hill 0.6 → 4.88, corkscrew → 2.40 level):
-
-  ```
-  station 2.6         → (0, 2.6)
-  lift 5.5   (11.94)  → (0, 14.54)       y +5.5  ← the lift hill (the apex)
-  straight 5.2        → (0, 19.74)
-  turnR R2.5          → (−2.50, 22.24)   heading −x  ← corner 1, at the apex
-  drop 5.5   (11.94)  → (−14.44, 22.24)  y back to 0 ← the 5.47-u first drop
-  hill 0.6   (4.88)   → (−19.32, 22.24)
-  lift 4.2   (10.27)  → (−29.59, 22.24)  y +4.2
-  straight 2.72       → (−32.31, 22.24)
-  turnR R2.5          → (−34.81, 19.74)  heading −z  ← corner 2
-  drop 4.2   (10.26)  → (−34.81, 9.48)
-  hill 0.6            → (−34.81, 4.60)
-  lift 4.2            → (−34.81, −5.66)
-  corkscrewL (2.40)   → (−34.81, −8.06)  ← INVERSION 1, ridden at v ≈ 6
-  straight 4.0        → (−34.81, −12.06)
-  turnR R2.5          → (−32.31, −14.56) heading +x  ← corner 3
-  drop 4.2            → (−22.04, −14.56)
-  hill 0.6            → (−17.16, −14.56)
-  lift 4.2            → (−6.90, −14.56)
-  corkscrewR (2.40)   → (−4.50, −14.56)  ← INVERSION 2
-  straight 2.0        → (−2.50, −14.56)
-  turnR R2.5          → (0, −12.06)      heading +z  ← corner 4
-  drop 4.2            → (0, −1.80)
-  straight 1.5        → (0, −0.30) — brake tail, 0.3 short. CLOSED.
-  ```
-
-**Do NOT re-tune these three.** Every number was searched against
-`rateCoaster` + the crash replay under the ±24 bounds; the intensity sits at
-9.32/6.25/9.64 and RCT2 cuts excitement by 25 % per band once intensity
-reaches 10.00, so a deeper lift or an extra corkscrew LOWERS the score.
-Translate them (lattice multiples of 1.2), recolour them, rename them — but
-do not edit the piece list.
-
-### 4.1 Hit a THRILL target — measure it, don't guess it
-
-A legal circuit is not automatically a RIDE. Decide the park's type up front
-and aim at the matching numbers, then check them with `rateCoaster(points,
-{ type, bank, cars })` (SplineRideKit) BEFORE you ship — it re-measures the
-compiled points through the SAME energy-paced replay the crash gate uses and
-runs RCT2's RideRatings.cpp chain over the result:
-
-```ts
-const r = rateCoaster(COMPILED.points, { type: 'wooden', bank: 0.42, cars: 3 });
-console.log(`[thrill] E ${r.excitement} I ${r.intensity} N ${r.nausea} (${r.ratingBand})`,
-  `drop ${r.highestDrop} G +${r.maxPosVertG}/${r.maxNegVertG} lat ${r.maxLatG} air ${r.airtimeSeconds}s`);
-```
-
-| target | THRILL park | FAMILY park |
-|---|---:|---:|
-| flagship `excitement` | ≥ 6.0 | ≥ 5.0 |
-| `maxPosVertG` | ≥ 2.5 g | ≥ 1.8 g |
-| `highestDrop` | ≥ 2.0 u | ≥ 1.2 u |
-| `maxLatG` | **< 1.27 g** (the crash gate — non-negotiable either way) | |
-| `airtimeSeconds` | > 0 on at least one crest | |
-| `nausea` | **< 8.0** — past that most guests are made sick | |
-
-**THE SHORT ANSWER: copy §4.0.** `4.0-A` (E 6.12) or `4.0-C` (E 6.31) clears
-every THRILL-park row; `4.0-B` (E 5.27, +G 3.51, lat 0.27 g) clears every
-FAMILY-park row with room to spare. Nothing else in §4 does — the LOW-THRILL
-legacy shapes top out at **1.11**.
-
-Why, given the physics: the RCT2 stat gates HALVE all three ratings when the
-highest drop is under 12/14 height steps (3.0 u wooden / **3.5 u steel**),
-when the circuit is short (wooden needs ~54 u of track; steel has no length
-gate) or when there are fewer than 2 drops — a `lift 0.7` rectangle is a
-kiddie coaster and rates ~0.6 excitement however tidy it is. But a bigger lift
-means more speed at the bottom, and speed squares into the lateral G that the
-1.27 g gate watches. So buy the drop and PAY for it with geometry:
-
-- **PUT EVERY TURN AT THE APEX** (§4.0's whole trick). The bank the kit builds
-  is `atan(1.9·κ)` box-smoothed over ~2 u, so the discount LAGS the curvature
-  and the peak lateral lands at the turn ENTRY, where roll is still ~half.
-  Measured: at v ≈ 10 u/s a 90° turn reads **1.1–2.7 g at EVERY radius from
-  1.5 to 12** — widening the turn does not save you, and neither does
-  tightening it. What saves you is speed: a turn ridden within ~2 u of the
-  apex sees v ≈ 4–6 u/s and reads 0.3–0.9 g. Structure the circuit as
-  `lift → turn → drop → hills → lift → turn → …` so the turns are always on a
-  crest and the straights always at grade.
-- **Ride the fast turns HIGH.** Speed is a function of height only, so a
-  `lift` back up before the turn section slows it for free.
-- **Give it crests.** Each `hill` (camelback) is one extra `dropCount`, the
-  airtime bonus AND the −G term of `BonusGForces`; a hill's crest curvature is
-  ~0.497 whatever its height, so every default-length hill produces airtime.
-  Hills are the cheapest excitement per unit of track in the whole grammar.
-- **Two drops minimum, then the brake tail** (§4's closure rules still apply).
-- **What the score is actually made of** (steel, `rateCoaster` raw units, from
-  §4.0-A's breakdown): base 300, **avgSpeed 142**, gForces 46, drops 48,
-  maxSpeed 30, turns 6, length 12, duration 12, trainLength 11, airtime 5.
-  `avgSpeed` dominates — keep the circuit LOW (only the lift and the four
-  corners go up) or you throw the score away. And watch intensity: RCT2 cuts
-  excitement 25 % per band once intensity ≥ 10.00, so more drop is not always
-  more score.
-- **Inversions are the cheapest excitement left** (steel: +0.11 E each, up to
-  6, and they RELAX the drop-height/drop-count gates) — but a `corkscrew` at
-  grade reads **2.35 g** and is fatal. §4.0-C shows the only verified
-  placement: on a mid-leg climb top, ≥ 1.2 u below the global apex.
-
-Also spread the park across the BANDS: RCT2 guests demand variety, so ship a
-gentle ride (`intensity ≤ 3` — carousel/wheel), a moderate one (4-6) and an
-intense one (≥ 7) alongside the coaster. `<Coaster>`/`<TrackRide>` register
-their measured triple automatically (`handle.ratings()`, `mgr.rides()[i].ratings`).
-
-## 5. Legality lint (place NOTHING without it)
-
-`terrainLint(heightAt, size)` (ParkBuilder) gives you `isDry(x,z)` (ground >
-waterLevel + ~0.15), `slopeAt` / `flatEnough` (slope < ~0.45 for rides, ~0.8
-for trees) and `inBounds` with a margin (terrain edges taper to 0). If a
-spot fails, settle it — never just drop the object.
-
-- Never float, never bury: settle to `heightAt` (trees sink ~0.04-0.08,
-  rocks partially buried, podiums/berms/plinths bridge from below ground).
-- Trees ≥ 1.25 from edge centrelines (canopy over guests' heads), ≥ 1.6
-  from the coaster plan polyline, obstacle radius + 0.6; prune rock-cluster
-  boulders that land within 1.25 of an edge or inside a committed footprint.
-- **SOLID PROPS NEED `pathHalf + groundRadius` OF CLEARANCE, AND YOU CAN ASK
-  FOR IT (round-7).** A `<Scenery>`/`<Placed>` piece whose ground footprint
-  eats into a rendered slab is a `scenery` FAIL. Round 7 put eight props on
-  "cell centres" at ±3 / ±9 / ±15 while its street rows ran at ±3.6 / ±9.6 —
-  0.6 u from the centreline, half a slab INSIDE the street. Required
-  clearance is `pathWidth/2 + min(groundRadius, 0.6)` (≈ 1.03 for a statue on
-  a 1.1 slab), and the API computes it for you:
-  `offPathCell(NET, [3, 3], { clear: 1.15 })` → the nearest legal cell;
-  `pathClearance(NET, [3, 3]).clearance` → what you actually have. Plaza
-  interiors are exempt (planters on a forecourt are RCT2 dressing).
-- **NOTHING IS PLANTED IN THE WATER (round-7).** `<Scenery>`/`<Placed>` now
-  sample the ground before mounting: a spot in OPEN water (more than 0.4 u
-  below the waterline) is REFUSED — the piece is not built and a §0-FATAL
-  `plantedInWater` lint names the dry-cell query that would have prevented
-  it. A marginal SHORELINE cell is kept and the settle-time AUTO-keepDry pass
-  raises a dry bank under it (non-fatal `plantedWetCell`) — planted
-  footprints join that sweep now, so a shoreline dip is landscaped rather
-  than merely detected. Neither is a licence to guess: query
-  `park.isDryCell([x, z])` against the COMPOSED water (§0.17).
-- **SOLID means solid (round-6).** Guests walk the path graph plus short
-  sanctioned hops, and the sim now refuses to route through a registered
-  BLOCKER (fountain basins, ride bodies/pads, shop bodies, restroom huts,
-  queue railings, `<Fence>` runs — see GameManager/Context.md "Blockers").
-  So: keep street edges ≥ 1.2 u from a fountain centre, never lay a street
-  across a ride pad, and when you fence a boundary that a street crosses,
-  author TWO runs with a gateway gap (or `<Fence inset>`). Registration is
-  automatic for rides/stalls/`<Fountain>`/`<Restroom>`/`<Fence>`; custom
-  solid dressing calls `usePark().registerBlocker({ rect | circle, label })`.
-  A street through a blocker is a hard `validatePark` FAIL (§6), not a lint.
-- **Queue lanes are FENCED** — every registered ride's queue is railed down
-  both long sides (Fence `'metal'`) and is only enterable at its open TAIL,
-  so the tail node must sit on a real street node (§0.4) or guests can never
-  join. Never plan a layout that expects guests to step into a lane sideways.
-- Lights OFF until dark: every PointLight/emissive gates on `nightKOf`.
-- Mood is POSTURE — no overhead UI over guests, ever.
-- Keep the realistic palette (muted brick red, forest green, navy, cream,
-  grey-brown — no orange/pink plastic) — ride colours come from ColorKit
-  presets, never invented mid-park.
-- Deterministic only: hashed-sine PRNGs; no `Math.random` / `Date.now`.
-  Whole park well under the AREA-SCALED mesh budget (~2500 per 16² of
-  plot — ~22 500 on the default 48; §6).
-
-## 6. validatePark — the acceptance gate
-
-```ts
-import { validatePark } from './components/ParkBuilder';
-const report = validatePark(t, {
-  net: parkNet,               // the SHARED graph (manager attach nodes included)
-  manager: mgr,               // needs accessPoints()/footprints() (GameManager has them)
-  terrain: { heightAt, waterLevel: WL, size: S, peaks: comp.peaks },
-  coasters: [{ points: coasterPts, type: 'wooden', bank: 0.2 }],
-  group: g,                   // mesh budget + determinism hash
-  rebuild: () => buildAgainWithValidateFalse(), // optional determinism check
-});
-// report = { ok, failures: [{ check, detail }] }
-```
-
-The checks — a failure on ANY of them is FATAL (§0): the park is re-planned,
-not shipped:
-
-- **accessibility** — the registered gate routes to EVERY ride's queue tail.
-- **terrain** — exactly ONE flood-filled water body; the entrance apron flat
-  (relief ≤ 0.5) and dry; no structure footprint parked on a hill flank.
-- **footprints** — OBB SAT sweep over every audited rect: no overlaps.
-- **coaster** — `checkCoasterDesign` clean + `validateSpline` ok + CRASH-FREE
-  (worst lateral G under 1.5 g × 0.85, replaying the real runner's pacing).
-- **corridor** (round-4) — a 1.6-u-wide corridor swept along every registered
-  circuit (segment OBBs over the sampled polyline) must be CLEAR of stall
-  footprints, OTHER rides' pads/huts/lanes, and street edges at grade.
-  Flying OVER is legal only with ≥ 2.2 u of clearance above the
-  obstacle/path level — grade crossings and roof-skims FAIL, naming the
-  offender. The ride's own access assembly is exempt (match by ride name).
-- **blockers** (round-6) — **guests cannot walk through solid objects.** No
-  RENDERED street edge may pass through a registered blocker (sampled every
-  ~0.3 u): fountain basins, ride bodies + boarding pads, shop bodies,
-  restroom huts, queue railings and every `<Fence>` run. Logical access
-  spurs (queue tail, ride exit, stall front, doorway, gate) are exempt — they
-  ARE the sanctioned way in. Every ride's queue tail must also stay
-  REACHABLE from the gate once the blockers are respected. Practically:
-  keep streets ≥ 1.2 from a fountain centre and off ride pads, and fence a
-  boundary with a **GATEWAY** where a street crosses it (two `<Fence>` runs
-  with a gap, or `<Fence inset>`).
-- **autofix** (round-6) — the FATAL-WARNINGS POLICY (§0) made mechanical.
-  Every build-time lint / auto-fix event the wrappers recorded via
-  `park.reportLint` is echoed in **`report.warnings: { kind, detail, fatal }[]`**,
-  and the fatal ones become hard `autofix` FAILURES. The COMPLETE list as of
-  round 7:
-
-  | §0-FATAL kind | what it means |
-  |---|---|
-  | `causeway` | level > median + 0.8, or a span > 1.0 u over its ground |
-  | `causewayRefused` | a span > 2.0 u up — **the edge was NOT built** |
-  | `latticeInWater` | a span whose ground dips under the waterline — **NOT built** |
-  | `padOnStreet` | a ride/shop pad INTERSECTS a street slab (§0.14) |
-  | `queueAnchorIsHead` | explicit `queue.anchor` was given a street NODE, i.e. used as if it were the tail (§0.4) |
-  | `queueTailShared` | two rides attach their queue tails to the SAME node |
-  | `plantedInWater` | a prop in open water — **not planted** |
-  | `queueDirFlip` / `queueDirUnfixable` | the derived lane speared the ride's own pad |
-  | `exitHutRelocated` / `exitHutUnfixable` | the exit hut had to be moved off the lane |
-  | the `corridor*` family | a settle-time shift out of a track corridor |
-  | `coaster:shortDrop` | first drop under the 0.9-u stat gate — promoted by the gate itself (`FATAL_LINT_KINDS`), since `<Coaster>` cannot know the policy |
-
-  Reported but NOT fatal: `laneTrim`, `exitSnapped`, `pathLevelMedian`,
-  `padNearStreet`, `plantedWetCell`, `coaster:shortLength`.
-
-  **READ THE REFUSALS AS A CHAIN.** `latticeInWater` and `causewayRefused`
-  DELETE the offending edge, so the very next failures you see are
-  `accessibility` (a ride's queue no longer routes from the gate) and
-  `blockers`-unreachable for everything that sat behind the hole. Those are
-  DOWNSTREAM of the refusal, not separate bugs: fix the span and they vanish.
-
-  **An auto-fix must never silently rescue a design you were supposed to
-  re-plan — an EMPTY `warnings` array is the only truly clean result.**
-- **sim** — steps `manager.update` ~60 sim-s at fixed dt: at least one
-  completed ride cycle, no visible walker frozen >25 s, no queue that holds
-  >30 s without ever advancing. NOTE: this fast-forwards the manager's sim
-  clock — keep render time monotonic afterwards (add `SIM_SMOKE_SECONDS` to
-  your updater clock, as the worked example does).
-- **budget + determinism** — mesh count against the AREA-SCALED budget
-  (~2500 per 16² of plot area; ~22 500 on the default 48): exceeding it is
-  a `console.warn`, NOT a hard fail — LOD tiers + culling fog keep big
-  parks drawable — but warnings are FATAL under §0, so treat it as one.
-  With `rebuild`, a double-build scene hash must match exactly.
-
-Run it as the LAST build step and log the report (console.warn per failure)
-— the worked example (`buildExamplePark`, ParkBuilder preview) does exactly
-this and ships with `ok: true`. A park is not done until its own run says
-the same.
-
-## 7. Reference sketch (compose your OWN structure on top)
+**DESTRUCTURE THE REPORT INSTEAD** — no cast, no re-declaration of a type the
+kit already exports:
 
 ```tsx
-const comp = parkComposition(t, seed, 48, climate, { keepDry, coasterPts }); // probed landform (§1)
-const terrain = buildTerrain(t, { size: 48, seed: comp.terrainSeed, amplitude: 0.38, scale: 48 * 0.52, waterLevel: -0.26,
-  peaks: [...comp.peaks, ...comp.clampPeaks], basins: [...comp.basins, ...comp.clampBasins], firmShore: true });
-tintTerrainForClimate(t, terrain.mesh, comp.climate, comp.basins, comp); // climate bias + section zone paint
-const dressed = dressTerrain(t, comp, terrain.heightAt); g.add(dressed.group); // sections dress themselves
-g.add(terrain.mesh);
-const water = buildWater(t, 47.8, 120); water.mesh.position.y = -0.26; g.add(water.mesh); // size × 0.995
-const parkNet = snapNetToGrid({ nodes, edges }, 1.2); // YOUR lattice skeleton — nodes may be [x, z, elevation] triples (ramps)
-const net = buildPathNetwork(t, parkNet, { width: 1.1, y: pathY, groundAt, grid: true, plazas: [PLAZA] });
-const walk = attachWalkers(t, g, net, { count: 6 }); // BEFORE the manager
-bermNetToGround(t, g, parkNet, pathY, groundAt); // low spans bermed (inclined embankment under grounded ramps); elevated spans ride buildPathNetwork's wooden scaffolds
-const gate = buildParkEntrance(t); // centred on the apron, +z outside
-const coaster = buildRideSpline(t, pts, { profile: 'coaster', type: 'wooden', groundAt, colours, vehicleSchemes });
-const run = coaster.run(cars, { spacing: 1.2 });
-const mgr = createGameManager(t, { groundAt, net: parkNet, laneY: pathY + 0.09, bins });
-mgr.registerParkEntrance(gate);
-const acc = planRideAccess(parkNet.nodes, tailNode, dir, 3, exitCellXZ, exitDir);
-const h = mgr.registerRide({ ...cfg, queueAnchor: [acc.anchor[0], padTop, acc.anchor[1]], queueDir: acc.dir,
-  exitPoint: [acc.exit[0], padTop, acc.exit[1]], vehicleHandle: { crashed: () => coaster.crashed() } });
-groundRideAccess(t, g, groundAt, acc, padTop, [h.exitPoint()[0], h.exitPoint()[2]]);
-coaster.group.userData.rideRef = h; coaster.group.userData.rideVehicle = cars[0]; // clickability
-mgr.spawnGuests(10);
-const report = validatePark(t, { net: parkNet, manager: mgr, terrain: {...}, coasters: [...], group: g });
-// report.ok MUST be true before the park opens — log it.
+const { points, report } = compileTrackPieces(FLAG_PIECES, { type: 'steel', start: FLAG_START, heading: 0 });
+const FLAG_PTS: V3[] = points;          // typed, checked, ready for <Terrain coasterPts>
+// and read `report.fatal` / `report.closure.synthesized` here rather than hoping
 ```
 
-The complete runnable version of this sketch is the ParkBuilder preview
-(`components/ParkBuilder/ParkBuilder.previews.tsx`); the JSX composition to
-start from is **`<DistrictPark>`** (`components/Park/Park.previews.tsx`,
-preview 1 — set-pieces + `buildParkNet` + a pieces-mode §4.0 flagship at size
-48). Drop to this imperative layer only where the wrappers don't reach. Full end-to-end manual (Stage api, windows,
-day/night, catalogs, validators, determinism): **SETUP.md** at the
-design-system root.
+#### §0.0-H THE HEADER BLOCK — write it first, finish it last
+
+```tsx
+/* ═══ <PARK NAME> — §0 PRE-FLIGHT ═══════════════════════════════════════════════════════════
+ * SIZE   128 (default, prop omitted)
+ * SEED   1 / temperate — §1 row: corner lake ctr (41, −39) 6.8% · NW inlet ctr (−38, 31) 2.6%  [PRE-keepDry]
+ *        RING WATER WALK (§0.0 step 10): all 16 §4.2-A ring cells vs BOTH bodies' waterlines —
+ *        tightest = tail E [36.0,−8.4] → 24.93 u from (37.2,−33.3) wl 15.0 = 9.93 u dry ✓ (none wet)
+ *        ring-only re-compose: probes 17→17, terrainSeed 16 unchanged, water BIT-IDENTICAL ✓
+ *        re-checked post-composition with park.isDryCell(): all pads/props dry ✓
+ * WORLDS 3: pulse @(x,z) · brasswork @(x,z) · thornwick @(x,z)
+ *        ALL k(k−1)/2 centre pairs as √(Δx²+Δz²), SORTED, closest marked — the floor applies to the CLOSEST:
+ *        pulse↔brass 38.4 ◄ CLOSEST ≥ 32.66 (20·√(128/48)) ✓ · brass↔thorn 41.0 · pulse↔thorn 44.2
+ *        DRY GAP between world RECTS (not centres): min 4.8 u > 0 ✓  (touching rects = minGap 0 = one district)
+ *        WORLD pulse: ride Discotron @[43.2,28.8] (inside rect ✓) · stall NeonSlush · scenery NeonArch ×3
+ *        WORLD brasswork: ride AetherBalloons @[−33.6,15.6] (inside rect ✓) · stall GoggleWorks · scenery GiantGear ×2
+ *        WORLD thornwick: ride MoonlitBarge @[6,−26.4] (inside rect ✓) · stall Honeywitch · scenery LanternTree ×3
+ * CATS   (WRITTEN BEFORE ANY JSX) gentle Carousel · thrill §4.0-A flagship · water PaddleBoats
+ *        · transport Monorail ring · dark GhostTrain   → 5/5, two off the never-used table ✓
+ * CIRCUITS  §4.0-A coaster · §4.0-B coaster · Monorail ring · MagmaRun (water, never used)
+ *        · GearworksExpress (dark, never used)   → 5 circuits / 4 families ✓  (§4.0-E)
+ *        flat rides beside them: Carousel, Discotron, Enterprise (NOT counted as circuits)
+ * GATE   [0, 63.6] → first queue tail [x, z] = 12.4 u  ≤ 15 ✓
+ * FLAG   §4.0-A start [16.8, 0.55, −3.6] heading 0, steel, no bank prop
+ *        legal start @128: x ∈ [−26.4, 63.6], z ∈ [−48.0, 42.0] ✓
+ *        rateCoaster → E 6.06 / I 9.31 / N 3.44 / drop 5.47 u / maxLatG 0.36 / air 1.06 s   ← MEASURED, pasted
+ *        CORRIDOR KEEP-OUT in PLOT coords (§4.0 table + start): x[−21.6..18.0] z[−20.4..19.2] valley bands
+ *        every street node + every boulevard leg OUTSIDE it ✓ (no leg crosses at grade)
+ * FLAG2  §4.0-B start [−2.4, 0.55, −38.4] heading 0, steel, no bank prop   ← the SECOND coaster (§4.0-E)
+ *        rateCoaster → E 5.27 / I 6.25 / N 2.25 / drop 3.58 u / maxLatG 0.27 / air 0.56 s   ← MEASURED, pasted
+ *        DIFFERENT archetype ✓ · intensity band moderate vs the flagship's intense ✓
+ *        CORRIDOR KEEP-OUT in PLOT coords: x[−32.4..−3.6] z[−52.8..−20.4] valley bands
+ *        bbox DISJOINT from FLAG's ✓ · off all 16 monorail ring cells ✓ · outside every <World> rect ✓
+ *        coasterPts = [...FLAG_PTS, ...FLAG2_PTS] → reliefFloor.kept 0.__ ≥ 0.70 ✓, water moved 0/0 ✓
+ * PROPS  every ride's props copied from its §4 block · NO invented prop VALUE anywhere ✓
+ *        `colours` OMITTED on every ride (chassis presets it) — never a name string (§0 check 22)
+ *        EDGES asserted cardinal before buildParkNet ✓ (no auto-elbow, no unplanned node)
+ * STREET buildParkNet called EXACTLY ONCE ✓ · the SAME NET feeds <Paths> and every offPathCell ✓
+ *        PORT-REFS: 5 pieces (hub · pulseRow · worksRow · gladeRow · viewpoint) → 5 refs in EDGES,
+ *        counted: 'hub:N' 'hub:E' 'hub:W' 'pulseRow:W' 'worksRow:E' 'gladeRow:E' 'viewpoint:W' = 7 ≥ 5 ✓
+ *        every pad returned BY offPathCell (never a raw tail+out·d sum) ✓ · 0 padOnStreet auto-moves ✓
+ * MONO   §4.2-A verbatim · start [−42.6, 0, −9.7] · 4 platforms ≥ 3 declared worlds (one each + hub) ✓
+ *        probe.monorail.worldsTouched 3 = worldsDeclared 3 → everyWorldTouched true ✓
+ *        worldsTouchedIds [pulse, brasswork, thornwick] ← the NAMES live here, not above
+ *        platform tails [−36.0,−8.4] · [0,27.6] · [36.0,−8.4] · [0,−57.6] all authored NODES ✓
+ *        (S queues OUTWARD — measured; see the ring section)
+ * QUEUE  ONE ROW PER RIDE — tail is an authored NODE, pad DERIVED from it (never the reverse):
+ *        Carousel      cap 4  tail [0,56.4]    out [1,0]  → pad [7.2,56.4]   tail→pad 7.20 ≥ 5.26 ✓
+ *        GhostTrain    cap 6  tail [36.0,40.8] out [1,0]  → pad [43.2,40.8]  tail→pad 7.20 ≥ 6.38 ✓
+ *        DropTower     cap 8  tail [36.0,4.8]  out [1,0]  → pad [44.4,4.8]   tail→pad 8.40 ≥ 7.50 ✓
+ *        <Coaster>     cap 4  queueTailNode NET.node([22.8,−3.6]) — chassis derives the lane ✓
+ *        no two rides share a tail node ✓ · every tail listed above appears in NODES ✓
+ * GROUND per ride, the 5 cells (pad · hut · hut · tail · exit join) all within the 0.5/1.2 grade ✓
+ *        every one of them outside every §1 peak disc ✓ · causewayEdges EMPTY ✓
+ * SPREAD built bbox 104 × 71 ≥ 70 × 45 ✓ · street-node bbox 112 × 88 → pathExtent 0.60 ≥ 0.55 ✓
+ * PLAZAS 3 rects from NET.plazas: 12.0 / 7.8 / 5.8 u² → largest ≥ 8 ✓ areaSpread 2.1 ≥ 1.8 ✓
+ * NODES  17 authored · degree-1: 4 (0.24) → each carries: queue tail · stall · restroom · gate ✓
+ *        one PARK-SPANNING loop, crosses z = 0 ✓ (not a court-sized cycle)
+ * LATTICE authored spans 26.4 / 21.6 / 14.4 / 9.6 u + the 1.2 chains → effectiveClasses 4.6 ≥ 4 ✓
+ *        1.2-u chain share 0.48 ≤ 0.55 ✓ · pitches/axis x 4, z 4 · latticeNodeShare 0.15
+ *        → gridRegularity 0.52 ≤ 0.55 ✓ (floor is 0.40 — see §0.0b)
+ * ROSTER (WRITTEN LAST, counted off the register calls, and restated on <Park roster>)
+ *        9 rides / 5 categories / 5 stalls (4 kinds) / restroom ✓ / bins ✓
+ *        <Park roster={{ rides: [...9 names], stalls: 5, categories: 5 }}> MOUNTED ✓
+ *        ← without the PROP, preflight.mjs prints "refusing to bundle" and NOTHING renders
+ * DRESS  41 trees ≥ 32 ✓ · 38 scenery ≥ 16 ✓ · water 11.1% (temperate band 4-22%) ✓
+ *        EVERY prop cell from offPathCell(clear 1.2); buildings from clear 1.8 ✓
+ *        no prop cell reuses a street node coordinate or sits on an edge centreline ✓
+ * NIGHT  3 <Lights> runs (one per district, along the street) + 2 neon + 6 torches · draws ~2 600 ≤ 3 000 ✓
+ * GATE   validatePark → ok: true, 0 failures, 0 warnings
+ * ═════════════════════════════════════════════════════════════════════════════════════ */
+```
+
+**EVERY NUMBER IN THAT HEADER IS COUNTED FROM THE FILE, NOT INTENDED.** The
+first one-line-brief park wrote `Published rate: E 6.12 … (rateCoaster logs
+live)` — and never imported `rateCoaster`, let alone called it; the measured
+excitement was **6.06**. It wrote `36 trees · 16 scenery` where its own arrays
+held 35 and 10. A parenthetical promise is not a measurement. So:
+`import { rateCoaster } from './components/SplineRideKit'`, call it on the
+compiled points, log it, and paste THAT line; and count the trees, the scenery,
+the stalls and the `register={{…}}` calls out of the file you are shipping.
+
+**AND THE SEPARATION LINE IS THE ONE MOST OFTEN FICTION.** The wave-12
+six-word-brief park wrote `centre separation 51 / 65 / 69 u ✓` — three numbers
+for three worlds, none of them a measured pair. Its real closest pair was
+**17.28 u** and the two rects **TOUCHED** (`minGap 0`), i.e. the scorer read two
+of its three "worlds" as ONE district. So write **every** pair, `√(Δx²+Δz²)`,
+sorted ascending, with the CLOSEST marked — the floor applies to that one — and
+write the RECT-to-RECT dry gap beside it (§0.3 check 4). Three worlds is three
+pairs, four worlds is six; there is no version of this check that has fewer
+numbers than pairs.
+
+## 0.0b WHAT "COOL" MEANS — the quality target, as numbers
+
+A one-line prompt states no standard, so the standard lives here. The park is
+scored out of 100 on **16 axes** (`harness/park-eval/RUBRIC.md` is the
+authority; these are its thresholds). Aim at the FULL-CREDIT column — every one
+of them is reachable by construction, and most of them are decided before you
+write any JSX.
+
+| # | axis | pts | FULL credit — aim here | scores ZERO if |
+|---|---|--:|---|---|
+| 1 | Cleanliness | 5 | ≥ 1 restroom, ≥ 1 bin, no litter | no restroom + no bin |
+| 2 | Paths | 8 | a coherent **LOOP/ring**, no dead stubs, no orphan islands, ≥ 1 plaza, `extentFractionOfPark` 0.2-0.6 (RUBRIC's "healthy" guidance — **do not shrink the net to hit it**: axis 15 wants `pathExtentFraction ≥ 0.55` and the two verified skeletons read 0.57 and **0.81**) | a star of dead-ended spurs |
+| 3 | Ride spacing | 8 | **0** overlapping OBB pairs, min gap ≥ 1.5 u (≥ 3 u generous) | any `footprints`/`corridor` FAIL caps it at 0 |
+| 4 | Entrance/exit | 7 | per ride: queue attached + reachable, `exitLaneLen > 0`, exit not stranded | pinning `exit`/`exitDir` yourself (−2 per ride) |
+| 5 | Food stalls | 4 | ≥ 2 registered, **≥ 3 distinct kinds spanning FOOD *and* DRINK**, all themed names, on traffic | zero stalls; catalog default names |
+| 6 | Park entrance | 4 | `<Gate>` on the plot edge, attached to a path node | no gate |
+| 7 | Terrain | **9** | at 128: relief 8-17 u, **`stdH` 0.75-1.5**, flat entrance apron | `stdH < 0.5` — a dead-flat billiard table |
+| 8 | Water | 6 | **EXACTLY 2 bodies** at 128; secondary ≥ 16% of the dominant; ≥ 7.04 u of dry gap; total % inside the climate band (§0.10) | 1 body caps at 3 pts, 3+ caps at 2 |
+| 9 | Scenery | 5 | ~**1 piece per 25 u² of pathed area** (and never below §0.10's ≥ 16 at 128) | bare plazas |
+| 10 | Trees / mountains | 4 | ≥ 32 trees at 128, **MIXED shapes**, spread; ≥ 1 terrain peak | treeless and flat |
+| 11 | Creativity | 3 | themed ride + stall names; scenery `varietyIndex` **≥ 6** | ≤ 2 distinct scenery kinds; default names |
+| 12 | Accessibility | **10** | every ride and stall reachable, 0 orphan islands, 0 causeway/steep edges | a refused span leaving a hole in the graph |
+| 13 | Ride roster | 7 | **≥ 5 rides** (target 8+, §0.3), all DISTINCT kinds, **4-5 of the 5 categories**, **≥ 4 CIRCUITS besides the flagship across ≥ 3 circuit families** (§4.0-E — was "≥ 1 tracked ride besides the coaster"), roster Jaccard ≥ 0.4 vs prior parks AND ≥ 1 kind no prior park shipped | 3 categories → 1/1.5; 2 → 0.5. **A park with one coaster and eight flat spinners measures `circuitCount: 1` and scores 0 on the circuit row**; zero first-use kinds caps novelty at 0.5 |
+| 14 | Thrill | **8** | **TWO rated coasters from DIFFERENT §4.0 archetypes in different intensity bands** (1.5 pts, §4.0-E). THRILL park: flagship **E ≥ 6.0**, peak +vert ≥ 2.5 g, drop ≥ 2.0 u. FAMILY park: **E ≥ 5.0**, ≥ 1.8 g, ≥ 1.2 u. Both: lateral < 1.27 g, airtime > 0, and a gentle + a moderate + an intense ride alongside | a FATAL coaster compile → 0 on the force test; extreme nausea caps the whole axis at 5/8. **ONE coaster caps the axis at 7.25/8; one coaster + flats only caps it at 6.5/8** |
+| 15 | Layout uniqueness | 7 | see the block below | a monotonous lattice |
+| 16 | Worlds | 5 | **≥ 3 BUILT preset worlds** (a world is BUILT only with ≥ 1 ride AND ≥ 1 stall AND ≥ 1 scenery/set-piece inside its bounds), **≥ 1 of them a preset the corpus UNDER-uses** — `tidewater` (2 builds) or `emberfall` (3) as of 2026-07-26, vs `brasswork` 7 / `pulse` 7 — centres ≥ 32.66 u apart, `crossTheme` empty | `declared: 0` → 0/5. **brasswork + pulse + thornwick, the trio three corpus parks already shipped, costs 0.25** |
+
+**A NOTE ON AXIS 2's "LOOP" AND "DEAD STUBS", because the two verified skeletons
+differ on it.** Skeleton A closes a park-spanning loop; **skeleton B is a pure TREE
+(`edges === nodes − 1`, zero cycles) and still ships `ok: true` with axis 15 7.0/7
+and 94/94 nodes reachable.** A tree is not the zero case: the zero case is *empty*
+spurs (`deadStreetNode` — degree-1 nodes with nothing within 2.4 u). Every leaf in
+skeleton B carries something — a ride's queue tail, a monorail platform, the gate.
+So: **a cycle earns axis 2's loop read and is worth having; the absence of one is
+not a failure**, and it must never be bought by running a street past a monorail
+queue tail (§3.1-B constraint 1 — that is a `blockers` FAIL).
+
+**AXIS 15 IN FULL — this is where parks quietly lose the most.**
+
+| sub | pts | full credit | half |
+|---|--:|---|---|
+| plot utilisation | 1 | `plotUtilisation ≥ **0.70**` (`pathExtentFraction ≥ 0.55`, `occupancyFraction ≥ 0.35`, `quadrantSpread ≥ 0.75`) | ≥ 0.45 |
+| districts | 1 | ≥ 2 clusters **and** widest centre pair ≥ **32.66 u** at 128 | ≥ 2 but too close |
+| open space | 1 | ≥ 2 open spaces, `areaSpread ≥ 1.8`, largest ≥ 8 u² | ≥ 2 spaces only |
+| **anti-lattice** | 3 | `gridRegularity ≤ **0.55**`, ≥ 3 effective edge-length classes, `latticeNodeShare ≤ 0.5` or ≥ 15% oblique edges | — |
+| novelty | 1 | `layout.novelty.distance ≥ **0.08**` against every prior park | 0.04-0.08 |
+
+**ANTI-LATTICE AND NOVELTY ARE TWO DIFFERENT SUB-TESTS FED BY THE SAME SCALARS.**
+`gridRegularity` is a weighted sum of five terms (below); `novelty.distance` is a
+distance over a 29-dim vector that CONTAINS those terms plus the density ones. So
+the levers below win the 3-point anti-lattice block, and the DENSITY-CLASS
+decision at the end of this section is what wins the novelty point. Do both — a
+park that varies its edge lengths inside somebody else's budget passes
+anti-lattice and still measures as a derivative.
+
+**`gridRegularity ≥ 0.75` SCORES ZERO on the whole 3-point anti-lattice block.**
+A uniform grid of same-length axis-aligned edges on one pitch measures **1.000**.
+Beat it the same way a real park does: **vary the block sizes**, mix short court
+spurs with long single-span avenues (≥ 3 distinct edge lengths), let the ring
+bulge round the terrain, and hang courts off the boulevards at different depths.
+This is measured on your AUTHORED street net only — access spurs are excluded, so
+you cannot dress your way out of it.
+
+**THE FLOOR IS 0.40 AND ONLY THREE OF THE FIVE TERMS ARE YOURS.** Stop treating
+`gridRegularity` as a mood. It is a published weighted sum
+(`harness/park-eval/layout.mjs`, `gridWeights`):
+
+| term | weight | with CARDINAL-ONLY streets | controllable? |
+|---|--:|---|---|
+| `axisAligned` | 0.25 | **1.000 — pinned by §0.6** | NO → costs 0.250 |
+| `bearingUniformity` = 2/effectiveBins | 0.15 | **1.000 — only 2 bearings exist** | NO → costs 0.150 |
+| `lengthUniformity` = 1/effectiveClasses | 0.25 | 1/eff | YES |
+| `latticeNodeShare` | 0.20 | share of nodes on BOTH a col and a row line (a line = ≥ 3 nodes sharing a coordinate) | YES |
+| `pitchUniformity` = mean of 1/nPitches per axis | 0.15 | distinct spacings between consecutive grid lines, per axis | YES |
+
+So **`gridRegularity` CANNOT fall below 0.40** in any legal park here, and the
+≤ 0.55 full-credit line leaves you a budget of exactly **0.15** to spend across
+the other three. **"Win the block on `effectiveClasses`" — what this section used
+to say — IS FALSE AND WAS WORTH −2.05 ON ITS OWN.** Round-11's park B did exactly
+as told, measured `effectiveClasses` **3.17** (a clean pass against the ≥ 3
+target) and still scored **0.2 / 1.5** on `gridRegularity` **0.724**, because its
+other two terms were maximal: **29 nodes sitting on 5 column lines and 7 row
+lines, with a single 12.0-u x-pitch.** No number of edge-length classes survives
+that. All THREE controllable terms have to move together:
+
+```
+effectiveClasses  5     → 0.25 · 0.200 = 0.0500
+4 pitches per axis      → 0.15 · 0.250 = 0.0375
+latticeNodeShare  0.15  → 0.20 · 0.150 = 0.0300
+                            total 0.1175 → gridRegularity 0.518 ✓
+```
+
+And note how little slack there is: `effectiveClasses` 3 costs 0.0833 and
+3 pitches cost 0.0500, which together leave **0.017** for `latticeNodeShare` —
+i.e. under 0.09 — so the old "≥ 3 classes" advice is not a target, it is the
+edge of infeasibility. Concretely, three habits:
+
+* **≥ 4 distinct authored span lengths** (`effectiveClasses` ≥ 4, aim 5).
+* **≥ 4 different spacings per axis.** Pitches are the gaps between consecutive
+  GRID LINES, so a spine on 12 / 12 / 12 u is ONE pitch class however many nodes
+  it has; 12 / 18 / 9.6 / 26.4 is four.
+* **Never let three nodes share an x or a z coordinate unless you MEAN a grid
+  line.** Three is the threshold that creates a line (`lineMap … >= 3`), and
+  `latticeNodeShare` counts only nodes sitting on both a column AND a row line —
+  so offsetting each district's court by a cell or two from the spine's columns
+  collapses that whole 0.2-weight term almost to zero. This is the cheapest of
+  the three and the one every park forgets.
+
+**EDGE-LENGTH VARIETY IS THE ONLY ANTI-LATTICE LEVER YOU ACTUALLY HAVE.** Every
+edge here is cardinal by rule, so `obliqueEdgeFraction` is **0** and
+`hasCurveOrDiagonal` is **false** in every legal park — those sub-tests are
+unreachable and you must win the block on `effectiveClasses` instead. **Aim at
+≥ 3 effective edge-length classes and keep the modal share under ~0.55.** The
+trap: a long avenue built as a CHAIN of 1.2-u lattice steps counts as dozens of
+1.2-u edges, not one long one.
+
+**AND `<Boulevard>` DOES NOT FIX THIS — THE OLD ADVICE HERE WAS SELF-DEFEATING.**
+This paragraph used to say "route long legs as `<Boulevard>`s"; a `<Boulevard>`
+**paves its carriageway as a 1.2-u CHAIN**, so it buys **ZERO** edge-length
+classes. The wave-12 park followed that advice to the letter — seven boulevards,
+every long leg handed over — and measured **132 of 154 street edges at 1.2 u,
+`effectiveClasses` 1.96**, i.e. WORSE than the park that chained its own spines.
+So, corrected:
+
+* **`<Boulevard>` buys VERGE TREES, LAMPS and a dressed carriageway** — real
+  scenery and a real street, and it is the right component for an avenue between
+  worlds **if you build one**: §0.15 forbids hand-rolling an avenue, it does not
+  oblige you to have one. (Skeleton B ships **zero** boulevards and zero plazas and
+  measures axis 15 **7.0/7** — its long runs are single authored edges, which is
+  exactly why.) It does **not** buy length variety.
+* **Length variety comes ONLY from long SINGLE-SPAN authored edges** — two nodes
+  in your own `NODES` list **12-28 u apart**, wired as ONE edge in `EDGES`.
+  `buildParkNet` keeps that edge whole, with ONE proviso it will enforce on you:
+  **it splits every edge at any node lying ON it** (no crossing without a
+  junction — `SetPieceKit`, "long edges are split at any node lying on them"). So
+  a 26-u span drawn straight down a boulevard's carriageway comes back as ~22
+  edges of 1.2 u. Route the long spans where nothing else is: keep them clear of
+  boulevard chains, plaza sub-nets and each other except at their endpoints.
+* **Target ≥ 3 distinct authored span lengths — aim at 4-5** (e.g.
+  9.6 / 14.4 / 21.6 / 26.4 u) **and keep the 1.2-u chain share under ~0.55** of
+  all street edges. Every boulevard you add pushes that share UP, so pay for each
+  one with a long authored span. Three classes is the edge of feasibility, not the
+  target — the weight arithmetic under the anti-lattice table above shows why.
+
+**FILL THE SOUTH — the plot-utilisation loss is always the same shape.** The
+first one-line-brief park measured `quadrantCounts [1, 4, 57, 63]`: two
+quadrants held **five features between them**, its whole street net lived in
+z ∈ [−3.6, 63.6], and `pathExtentFraction` came out **0.33** against the 0.55
+target — `plotUtilisation 0.679`, just under the 0.70 line, for want of one leg.
+So, concretely, on top of §0.3 check 3's floors: **the circulation loop's return
+leg must CROSS z = 0 and put real features (nodes, a plaza, a satellite
+attraction) in at least THREE of the four quadrants** — no quadrant under ~10
+features. §0.3 check 2 names what legitimately goes down there.
+
+**NOVELTY IS SCORED AGAINST THE SAMPLES YOU WERE TOLD TO READ.** `worlds-ref` /
+`hollowmere2` are the SHAPE, and a park that reproduces their signature scores
+as a derivative: the first one-line-brief park landed
+`layout.novelty.distance 0.071` against the 0.08 floor, nearest neighbour
+`hollowmere2`, because it repeated that file's arrangement — **three themed
+`<Bazaar>`s in a row on one east-west line at z ≈ 44, a neutral hub between
+them, the coaster ring due south.** Do not build that arrangement. Move at
+least three of these away from the reference: the number of cycles in the
+street graph, the degree mix (`d2` was **0.855** — a park of corridors), the
+quadrant occupancy, the edge-length classes, and where the flagship ring sits
+relative to the hub.
+
+**AND NOW THE CORRECTION THAT MATTERS MOST, MEASURED IN WAVE 17: TOPOLOGY
+CONTRIBUTES ALMOST NOTHING TO THE SIGNATURE. THE SCALARS DO.** The verifier built
+a full third table specifically to be *different* — a different gate rim, a
+**LADDER** topology with a real cycle where skeleton B is a pure tree, different
+worlds, a different roster — and it measured **`novelty.distance` 0.031 against
+skeleton B**, i.e. a DERIVATIVE by our own 0.04 floor. **21 of the 29 signature
+dimensions were within 0.05 of each other.** The cause was not the drawing; it
+was that both parks spent the **same budget**: ~54 street nodes, ~400 u of street,
+3 bazaars, the same plaza areas, the same edge mix. `layout.signature`
+(`harness/park-eval/layout.mjs`) is a vector of *normalised shape statistics* —
+node density, path density, mean edge length, open-space count and area,
+`areaSpread`, the bearing mix, quadrant spread, `latticeNodeShare`, the degree
+shares. Redraw the graph at the same budget and every one of those holds still.
+
+**SO: TO BE DISTINCT, CHANGE THE DENSITY CLASS — NOT THE PICTURE.** Pick a budget
+that is a different *kind* of park and commit to it, in the header, before the
+first node:
+
+| class | street nodes | total street | mean edge | reads as |
+|---|--:|--:|--:|---|
+| SPARSE long-run (skeleton B) | ~55 | ~410 u | **7.5 u** | few long arterials, deep spurs |
+| DENSE short-block | **~120** | **~1200 u** | ~3-4 u | a gridded downtown of small courts |
+| anything between | — | — | — | expect to land on a neighbour |
+
+A ~120-node / ~1200-u short-block park cannot be near a ~55-node / ~410-u one in
+that space no matter how similar its topology is, and a ~55-node / ~400-u park is
+a derivative of skeleton B no matter how novel its topology is. The three moves
+that actually shift the vector are **the node count, the total paved length and
+the open-space budget** (count *and* area *and* `areaSpread`); cycles, ladders,
+loops and tree-vs-mesh are worth roughly nothing on their own. Change the class
+FIRST, then draw whatever you like inside it.
+
+**THE CORPUS CAVEAT, STATED HONESTLY.** Two things follow and both bind on us as
+much as on the author:
+
+1. **A PUBLISHED SKELETON MUST NEVER BE PROBED INTO THE SIGNATURE CORPUS.** If
+   skeleton A or B ever gets a `signatures/*.json` entry, every park an author
+   derives from it measures against the table itself and scores 0.0-something by
+   construction. Neither is in the corpus today (`layout.novelty.corpusSize` 22,
+   and skeleton B is not one of the 22) and neither may be added.
+2. **EACH TABLE BURNS OUT.** As parks built from a published table enter the
+   corpus, the region around it fills up. **A published skeleton buys roughly ONE
+   ROUND of novelty headroom**, and the second park off the same table is
+   competing with the first. That is why there are now two alternatives and why
+   the density-class move above is the durable answer: it is the only one that
+   does not decay as the corpus grows.
+
+**REACH PAST THE SAME SIX SPINNERS — variety is a stated goal, not a hope.**
+The catalog is **44 rides / 10 stalls**. Across the whole sample corpus **25 of
+the 44 rides have NEVER been used**, and the entire **DARK category — every one
+of its three rides — has never been built by anybody**
+(`cd harness/park-eval && node usage.mjs` prints the live list). Nine parks in a
+row shipped Carousel + FerrisWheel + Teacups + DropTower + SwingRide + a coaster.
+
+| category | never used yet |
+|---|---|
+| **dark** (0/3 ever used) | `GearworksExpress`, `GhostTrain`, `HauntedMansion` |
+| transport (2/3) | `Chairlift`, `MagneticRide` |
+| water (5/8) | `PaddleBoats`, `ReefRacer`, `DeepDrift`, `OceanTunnelSlide`, `MagmaRun` |
+| thrill (11/20) | `Bobsleigh`, `GoKarts`, `MotionSimulator`, `LaunchedFreefall`, `SwingingInverterShip`, `Bassline`, `EmberWings`, `LavaTubeRun`, `MineTrainCoaster`, `WyrmsHollow`, `SplineCoaster` |
+| gentle (4/10) | `BumperCars`, `FlyingSaucers`, `Helicycles`, `SpaceRings` |
+| stalls (1/10) | `EmberRoast` |
+
+**One dark ride + one transport ride + one unused water ride wins axis 13's
+category-balance (1.5) AND its speciality point (1) AND clears the 0.4 roster-
+novelty floor in a single decision.** The Emberfall and Tidewater worlds are
+unused *entirely* — building either one is the cheapest novelty in the book.
+
+**THE ROSTER FLOOR IS NOT THE ROSTER TARGET.** Axis 13 pays full count marks at
+5 rides, so a park built to the rubric stops at 5-6 and leaves points on three
+other sub-tests. **Ship ≥ 8 rides (§0.3), cover ALL FIVE categories, and take
+at least TWO rides off the never-used table above.** Measured on the first
+one-line-brief park: 6 rides, **transport EMPTY** (4 of 5 categories), and 5 of
+its 7 kinds shared with `w11-worlds-ref` → roster novelty **0.375** against the
+0.4 floor, i.e. half credit, on a park that had already reached for a dark ride.
+The missing transport ride — `<Monorail>` (§4.2's verified circuit) or
+`<Chairlift>` — would have fixed the category count AND the novelty in one mount.
+Note `LogFlume` / `RiverRapids` / `PaddleBoats` **build their own water** and
+therefore go on DRY FLAT LAND, never on the composed lake (§3).
+
+**SO WRITE THE FIVE CATEGORY NAMES IN THE HEADER, WITH THE RIDE FILLING EACH,
+BEFORE YOU TYPE ANY JSX.** Category coverage is decided at planning time and
+cannot be repaired at the end — a park that mounts its rides first and counts
+categories afterwards lands on 3. The wave-12 six-word-brief park did exactly
+that: `categoryCount 3`, **no water ride and no transport ride**, on a catalog
+where **23 of the 44 kinds are unused**. It is one line of header, and it is
+mandatory (§0.0-H's `CATS` row):
+
+```
+ * CATS   gentle <ride> · thrill <ride> · water <ride> · transport <ride> · dark <ride>   → 5/5
+ *        never-used picks: <ride>, <ride>  (≥ 2, off the table above) ✓
+ * CIRCUITS  <5+ named>  families: coaster+water+transport(+dark/tower)  → 5 / 3 fam ✓
+ *        coasters: <name> §4.0-A E _._ I _._  ·  <name> §4.0-B E _._ I _._   (2, DIFFERENT archetypes) ✓
+```
+
+Fill it in this order and it fills itself: **transport = the §4.2 monorail ring
+you are already required to ship** (§0.0 step 10), **thrill = the two §4.0
+coasters** (§4.0-E — two, from different archetypes, in different intensity
+bands), then pick **water** and **dark** off the never-used table (both
+categories are mostly or entirely unbuilt, so both picks double as roster
+novelty), and **gentle** last from whatever the worlds want. If a category has
+no ride beside its name, you have not finished planning — do not start the JSX.
+
+**AND COUNT THE CIRCUITS, NOT THE RIDES.** The `CATS` row can read 5/5 off a
+park that is one coaster and four flat spinners, which is exactly what 16 of 20
+corpus parks shipped. The `CIRCUITS` row above is the fix: **≥ 5 rides that run
+a vehicle along a track, spanning ≥ 3 of the five families** `coaster / water /
+transport / dark / tower`. Every circuit except the two coasters costs one JSX
+element with **no `pieces` prop** — that is the safe form, not a shortcut
+(§4.0-E's mode table).
+
+
+---
+
+## THE PRE-FLIGHT CHECKLIST IS IN `rules/park-generation-checks.md`
+
+§0's **27** numbered checks — the arithmetic you must do before finishing, and the
+one place every measured threshold lives — were split into their own files
+because this one outgrew a single design-system write. Nothing was cut.
+
+**Read the checklist before you finish a park.** Steps above tell you what to
+build; the checks tell you the numbers it must hit.
+
+| file | contents |
+|---|---|
+| `rules/park-generation.md` (this file) | intro · §0.0 THE ONE-LINE BRIEF · §0.0b what "cool" means |
+| `rules/park-generation-checks.md` | §0 PRE-FLIGHT CHECKLIST, checks **1-14** |
+| `rules/park-generation-checks-b.md` | §0 PRE-FLIGHT CHECKLIST, checks **15-27** · footprint table · canonical imports · catalog inventory |
+| `rules/park-generation-composition.md` | §1 climate & seeds · the ring-clearance table |
+| `rules/park-generation-worlds.md` | §2 build order · §3 worlds |
+| `rules/park-generation-skeletons.md` | §3.1 set-pieces · **§3.1-A, hub-and-spokes, the only table with TWO coasters** |
+| `rules/park-generation-tree-skeleton.md` | **§3.1-B, the tree** |
+| `rules/park-generation-skeletons-b.md` | **§3.1-N** why transcribing cannot score · the set-piece contract |
+| `rules/park-generation-rides.md` | §4 rides · §4.0 coaster archetypes · §4.2 the monorail ring |
+| `rules/park-generation-validation.md` | §5 legality lint · §6 validatePark · §6.1 triage · §7 sketch |

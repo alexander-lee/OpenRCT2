@@ -1,5 +1,9 @@
 # RiverRapids
 
+**CANONICAL IMPORT — copy exactly:** `import { RiverRapids } from './components/RiverRapids';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 River rapids rebuilt on SplineRideKit ('rapids' profile — RCT2 rapids are a tracked ride of channel pieces): a CLEAN closed course (~7 x 4.5) — one dead-straight low station reach, a conveyor lift up the east side, ONE broad high back sweep and a gradual west descent easing into the splash-pond drop; minimum bend radius 1.11, validateSpline clean. The channel carries REAL shader water: ONE continuous `buildWaterRibbon` (WaterTile) following the spline — 220 frame samples riding 0.055 above the profile's flat strip (kept beneath as opaque backing), width 0.8 inside the walls, amp 0.16 calming the swell to channel chop; its (across, alongArc) local coords keep the waves flowing seamlessly around the closed loop (no per-reach seams). Foam patches are few, thin and skipped on the lift. A boarding gangway plank bridges the station deck (outer bank) onto the channel wall. The round raft with tyre tube and six yellow-backed seats of guest riders (RAPBOAT) drifts via run(), with spin, wallow and bob layered on top.
 
 Track pieces: `pieces` prop or JSX piece children compile via `compileTrackPieces` on the 'rapids' profile — lifts and stepped drops are legal and drift-paced (drops run faster than climbs); a FATAL compile marks the build `invalid`. Sim extras: the raft is the ride `vehicle`. Park layout: queue front 4.4 / exit [-1.7, 4.2] clear the channel + deck. Channel water follows WaterTile's natural blue-grey palette (backing strip 0x447588, pond floor 0x223849, pond swell amp 0.4 so troughs stay above the floor).

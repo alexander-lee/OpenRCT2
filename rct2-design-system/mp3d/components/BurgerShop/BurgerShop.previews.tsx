@@ -2,7 +2,7 @@ import React from 'react';
 import { ScenePreview } from '../Park';
 import { buildPathNetwork } from '../PathNetwork';
 import { createGameManager } from '../GameManager';
-import { BurgerShop } from './index';
+import { BurgerShop, buildHeldBurger } from './index';
 
 // The shop sells REAL burgers through the GameManager consumable flow (the
 // same live-sim vignette as the BalloonStand preview): a ScenePreview `dress`
@@ -10,7 +10,8 @@ import { BurgerShop } from './index';
 // registered at the counter front — at 2x time, PRE-WARMED so guests are
 // already mid-loop on the first frame. Peckish guests step off the path to
 // the counter, buy (item 'food', price 3, value 5 — good-value happiness),
-// then stroll on EATING: the held burger lifts to the mouth on the eased
+// then stroll on EATING: the shop's OWN held burger (sesame bun, patty,
+// cheese slice, lettuce ruffle) lifts to the mouth on the eased
 // bite-cycle arm overlay until only a crumpled container is left to bin.
 function BurgerShopDemo() {
   return (
@@ -37,17 +38,35 @@ function BurgerShopDemo() {
         // registration hook, so the demo registers the sale itself. Anchor is
         // pushed +z so the serving front (anchor + 0.72·dir) lands at z 1.38 —
         // just clear of the counter slab edge (z 1.23), no clipping.
-        mgr.registerStall({ name: 'Burger Bar', item: 'food', price: 3, value: 5, anchor: [0, 0, 0.66], dir: [0, 1] });
-        mgr.spawnGuests(8);
-        // pre-warm (fixed 1/30 substeps, deterministic): guests are spread
-        // around the loop with the purchase/eat cycle in full swing — the eat
-        // chain lasts ~6.4 sim-s, so fresh buys land on-screen within seconds
+        // ...with the shop's OWN held burger (StallConfig.heldItem), exactly as
+        // <BurgerShop register> wires it inside a real <Park>
+        mgr.registerStall({ name: 'Burger Bar', item: 'food', price: 3, value: 5, anchor: [0, 0, 0.66], dir: [0, 1], heldItem: buildHeldBurger });
+        // ...spawned ALREADY PECKISH. A fresh RCT2 arrival is well fed (hunger
+        // 177-255 on the inverted scale) and the counter refuses food above
+        // hunger 75, which on the RCT2-faithful 512-tick needs clock is ~163
+        // sim-s of walking before the first guest may buy anything — longer
+        // than this whole vignette, so the shop stood idle. The needs RATES are
+        // correct and untouched; the PREVIEW stages its cohort instead, which
+        // is what a staged vignette is for. The band is deliberately wide: the
+        // hungriest guests buy during the pre-warm and are already eating on
+        // frame 1, the fed end of it crosses the counter gate during the
+        // viewing so fresh sales keep landing on screen.
+        mgr.spawnGuests(8, undefined, { hunger: [4, 48] });
+        // pre-warm (fixed 1/30 substeps, deterministic): 32 sim-s is enough for
+        // the hungriest of the staged cohort to have bought and be eating on
+        // frame 1, with the rest still working their way to the counter, so the
+        // sales keep coming while the preview plays
         const WARM = 32;
         let simT = 0;
         while (simT < WARM) {
           simT += 1 / 30;
           mgr.update(simT, 1 / 30);
         }
+        // HARNESS PROBE (never called by the page, no visual cost): the live
+        // stall roster + guest records, so a headless run can ASSERT this
+        // vignette actually trades (sold > 0, items in hands) instead of
+        // eyeballing a screenshot.
+        g.userData.stallProbe = () => ({ simT, stalls: mgr.stalls(), guests: mgr.guests() });
         // then run at 2x in fixed substeps — a full walk-up -> buy -> eat ->
         // bin/litter cycle fits one viewing without rushing the walk cycles
         let last = 0;

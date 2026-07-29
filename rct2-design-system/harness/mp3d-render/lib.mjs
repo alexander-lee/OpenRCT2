@@ -30,6 +30,35 @@ export const MP3D = path.resolve(THIS_DIR, '..', '..', 'mp3d');
 const HARNESS = THIS_DIR;
 const CHROME_DIR = path.join(process.env.HOME ?? '', '.cache/puppeteer/chrome');
 
+// ---------------------------------------------------------------------------
+// ONE COPY OF REACT (and of three) PER BUNDLE — fixed 2026-07.
+//
+// THE BUG: this bundler writes its generated entry file into `HERE/out`, i.e.
+// `harness/park-eval/out`, while its `nodePaths` pointed at
+// `harness/mp3d-render/node_modules`. esbuild resolves a bare import by walking
+// up from the IMPORTER first and only then consulting `nodePaths`, and BOTH
+// harness directories have their own `react` + `react-dom` installs. So:
+//
+//   the generated entry (in park-eval/out) → park-eval/node_modules/react
+//   mp3d/components/*'s own `import React`  → mp3d-render/node_modules/react
+//
+// Two React instances in one bundle. Every hook in the design system then threw
+// "Invalid hook call. Hooks can only be called inside the body of a function
+// component", React unmounted the tree, and the page rendered a BLANK CANVAS —
+// which is easy to misread as "the component is broken" or, worse during a
+// visual change, as "my change had no effect".
+//
+// THE FIX: alias the shared singletons to ABSOLUTE paths in one tree, so the
+// importer's location cannot matter. esbuild applies a package alias to subpaths
+// too, so `react-dom/client` and `react/jsx-runtime` follow automatically.
+// `three` is here for the same reason — two Three copies break every
+// `instanceof` check in the kit and the harness's own `window.__THREE` probe.
+const ONE_TREE = path.join(HARNESS, 'node_modules');
+const SINGLETONS = ['react', 'react-dom', 'three'];
+const singletonAlias = Object.fromEntries(
+  SINGLETONS.filter((p) => fs.existsSync(path.join(ONE_TREE, p))).map((p) => [p, path.join(ONE_TREE, p)]),
+);
+
 function chromePath() {
   const builds = fs.existsSync(CHROME_DIR) ? fs.readdirSync(CHROME_DIR).sort() : [];
   for (const b of builds.reverse()) {
@@ -83,7 +112,10 @@ else {
     jsx: 'automatic',
     loader: { '.tsx': 'tsx', '.ts': 'ts' },
     define: { 'process.env.NODE_ENV': '"development"' },
-    nodePaths: [path.join(HARNESS, 'node_modules')],
+    nodePaths: [ONE_TREE, path.join(HERE, 'node_modules')],
+    // react / react-dom / three pinned to ONE tree whatever the importer is —
+    // see the SINGLETONS note above (dual React = blank canvas)
+    alias: singletonAlias,
     plugins: [componentAlias],
     target: 'chrome120',
     logLevel: 'silent',
@@ -98,9 +130,29 @@ else {
   return htmlPath;
 }
 
-export async function openParkPage(htmlPath, { waitMs = 7000 } = {}) {
+/**
+ * Open a bundled page and capture every console line.
+ *
+ * TIMEOUTS (2026-07): puppeteer's 30 s NAVIGATION default is far too short for a
+ * composed park — the default plot mounts a 284² heightfield under SwiftShader —
+ * so `page.goto` threw "Navigation timeout of 30000 ms exceeded" and the caller
+ * reported a perfectly good park as broken. `park-eval/lib.mjs` already allowed
+ * 240 s via `PARK_NAV_MS`; this bundler now honours the same two environment
+ * overrides, with the same defaults, so the two harnesses behave identically:
+ *   PARK_NAV_MS      navigation budget (default 240 000)
+ *   PARK_SETTLE_MS   how long to wait for the validate verdict (default 180 000,
+ *                    or the explicit `waitMs` argument when one is passed)
+ */
+export async function openParkPage(htmlPath, { waitMs, navMs = Number(process.env.PARK_NAV_MS ?? 240000) } = {}) {
+  const settleMs = waitMs ?? Number(process.env.PARK_SETTLE_MS ?? 180000);
   let browser, page;
   try {
+    // PARK_BROWSER=playwright forces the playwright path below — the same
+    // escape hatch park-eval/evaltags.mjs has. Chrome for Testing under
+    // puppeteer-core is the higher-fidelity renderer and stays the default, but
+    // it is much the hungrier of the two on RAM, and on a loaded machine it is
+    // the thing that pushes the box into swap.
+    if ((process.env.PARK_BROWSER ?? '').toLowerCase() === 'playwright') throw new Error('PARK_BROWSER=playwright');
     const puppeteer = (await import('puppeteer-core')).default;
     const executablePath = chromePath();
     if (!executablePath) throw new Error('no Chrome for Testing found under ~/.cache/puppeteer');
@@ -120,9 +172,10 @@ export async function openParkPage(htmlPath, { waitMs = 7000 } = {}) {
   page.on('console', (m) => lines.push(`[${m.type()}] ${m.text()}`));
   page.on('pageerror', (e) => lines.push(`[pageerror] ${e.message}`));
   page.on('requestfailed', (r) => lines.push(`[requestfailed] ${r.url()}`));
-  await page.goto(`file://${htmlPath}`, { waitUntil: 'load' });
+  page.setDefaultNavigationTimeout?.(navMs);
+  await page.goto(`file://${htmlPath}`, { waitUntil: 'load', timeout: navMs });
   // wait for the validate verdict (or the timeout)
-  const deadline = Date.now() + waitMs;
+  const deadline = Date.now() + settleMs;
   while (Date.now() < deadline) {
     if (lines.some((l) => /validatePark →|validatePark skipped|no component export/.test(l))) break;
     await new Promise((r) => setTimeout(r, 250));

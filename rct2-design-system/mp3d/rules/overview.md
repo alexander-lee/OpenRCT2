@@ -62,12 +62,13 @@ validator/probe warning is FATAL.
   entrance → lattice paths → themed lands → GameManager → `validatePark`).
   `ParkBuilder` ships the composition UTILITIES: `parkComposition` with 4
   CLIMATES (`temperate | desert | alpine | coastal`, hashed from the seed;
-  ONE flood-filled water body, clustered back hills, climate
+  TWO flood-filled water bodies (a dominant one + a secondary; ONE on a plot
+  ≤ 48), clustered back hills, climate
   sand/species/palette, flat entrance apron — probed against YOUR layout
   guards), `tintTerrainForClimate`, placement helpers (`terrainLint`,
   `planRideAccess`, `bermNetToGround`/`plinthUnder`/`groundRideAccess`) and
   the **`validatePark`** acceptance gate (accessibility, terrain vibe,
-  footprint SAT sweep, coaster legality + crash-free margin, 60 sim-s
+  footprint SAT sweep, coaster legality + crash-free margin, 85 sim-s
   GameManager smoke run, mesh budget + determinism hash) — every composed
   park MUST pass it before it "opens"; do the §0 pre-flight arithmetic
   (rules/park-generation.md) FIRST so it passes on the first run. The

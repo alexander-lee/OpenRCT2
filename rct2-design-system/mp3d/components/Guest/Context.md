@@ -1,5 +1,9 @@
 # Guest
 
+**CANONICAL IMPORT — copy exactly:** `import { Guest } from './components/Guest';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 A park guest modelled from the RCT2 peep sprite, animated by a per-peep POSE CONTROLLER. Drag to orbit. The preview shows the controller's range: two walk speeds, breathing idle, a dancing female (skirt swings and flares on spins) and periodic anticipation-crouch jumps.
 
 Built with three.js on top of the shared `Stage` component. The geometry is hand-modelled to match the colours and proportions of the authentic RollerCoaster Tycoon 2 sprite (its 4 rotations were used as reference).
@@ -8,10 +12,21 @@ Built with three.js on top of the shared `Stage` component. The geometry is hand
 
 ```ts
 buildPeep(t: typeof THREE, opts?: PeepOpts)
-// -> { group, walk(time, phase?), head, armL, armR, legL, legR, pose, skirt, setSick }
+// -> { group, walk(time, phase?), head, headSlot, armL, armR, legL, legR, pose, skirt, setSick }
 ```
 
 `group / walk / head / armL / armR` are unchanged and fully backwards-compatible. New:
+
+### `headSlot` — the HEAD attachment anchor (wearables)
+
+The third attachment slot, alongside the two hands (the `armL`/`armR` pivots, whose hand ball sits at arm-local `[0, −0.32, 0]` — where GameManager parents held food, drink and balloons). `headSlot` is a group on the CROWN of the skull, parented to `head`, so anything added to it rides every nod, mood tilt and head bob for free — and, being part of the rig, it cannot be lost when the peep is hidden in a hut or seated on a ride.
+
+- Position: head-local `(0, 0.10, 0)`. The skull is r 0.12 and the hair cap tops out at ~0.132, so an item sitting near the anchor's own origin hugs the hair instead of floating.
+- Orientation: `+z` is the FACE direction (the nose is at z 0.12).
+- Units are PEEP-LOCAL: size against the head radius 0.12 and let the caller's scale (0.5 for park crowds, `GUEST_SCALE`) do the rest — never pre-scale.
+- A brow-line item (goggles) offsets itself DOWN and FORWARD, e.g. `position.set(0, −0.06, 0.02)`.
+
+GameManager's `'wearable'` stall items (`StallConfig.heldItem`) attach here.
 
 ### `setSick(on)` + the sick face variant
 

@@ -1,5 +1,9 @@
 # CoasterBuilder
 
+**CANONICAL IMPORT — copy exactly:** `import { CoasterBuilder } from './components/CoasterBuilder';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 A demo coaster COMPOSED from TrackKit grid pieces (chain lift, drops, corkscrew, closing turns) with a peep-filled train. Shows the RCT2 piece-composition workflow. **For park scenes and freeform layouts, prefer SplineCoaster** — the primary coaster system with spline rails, banking and terrain-aware supports.
 
 ## Preview circuits (RCT2 archetypes)

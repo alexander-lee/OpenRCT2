@@ -8,6 +8,14 @@
 // wl-r 6.1 — NOT the seed table's pre-guard river at (18.1, −5.9). Every node,
 // pad and prop below is placed against the PROBED lake, which is exactly the
 // round-7 lesson: re-read the composed water, never trust the table.
+//
+// SEED STABILITY — MEASURED 2026-07-25, DO NOT RE-SEED. At THIS park's size
+// (48) seed 7 temperate is `probes 1` unguarded: §1's `probes 18` is the
+// size-128 row and `probes` is SIZE-dependent. Under this park's real guards
+// (33 keepDry + 164 coasterPts) it probes 64 / 0 violations / 9 clamp discs,
+// and 12 realistic one-cell keepDry edits moved the landform 0 times. The
+// `probes 1` temperate alternatives (31, 83) measure identically here (64
+// probes, 0 moved) and would only move the lake this file is planned against.
 import React from 'react';
 import {
   Park,
@@ -83,7 +91,9 @@ const KEEP_DRY: [number, number][] = [
   [3.6, 9.6], [-3.6, 9.6], [-3.6, -3.6], [3.6, -3.6], [-3.6, 3.6], [4.8, -6.6], // scenery
 ];
 
-const TREES: [number, number, string][] = [
+// literal union, not `string` — `tree()` takes exactly these four
+// (`node typecheck.mjs`; esbuild strips types without checking them)
+const TREES: [number, number, 'round' | 'pine' | 'palm' | 'willow'][] = [
   [-4.8, 19.2, 'round'], [-8.4, 19.2, 'pine'], [-4.8, 12.0, 'pine'], [-9.6, 6.0, 'pine'],
   [-9.6, 0.0, 'round'], [4.8, 0.0, 'round'], [-6.0, -6.0, 'pine'], [6.0, -4.8, 'pine'],
   [-9.6, -9.6, 'pine'], [9.6, -4.8, 'round'], [12.0, -3.6, 'pine'], [-3.6, 13.2, 'round'],
@@ -98,6 +108,7 @@ export default function ArchRef() {
         climate="temperate"
         size={48}
         guests={20}
+        roster={{ rides: 3, stalls: 2 }}
         onReady={(report: any) => {
           // eslint-disable-next-line no-console
           console.log('[ARCH-REF]', report?.ok ? 'ok' : 'FAILURES', report?.failures?.length ?? 0, 'warnings', report?.warnings?.length ?? 0);
@@ -123,8 +134,6 @@ export default function ArchRef() {
           deck={[-2.4, 0]}
           queueTailNode={14}
           queueDir={[1, 0]}
-          exit={[19.2, -1.2]}
-          exitDir={[1, 0]}
         />
 
         {/* flats on CELL INTERIORS — 6.0 u off every node, lanes trim onto them */}

@@ -14,6 +14,11 @@ import { composable } from '../Park';
 // the-air dancing, squats), and setSick(on) swaps the face for a green-tinted
 // grimacing SICK variant (its own texture-cache key) and back.
 //
+// ATTACHMENT SLOTS: three, all returned. The two HANDS are the arm pivots
+// (hand ball at arm-local [0, -0.32, 0]) — the GameManager parents held food /
+// drink / balloons there — and `headSlot` is the HEAD anchor on the crown for
+// WEARABLES (hats, goggles): see its comment in buildPeep for the frame.
+//
 // ANIMATION lives in the returned `pose` controller (see PeepPose below): a
 // small per-peep state machine (idle / walk / dance / jump) that OWNS the limb
 // rotations and CROSSFADES every transition — no snapping. `walk(time, phase)`
@@ -331,6 +336,22 @@ export function buildPeep(t: typeof THREE, o: PeepOpts = {}) {
     head.add(ball(t, 0.045, HAIR, [0, -0.02, -0.145], { rough: 0.9 }));
   }
   head.add(ball(t, 0.018, SKIN, [0, -0.005, 0.12], { rough: 0.6 })); // nose stays 3D for profile depth
+  // ---- HEAD ATTACHMENT ANCHOR (`headSlot`) ---------------------------------
+  // The third attachment slot alongside the two hands (armL/armR, whose hand
+  // ball sits at arm-local [0, -0.32, 0]): WEARABLES — hats, goggles, ears —
+  // parent HERE, so they ride every nod, mood tilt and head bob for free.
+  // Frame: the anchor sits on the CROWN of the skull (head-local y +0.10; the
+  // skull is r 0.12 and the hair cap tops out at ~0.132, so an item resting
+  // near y 0 hugs the hair instead of floating), +z is the FACE direction
+  // (the nose is at z 0.12) and units are PEEP-LOCAL — the park's 0.5
+  // GUEST_SCALE on the root group scales a wearable automatically, so a
+  // builder works out its sizes against the head radius 0.12 and never has to
+  // know the world scale. A brow-line item (goggles) offsets itself DOWN and
+  // FORWARD from here, e.g. position (0, -0.055, 0.03).
+  const headSlot = new t.Group();
+  headSlot.position.set(0, 0.1, 0);
+  headSlot.name = 'headSlot';
+  head.add(headSlot);
   grp.add(head);
 
   const limb = (px: number, py: number, col: number, len: number, hand?: number, texd?: boolean) => {
@@ -696,7 +717,7 @@ export function buildPeep(t: typeof THREE, o: PeepOpts = {}) {
     m.needsUpdate = true;
   };
 
-  return { group: grp, walk, head, armL, armR, legL, legR, pose, skirt, setSick };
+  return { group: grp, walk, head, headSlot, armL, armR, legL, legR, pose, skirt, setSick };
 }
 
 // PREVIEW — the full ANIMATION SHOWCASE: every pose-layer state on one slab,

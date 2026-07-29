@@ -1,5 +1,9 @@
 # MineTrainCoaster
 
+**CANONICAL IMPORT — copy exactly:** `import { MineTrainCoaster } from './components/MineTrainCoaster';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 The RCT2 **MINE TRAIN** (`ride/rtd/coaster/MineTrainCoaster.h`) as its own composable ride, riding the EXISTING spline machinery: the layout is compiled by SplineRideKit's `compileTrackPieces` and swept by `buildRideSpline({ profile: 'coaster', type: 'wooden' })`. No new CoasterType, no forked track code — a mine-themed dressing over the kit's wooden rule set, which is exactly how RCT2 models the ride.
 
 ## Why the `wooden` envelope IS the mine train's rule set

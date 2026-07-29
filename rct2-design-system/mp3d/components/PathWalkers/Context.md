@@ -1,5 +1,9 @@
 # PathWalkers
 
+**CANONICAL IMPORT — copy exactly:** `import { PathWalkers } from './components/PathWalkers';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Guests strolling a `buildPathNetwork` graph. Every walker is the shared `buildPeep` guest (varied skin tone, shirt, trousers, hair and expression) walking edge-to-edge, turning at nodes with DETERMINISTIC seeded choices (never doubling straight back unless at a dead end), facing its travel direction, on its own lane offset so opposite streams don't overlap.
 
 Built with three.js on top of the shared `Stage`, `Guest.buildPeep` and `PathNetwork.buildPathNetwork`.

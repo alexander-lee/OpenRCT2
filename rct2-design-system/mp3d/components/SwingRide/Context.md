@@ -1,5 +1,9 @@
 # SwingRide
 
+**CANONICAL IMPORT — copy exactly:** `import { SwingRide } from './components/SwingRide';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Chair swing / wave-swinger: chained chairs flung out from a spinning striped canopy, mirrored centre column, rim lamps that glow at night. Modelled from the authentic RCT2 sprite.
 
 Fully composable ride on the `<ConfigurableRide>` chassis (FerrisWheel pattern):

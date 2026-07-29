@@ -1,5 +1,9 @@
 # Carousel
 
+**CANONICAL IMPORT — copy exactly:** `import { Carousel } from './components/Carousel';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Merry-go-round: spinning horses under a striped canopy, from the RCT2 sprite.
 
 Built with three.js on the shared Stage; modelled from the authentic RCT2 sprite.

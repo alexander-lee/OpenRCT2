@@ -1,5 +1,9 @@
 # TopSpin
 
+**CANONICAL IMPORT — copy exactly:** `import { TopSpin } from './components/TopSpin';`
+*(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
+specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
+
 Top Spin: royal-blue gondola row somersaulting between swinging arms (TOPSP1). Original three.js model; proportions and palette referenced from the RCT2 asset library.
 
 Fully composable ride on the `<ConfigurableRide>` chassis (FerrisWheel pattern):

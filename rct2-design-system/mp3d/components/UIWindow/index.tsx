@@ -28,6 +28,20 @@ export interface UIWindowProps {
   collapsible?: boolean;
   /** anchor to a container corner (10px inset) instead of x/y */
   corner?: UIWindowCorner;
+  /**
+   * Cap the BODY's height in px and scroll it when the content is taller.
+   *
+   * Without this the body is `overflow: hidden` inside a fixed-width frame, so
+   * a list that outgrows it is simply CLIPPED — a park with more rides than fit
+   * silently loses the tail of its ride list, and a tall window otherwise walks
+   * off the bottom of the canvas. RCT2's own windows scroll their lists, and
+   * `ParkInfo` / `GuestThoughts` are exactly the lists that grow without bound.
+   *
+   * The scrollbar is styled to the window chrome (WebKit + Firefox), because a
+   * default OS scrollbar inside a hand-drawn RCT2 frame reads as a browser
+   * artifact sitting on top of the game.
+   */
+  maxBodyHeight?: number;
 }
 
 // RCT2 chrome palette
@@ -125,6 +139,7 @@ export function UIWindow({
   width = 224,
   onClose,
   collapsible = false,
+  maxBodyHeight,
   corner,
 }: UIWindowProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -241,7 +256,40 @@ export function UIWindow({
               fontSize: 11,
               lineHeight: 1.45,
               ...bevel(true, 1),
+              // SCROLL, don't clip. `overflow: hidden` is the default and is
+              // right for a fixed panel, but a list that grows (rides, guest
+              // thoughts) must be reachable. `overscrollBehavior: contain`
+              // stops a wheel event at the list's end from scrolling the page
+              // behind it; `WebkitOverflowScrolling` keeps momentum on touch.
+              ...(maxBodyHeight === undefined
+                ? null
+                : {
+                    maxHeight: maxBodyHeight,
+                    overflowY: 'auto' as const,
+                    overflowX: 'hidden' as const,
+                    // the frame sets `touchAction: 'none'` for its drag; give
+                    // vertical gestures back to the scroller
+                    touchAction: 'pan-y' as const,
+                    overscrollBehavior: 'contain' as const,
+                    WebkitOverflowScrolling: 'touch' as const,
+                    // Firefox: colour the native bar to the chrome
+                    scrollbarWidth: 'thin' as const,
+                    scrollbarColor: `${SHADOW} ${INSET}`,
+                  }),
             }}
+            // the wheel must not fall through to the Stage's zoom handler while
+            // the pointer is over a scrollable list
+            onWheel={maxBodyHeight === undefined ? undefined : (e) => e.stopPropagation()}
+            // A SCROLLABLE BODY MUST OPT OUT OF THE WINDOW DRAG, or the feature
+            // is cosmetic: this window drags from ANY point (RCT2 windows drag
+            // by their body), `onWinDown` only exempts
+            // `button, a, input, select, textarea, [data-nodrag]`, and the frame
+            // sets `touchAction: 'none'`. Without both of these a drag inside
+            // the list moves the WINDOW instead of scrolling it, and touch
+            // scrolling is dead entirely. `pan-y` keeps horizontal drags (and
+            // therefore the window drag) working while giving vertical ones to
+            // the scroller.
+            {...(maxBodyHeight === undefined ? null : { 'data-nodrag': true })}
           >
             {children}
           </div>

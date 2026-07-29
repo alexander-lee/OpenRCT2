@@ -11,6 +11,7 @@
 
 import * as THREE from 'three';
 import { cyl } from '../Stage';
+import { terrainPaletteRGB } from '../TerrainKit';
 import type { BasinZone } from '../TerrainKit';
 import { tree } from '../Kit';
 import { buildRock } from '../Rock';
@@ -40,8 +41,24 @@ const ZONE_PAINT: Record<
  *  `<Terrain>` does). Palette-matched so the plot edge is invisible. */
 export function surroundPalette(climate: ParkClimate): { ground: number; crest: number } {
   const P = ZONE_PAINT[climate];
+  const lawn = CLIMATE_SPECS[climate].tint?.grass?.color ?? P.meadow ?? 0x5f7a3e;
+  // MATCH THE PLOT'S AVERAGE LAWN, NOT ITS BASE HEX (2026-07). The surround's
+  // near ring used to be handed the climate's raw grass colour, but a composed
+  // plot's rendered lawn is measurably LIGHTER than that hex: the altitude
+  // dry-out, the pale half of the turf patchiness, the crest bleaching and the
+  // turf detail map's bright tail all lift it ~15%. So the skirt came out darker
+  // than the ground it continues and the plot boundary drew a straight LINE
+  // across the horizon — the exact "the world ends here" read the surround
+  // exists to remove. Blending the lawn 18% toward the straw tone the terrain
+  // itself dries toward (TerrainKit's DRY, 0x87975a) closes it.
+  const straw = 0x87975a;
+  const bl = (sh: number) => {
+    const a = (lawn >> sh) & 255;
+    const b = (straw >> sh) & 255;
+    return Math.round(a + (b - a) * 0.18) & 255;
+  };
   return {
-    ground: CLIMATE_SPECS[climate].tint?.grass?.color ?? P.meadow ?? 0x5f7a3e,
+    ground: (bl(16) << 16) | (bl(8) << 8) | bl(0),
     crest: climate === 'alpine' ? 0xd6dde1 : P.rockA,
   };
 }
@@ -74,7 +91,12 @@ export function tintTerrainForClimate(
   const pos = geo.getAttribute('position') as THREE.BufferAttribute;
   const col = geo.getAttribute('color') as THREE.BufferAttribute;
   if (!pos || !col) return;
-  const toRGB = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
+  // the SAME sRGB→linear decode TerrainKit's own palette uses (2026-07). This
+  // layer mixes its climate/zone palette INTO those vertex colours, so a plain
+  // `byte / 255` here would drag every tinted vertex back toward the pale,
+  // uncorrected tone the decode exists to fix — and the zone paint covers most
+  // of a composed park's ground.
+  const toRGB = terrainPaletteRGB;
   const grass = C.tint?.grass ? toRGB(C.tint.grass.color) : null;
   const smooth = (v: number) => {
     const c = Math.max(0, Math.min(1, v));
@@ -156,9 +178,10 @@ export function tintTerrainForClimate(
     const snowLine = C.tint?.snowAbove === undefined ? undefined : comp ? Math.max(C.tint.snowAbove, comp.treeline + 0.55) : C.tint.snowAbove;
     if (snowLine !== undefined && h > snowLine) {
       const k = Math.min(1, (h - snowLine) / 0.7) * 0.85;
-      r += (0.93 - r) * k;
-      gc += (0.95 - gc) * k;
-      b += (0.97 - b) * k;
+      const snow = toRGB(0xedf2f7); // snow, decoded like the rest of the palette
+      r += (snow[0] - r) * k;
+      gc += (snow[1] - gc) * k;
+      b += (snow[2] - b) * k;
     }
     col.setXYZ(i, Math.min(1, r), Math.min(1, gc), Math.min(1, b));
   }
@@ -178,6 +201,40 @@ export interface DressCounts {
   props: number;
   meshes: number;
 }
+
+/** a NO-DRESS DISC — `{ x, z, r }`, the same shape as `opts.obstacles` and
+ *  `DressResult.obstacles`, so one list can serve both */
+export interface NoDressDisc {
+  x: number;
+  z: number;
+  r: number;
+}
+/** a NO-DRESS RECT — the codebase's `ParkFootRect` shape, so a set-piece can
+ *  hand over `plan.footprint`, `plan.extent` or a ride's `trackBox` verbatim
+ *  (`yaw` defaults to 0) */
+export interface NoDressRect {
+  cx: number;
+  cz: number;
+  hx: number;
+  hz: number;
+  yaw?: number;
+}
+/**
+ * A region the AUTO-DRESSING must not PLANT in — and nothing else.
+ *
+ * This is deliberately NOT `keepDry`. A `keepDry` cell does two jobs at once:
+ * the composition's guard clamp GUARANTEES it dry/flat-ish, which MOVES the
+ * heightfield (`clampPeaks`/`clampBasins`), and as a side effect the dressing
+ * skips it. A land whose only complaint is "don't plant here" — fresh lava, a
+ * salt pan, a ceremonial court, a themed floor a set-piece paints itself —
+ * must not pay for a reshaped ground: reshaping it moves the walk network,
+ * which is how one aesthetic fix turns into a FATAL sim regression (the
+ * Emberfall Caldera land's ash field did exactly that; the land macro was
+ * removed in v6.0, the lesson stands). A no-dress region suppresses
+ * planting/scatter ONLY: the terrain mesh, `heightAt`, the guard clamp, the
+ * climate/zone paint and the water are all byte-identical with or without it.
+ */
+export type NoDressRegion = NoDressDisc | NoDressRect;
 export interface DressResult {
   group: THREE.Group;
   counts: DressCounts;
@@ -202,7 +259,9 @@ export interface DressResult {
  * + palms + one flavour prop on the SAND flank, and sparse lone trees across
  * the MEADOW. Everything settles to `heightAt`, keeps out of the water, off
  * steep rock, off the gate forecourt, clear of every `comp.guardCells` cell
- * (your keepDry layout), the planned coaster envelope and `opts.obstacles`.
+ * (your keepDry layout), the planned coaster envelope, `opts.obstacles` and
+ * every `opts.noDress` region (planting-only exclusion, no heightfield change
+ * — see `NoDressRegion`).
  * Counts scale with park area and stay well under the ~2500-mesh budget at
  * size 48. Mount the group via `park.addObject(dress.group)` (default LOD).
  */
@@ -210,7 +269,17 @@ export function dressTerrain(
   t: typeof THREE,
   comp: ParkComposition,
   heightAt: (x: number, z: number) => number,
-  opts: { obstacles?: { x: number; z: number; r: number }[]; density?: number } = {},
+  opts: {
+    obstacles?: { x: number; z: number; r: number }[];
+    density?: number;
+    /** regions the dressing must not PLANT in (discs and/or rects, WORLD
+     *  coords — see `NoDressRegion`). Suppresses trees / rocks / dune mounds /
+     *  props only; the heightfield, the guard clamp and the terrain paint are
+     *  untouched, so a land can ask for clean ground without moving ground.
+     *  Default none — an empty/omitted list dresses bit-identically to before
+     *  this option existed. */
+    noDress?: NoDressRegion[];
+  } = {},
 ): DressResult {
   const S = comp.size;
   const half = S / 2;
@@ -242,6 +311,27 @@ export function dressTerrain(
   const added: { x: number; z: number; r: number }[] = [];
   const counts: DressCounts = { trees: 0, rocks: 0, props: 0, meshes: 0 };
   const guardClear = (x: number, z: number, m = 1.35) => comp.guardCells.every(([gx, gz]) => Math.hypot(gx - x, gz - z) > m);
+  // ---- NO-DRESS REGIONS (planting-only exclusion) ---------------------------
+  // Nothing here touches the ground: this is a pure REJECTION test on the
+  // sample points the planters propose, so a land that only wants clean ground
+  // (fresh lava, a salt pan, a themed floor it paints itself) never triggers a
+  // guard clamp and never moves the walk network. `r` is the plant's own
+  // radius, tested like the `obstacles` list so nothing OVERHANGS the region.
+  const noDress = opts.noDress ?? [];
+  const dressable = (x: number, z: number, r = 0) => {
+    for (const rg of noDress) {
+      if ('r' in rg) {
+        if (Math.hypot(x - rg.x, z - rg.z) < rg.r + r) return false;
+      } else {
+        const dx = x - rg.cx;
+        const dz = z - rg.cz;
+        const c = Math.cos(rg.yaw ?? 0);
+        const s = Math.sin(rg.yaw ?? 0);
+        if (Math.abs(dx * c - dz * s) < rg.hx + r && Math.abs(dx * s + dz * c) < rg.hz + r) return false;
+      }
+    }
+    return true;
+  };
   const coasterClear = (x: number, z: number) => {
     const pl = comp.coasterXZ;
     for (let i = 0; i + 1 < pl.length; i += 1) {
@@ -254,6 +344,7 @@ export function dressTerrain(
     lint.isDry(x, z, 0.1) &&
     lint.slopeAt(x, z) < slopeMax &&
     !(z > half - 4.8 && Math.abs(x) < 3.6) && // the gate forecourt stays open
+    dressable(x, z, r) && // a land's no-dress region: don't plant, don't reshape
     coasterClear(x, z) &&
     guardClear(x, z) &&
     prior.every((o) => Math.hypot(o.x - x, o.z - z) > o.r + r) &&
@@ -326,7 +417,7 @@ export function dressTerrain(
         const ch = rc.children[i2];
         const wx = fx + ch.position.x;
         const wz = fz + ch.position.z;
-        if (!guardClear(wx, wz, 1.3) || !coasterClear(wx, wz) || !prior.every((o) => Math.hypot(o.x - wx, o.z - wz) > o.r + 0.4)) rc.remove(ch);
+        if (!guardClear(wx, wz, 1.3) || !dressable(wx, wz, 0.4) || !coasterClear(wx, wz) || !prior.every((o) => Math.hypot(o.x - wx, o.z - wz) > o.r + 0.4)) rc.remove(ch);
       }
       counts.rocks += rc.children.length;
       rc.position.set(fx, 0, fz);
@@ -339,7 +430,7 @@ export function dressTerrain(
       const rr = (0.3 + h01() * 0.55) * c.radius;
       const x = c.x + Math.cos(a) * rr;
       const z = c.z + Math.sin(a) * rr;
-      if (!lint.inBounds(x, z, 1.15) || !lint.isDry(x, z, 0.1) || !coasterClear(x, z) || !guardClear(x, z)) continue;
+      if (!lint.inBounds(x, z, 1.15) || !lint.isDry(x, z, 0.1) || !coasterClear(x, z) || !guardClear(x, z) || !dressable(x, z, 0.3)) continue;
       const rk = buildRock(t, { scale: 0.16 + h01() * 0.2 * Math.min(u, 2.6), seed: ci * 29 + i2 * 3 + 1 });
       rk.userData.lodDetail = true;
       rk.position.set(x, heightAt(x, z) - 0.05, z);
@@ -365,7 +456,7 @@ export function dressTerrain(
   bin = chunk();
   comp.sandSpots.forEach((sp) => {
     if (!lint.inBounds(sp.x, sp.z, 1.0) || !lint.isDry(sp.x, sp.z, 0.04)) return;
-    if (!guardClear(sp.x, sp.z, 1.3) || !coasterClear(sp.x, sp.z)) return;
+    if (!guardClear(sp.x, sp.z, 1.3) || !dressable(sp.x, sp.z, sp.r) || !coasterClear(sp.x, sp.z)) return;
     if (!prior.every((o) => Math.hypot(o.x - sp.x, o.z - sp.z) > o.r + sp.r)) return;
     bin.add(cyl(t, sp.r, sp.r * 1.15, 0.5, 0xd3bd8d, [sp.x, heightAt(sp.x, sp.z) - 0.21, sp.z], { tex: 'sand', repeat: [3, 3], rough: 1, seg: 18 }));
     counts.props += 1;
