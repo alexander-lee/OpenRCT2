@@ -119,7 +119,18 @@
 //           "NOT RECOVERED in 60 s".
 //   AFTER   13.1 s / 14.0 s (cycle 1 / cycle 2) back to 2 visible lights and
 //           16 ms/frame — with only the Stage's fade fixed.
-//   AFTER   this file's coalescing as well: see the table at the end.
+//   AFTER   6.1 / 7.2 / 7.4 s over three cycles with this file's coalescing too,
+//           and press-NIGHT went from a fade that never completed to 4.2 / 5.5 /
+//           5.4 s with exactly ONE light-count change (the whole 0.8 s fade now
+//           renders at the DAY light count, ~18 ms/frame, because the restores
+//           are coalesced into the single step at the end).
+//
+// What is left is not the toggle: 1.3 s of it is ONE night frame (the click
+// lands mid-frame and a 168-light frame costs that much), and ~3 s is 11 shader
+// compiles at a light count the park has never drawn. Priced directly by the
+// same probe, at settled day: making ONE extra lamp visible costs 145 ms and 11
+// programs the first time and 32 ms / 0 programs when the count repeats. A
+// park inside the ~8-light budget would pay neither.
 //
 // TWO causes, both of them a per-FRAME quantity standing in for a per-SECOND
 // one, which is the same bug shape as the cadence above:
@@ -208,6 +219,7 @@ export function createDarkLightCull(scene: THREE.Object3D, cadence = 0.25): Dark
   // flips waiting for the pending set to stop growing (the fade tail — header)
   const pending = new Set<THREE.Object3D>();
   let holdPasses = 0;
+  let quietPasses = 0;
   let clock = cadence; // run on the very first frame, not 0.25 s in
   let shedCount = 0;
 
@@ -268,7 +280,12 @@ export function createDarkLightCull(scene: THREE.Object3D, cadence = 0.25): Dark
       // across the dead band can delay the cull but never disable it.
       if (pending.size > 0) {
         holdPasses += 1;
-        if (!joined || holdPasses >= HOLD_MAX) {
+        quietPasses = joined ? 0 : quietPasses + 1;
+        // TWO quiet passes, not one: the tail arrives in dribbles, and a single
+        // quiet pass let each dribble out as its own light count (168 → 65 → 24
+        // → 18 → 13 → 2, five compiles). Waiting one more pass costs ~0.25 s of
+        // frames that are already back under 70 ms and collapses the tail.
+        if (quietPasses >= 2 || holdPasses >= HOLD_MAX) {
           pending.forEach((l) => {
             const lt = l as THREE.Object3D & { intensity?: number };
             const i = lt.intensity ?? 0;
@@ -282,9 +299,11 @@ export function createDarkLightCull(scene: THREE.Object3D, cadence = 0.25): Dark
           });
           pending.clear();
           holdPasses = 0;
+          quietPasses = 0;
         }
       } else {
         holdPasses = 0;
+        quietPasses = 0;
       }
       // A park mounts and UNMOUNTS lights (an unmounted ride, a rebuilt <Paths>
       // furniture pass), and a Set of Object3Ds would pin every one of them

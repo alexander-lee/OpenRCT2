@@ -40,6 +40,69 @@ type MergedBoxSpec = {
   repeat?: [number, number];
 };
 
+// ---------------------------------------------------------------------------
+// THE MIRROR-BALL ENVIRONMENT — drawn once, cached, and it is what makes the
+// facets a MIRROR instead of a paint job.
+//
+// The first build gave every facet an `emissive` in magenta / cyan / amber, so
+// the ball GLOWED in flat colour: a beach ball, not a mirror ball — "a fake
+// reflection effect", exactly as reported. A mirror is not a colour, it is
+// whatever is around it, so the facets now get metalness 1, roughness 0.05 and
+// an `envMap` to reflect. There is no scene-wide environment in this design
+// system and a live CubeCamera would cost a full extra render pass every frame
+// (see Stage/darkLights.ts on what a park's frame can afford), so the
+// environment is a 256x128 equirectangular CANVAS: sky above, dark ground below,
+// a horizon band, one sun blob and a scatter of neon spots. Facet normals sweep
+// across it as the ball turns, which is a real reflection of a fake world rather
+// than a fake reflection of a real one.
+// ---------------------------------------------------------------------------
+let _envTex: THREE.Texture | null = null;
+function ballEnv(t: typeof THREE): THREE.Texture | null {
+  if (_envTex) return _envTex;
+  if (typeof document === 'undefined') return null;   // SSR / node bundling
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 128;
+  const x = c.getContext('2d');
+  if (!x) return null;
+  const sky = x.createLinearGradient(0, 0, 0, 64);
+  sky.addColorStop(0, '#1b2a4a');
+  sky.addColorStop(0.72, '#4d6f9c');
+  sky.addColorStop(1, '#a9c2d8');
+  x.fillStyle = sky;
+  x.fillRect(0, 0, 256, 64);
+  const gnd = x.createLinearGradient(0, 64, 0, 128);
+  gnd.addColorStop(0, '#4a4a52');
+  gnd.addColorStop(1, '#141419');
+  x.fillStyle = gnd;
+  x.fillRect(0, 64, 256, 64);
+  // the horizon, and the neon glow of the floor just below it
+  x.fillStyle = '#cfd8e2';
+  x.fillRect(0, 62, 256, 3);
+  const spots: [number, number, number, string][] = [
+    [60, 30, 15, '#fffdf2'],      // the sun
+    [150, 70, 11, '#d6338c'],
+    [206, 74, 9, '#18c4d8'],
+    [22, 76, 8, '#f2b134'],
+    [104, 80, 7, '#18c4d8'],
+    [240, 46, 6, '#ffffff'],
+  ];
+  for (const [cx, cy, r, col] of spots) {
+    const gr = x.createRadialGradient(cx, cy, 0, cx, cy, r);
+    gr.addColorStop(0, col);
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = gr;
+    x.beginPath();
+    x.arc(cx, cy, r, 0, Math.PI * 2);
+    x.fill();
+  }
+  const tex = new t.CanvasTexture(c);
+  (tex as unknown as { mapping: number }).mapping = (t as unknown as { EquirectangularReflectionMapping: number }).EquirectangularReflectionMapping;
+  (tex as unknown as { colorSpace: string }).colorSpace = (t as unknown as { SRGBColorSpace: string }).SRGBColorSpace;
+  _envTex = tex;
+  return tex;
+}
+
 export function buildDiscoBallFloor(t: typeof THREE): LandmarkBuilt {
   const g = new t.Group();
   const BLACK = 0x14141a;
@@ -106,7 +169,9 @@ export function buildDiscoBallFloor(t: typeof THREE): LandmarkBuilt {
   const ballG = new t.Group();
   const R = 2.05;
   ballG.position.set(0, LEG + 0.15 + R * 0.86, 0);
-  ballG.add(ball(t, R * 0.985, 0x9aa0ab, [0, 0, 0], { metal: 1, rough: 0.18, flat: true }));
+  const env = ballEnv(t);
+  // the core under the facets: dark, so the GAPS between mirrors read as gaps
+  ballG.add(ball(t, R * 0.985, 0x2b2d34, [0, 0, 0], { metal: 0.6, rough: 0.5, flat: true }));
   // The geodesic skin: 150 facets on a FIBONACCI sphere, so coverage is even
   // instead of clumping at the poles like a random scatter.
   //
@@ -116,24 +181,48 @@ export function buildDiscoBallFloor(t: typeof THREE): LandmarkBuilt {
   // exactly this (Stage: "use for static dressing built from many small box()
   // calls"). The facets never move relative to the ball, so merging costs
   // nothing — the whole ball still turns as one group.
+  // 340 facets now, not 150 — a mirror ball's read is the DENSITY of small
+  // mirrors, and at 150 on a 4.1 u ball the gaps were wider than the tiles.
+  // Three tints, none of them emissive: silver, and a few faintly warm/cool ones
+  // so the surface is not one dead grey. The colour work at night is done by the
+  // floor and the collar lamps, which are the things that actually emit.
   const GOLD = Math.PI * (3 - Math.sqrt(5));
   const buckets = new Map<number, MergedBoxSpec[]>();
-  for (let i = 0; i < 150; i += 1) {
-    const y = 1 - (i / 149) * 2;
+  const FACETS = 340;
+  for (let i = 0; i < FACETS; i += 1) {
+    const y = 1 - ((i + 0.5) / FACETS) * 2;
     const rr = Math.sqrt(Math.max(0, 1 - y * y));
     const th = GOLD * i;
     const pos = new t.Vector3(Math.cos(th) * rr * R, y * R, Math.sin(th) * rr * R);
-    const hue = i % 7;
-    const c = hue === 0 ? MAG : hue === 1 ? CYAN : hue === 2 ? AMBER : 0xe8ecf2;
+    const hue = i % 11;
+    const c = hue === 0 ? 0xd9dde6 : hue === 1 ? 0xeef3ff : 0xe8ecf2;
     // lie the facet flat on the sphere: orient +z outward from the centre
     const m = new t.Matrix4().lookAt(pos, new t.Vector3(0, 0, 0), new t.Vector3(0, 1, 0));
     m.setPosition(pos);
     if (!buckets.has(c)) buckets.set(c, []);
-    buckets.get(c)!.push({ dims: [0.3, 0.3, 0.05], matrix: m });
+    buckets.get(c)!.push({ dims: [0.33, 0.33, 0.035], matrix: m });
   }
-  buckets.forEach((specs, c) =>
-    ballG.add(mergedBoxes(t, specs, c, { metal: 0.95, rough: 0.12, ...(c === 0xe8ecf2 ? {} : { emissive: c }) })),
-  );
+  const facetMats: THREE.MeshStandardMaterial[] = [];
+  buckets.forEach((specs, c) => {
+    const mesh = mergedBoxes(t, specs, c, { metal: 1, rough: 0.05 }) as THREE.Mesh;
+    const mm = mesh.material as THREE.MeshStandardMaterial;
+    if (env) {
+      mm.envMap = env;
+      mm.envMapIntensity = 1.3;
+      mm.needsUpdate = true;
+    }
+    facetMats.push(mm);
+    ballG.add(mesh);
+  });
+  // the equator and two tropic bands the mirrors are strung on — a real ball is
+  // built on hoops, and they catch the light differently from the mirrors
+  const hoopMat = new t.MeshStandardMaterial({ color: 0x8f96a3, metalness: 0.9, roughness: 0.3 });
+  [[0, R * 1.002], [R * 0.62, R * 0.79], [-R * 0.62, R * 0.79]].forEach(([hy, hr]) => {
+    const hoop = new t.Mesh(new t.TorusGeometry(hr, 0.018, 6, 40), hoopMat);
+    hoop.rotation.x = Math.PI / 2;
+    hoop.position.y = hy;
+    ballG.add(hoop);
+  });
   g.add(ballG);
   // the spindle it hangs from
   // the yoke the ball hangs from: four short arms meeting over the centre,
@@ -170,6 +259,10 @@ export function buildDiscoBallFloor(t: typeof THREE): LandmarkBuilt {
       const mat = l.material as THREE.MeshStandardMaterial;
       mat.emissiveIntensity = (0.3 + 1.7 * k) * (0.5 + 0.5 * Math.sin(time * 3.0 + i * 0.8));
     });
+    // the mirrors reflect HARDER after dark, when the lamps are what is lighting
+    // them — the ball is never emissive, so this is the only night response it
+    // has, and it keeps it from going a flat grey when the sun is off
+    facetMats.forEach((m) => { m.envMapIntensity = 1.3 + 0.7 * k; });
   };
   return { group: g, radius: 3.3, update };
 }

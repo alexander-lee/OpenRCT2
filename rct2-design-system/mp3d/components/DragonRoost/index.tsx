@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import * as THREE from 'three';
-import { box, cyl, ball, nightKOf } from '../Stage';
+import { box, cyl, ball, nightKOf, mergedBoxes } from '../Stage';
 import { composable } from '../Park';
 
 /** what each landmark builder returns */
@@ -80,20 +80,94 @@ export function buildDragonRoost(t: typeof THREE): LandmarkBuilt {
     g.add(box(t, [0.9, 0.3, 0.18], MOSS, [-0.7 - i * 0.15, yy, -0.85], { rotY: 0.5, tex: 'grass', rough: 1 })),
   );
 
-  // ---- the nest: a woven ring of sticks on the summit ---------------------
+  // ---- the nest: a WOVEN bowl, not a ring of sticks lying flat -------------
+  // The first build placed all 22 sticks with `rotZ: Math.PI/2` — dead
+  // horizontal, at three fixed heights — so the nest read as a stack of pencils
+  // on a table. A real raptor nest is a BASKET: courses of sticks laid round the
+  // rim but each canted, crossing its neighbours, with the inner ones tipped
+  // down into the bowl and a few long ones jutting out and up. That needs a
+  // stick to point in an arbitrary direction, which `rotX/rotY/rotZ` on a
+  // cylinder cannot express — so each stick is placed FROM ITS TWO ENDS: build
+  // the rotation that takes local +x onto (b − a) and put it at the midpoint.
+  //
+  // They are boxes merged into two meshes (one per colour) rather than 60
+  // cylinders: 2 draw calls instead of 60, and at 0.08 u thick the square
+  // section is indistinguishable from a round one.
   const top = y + 0.15;
   const nest = new t.Group();
   nest.position.set(0, top, 0);
-  for (let i = 0; i < 22; i += 1) {
-    const a = (i / 22) * Math.PI * 2;
-    const r = 1.28 + h01(i * 11) * 0.16;
-    const len = 0.95 + h01(i * 5) * 0.5;
-    nest.add(cyl(t, 0.045, 0.06, len, i % 3 ? STICK : ROCKD, [Math.cos(a) * r, 0.16 + (i % 3) * 0.11, Math.sin(a) * r], {
-      rotZ: Math.PI / 2, rotY: a + 1.35 + (h01(i) - 0.5) * 0.4, tex: 'wood', rough: 1, seg: 5,
-    }));
+  const XA = new t.Vector3(1, 0, 0);
+  const dir = new t.Vector3();
+  const mid = new t.Vector3();
+  const q = new t.Quaternion();
+  const sticks: MergedBoxSpec[][] = [[], []];
+  /** one stick from a to b, thickness th, into colour bucket `bkt` */
+  const stick = (
+    a: [number, number, number], b: [number, number, number], th: number, bkt: number,
+  ) => {
+    dir.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    const len = dir.length();
+    if (len < 1e-4) return;
+    mid.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+    q.setFromUnitVectors(XA, dir.normalize());
+    const m = new t.Matrix4().makeRotationFromQuaternion(q);
+    m.setPosition(mid);
+    sticks[bkt].push({ dims: [len, th, th * 0.92], matrix: m });
+  };
+  // THREE COURSES round the rim, each rotated off the one below so the sticks
+  // cross rather than stack — that crossing is what reads as "woven".
+  const RIM = 1.3;
+  for (let course = 0; course < 3; course += 1) {
+    const n = 16 - course * 2;
+    const yy = 0.13 + course * 0.17;
+    const lean = 0.20 + course * 0.14;      // each course leans further out
+    for (let i = 0; i < n; i += 1) {
+      const a0 = (i / n) * Math.PI * 2 + course * 0.42 + h01(i + course * 31) * 0.16;
+      const span = (0.62 + h01(i * 7 + course) * 0.5) / (RIM * 0.9); // arc it covers
+      const r0 = RIM - 0.06 + h01(i * 13 + course * 5) * 0.14;
+      const r1 = r0 + (h01(i * 3 + course) - 0.35) * 0.22;
+      // the two ends sit at different angles AND different heights: that tilt is
+      // the whole difference from the old flat ring
+      const drop = (h01(i * 17 + course * 3) - 0.5) * 0.20;
+      stick(
+        [Math.cos(a0) * r0, yy - drop, Math.sin(a0) * r0],
+        [Math.cos(a0 + span) * r1 * (1 + lean * 0.10), yy + drop + lean * 0.16, Math.sin(a0 + span) * r1 * (1 + lean * 0.10)],
+        0.075 + h01(i * 11 + course) * 0.03,
+        i % 4 === 0 ? 1 : 0,
+      );
+    }
   }
-  // the bowl floor
-  nest.add(cyl(t, 1.05, 0.85, 0.16, 0x4a3f2e, [0, 0.1, 0], { tex: 'wood', rough: 1, seg: 14 }));
+  // RADIAL sticks tipped down into the bowl — the lining, and what stops the
+  // eye reading the rim as a fence
+  for (let i = 0; i < 14; i += 1) {
+    const a0 = (i / 14) * Math.PI * 2 + 0.2;
+    const r0 = 1.34 + h01(i * 5) * 0.12;
+    stick(
+      [Math.cos(a0) * r0, 0.30 + h01(i * 9) * 0.16, Math.sin(a0) * r0],
+      [Math.cos(a0 + 0.5) * 0.38, 0.06, Math.sin(a0 + 0.5) * 0.38],
+      0.06 + h01(i * 3) * 0.02,
+      i % 3 === 0 ? 1 : 0,
+    );
+  }
+  // and a handful of long ones JUTTING out and up over the drop — a nest is
+  // never tidy at its edge
+  for (let i = 0; i < 7; i += 1) {
+    const a0 = (i / 7) * Math.PI * 2 + 0.9;
+    const r0 = 1.1 + h01(i * 23) * 0.2;
+    const out = 0.75 + h01(i * 29) * 0.55;
+    const up = 0.25 + h01(i * 31) * 0.5;
+    stick(
+      [Math.cos(a0) * r0, 0.16 + h01(i * 13) * 0.14, Math.sin(a0) * r0],
+      [Math.cos(a0 + 0.22) * (r0 + out), 0.16 + up, Math.sin(a0 + 0.22) * (r0 + out)],
+      0.055 + h01(i * 7) * 0.03,
+      i % 2 ? 1 : 0,
+    );
+  }
+  nest.add(mergedBoxes(t, sticks[0], STICK, { tex: 'wood', rough: 1 }));
+  nest.add(mergedBoxes(t, sticks[1], ROCKD, { tex: 'wood', rough: 1 }));
+  // the bowl floor, dished (two courses, the upper one wider) with a moss lining
+  nest.add(cyl(t, 1.1, 0.8, 0.14, 0x4a3f2e, [0, 0.08, 0], { tex: 'wood', rough: 1, seg: 14 }));
+  nest.add(cyl(t, 0.98, 1.06, 0.05, MOSS, [0, 0.17, 0], { tex: 'grass', rough: 1, seg: 14 }));
   g.add(nest);
 
   // ---- the clutch: five eggs, one cracked ---------------------------------

@@ -29,8 +29,14 @@ const planFor = (themeId: string) => {
   });
 };
 
+// NO `ground`. <ScenePreview ground> lays Stage's grass disc at y −0.02, and
+// <WorldGround> deliberately sinks its tile TOPS to floorAt − TOP_CLEARANCE
+// (−0.04) so paths and ride pads never z-fight it. The lawn therefore sat 0.02
+// ABOVE the floor and hid it completely: all six swatches rendered as plain
+// municipal green — the exact thing this component exists to replace. The world
+// floor IS the ground here, so nothing else should draw one.
 const shot = (themeId: string, night = false) => () => (
-  <ScenePreview distance={34} targetY={0.3} autoRotate={false} ground night={night} height={430}>
+  <ScenePreview distance={34} targetY={0.3} autoRotate={false} ground={false} night={night} height={430}>
     <WorldGround plan={planFor(themeId) as any} />
   </ScenePreview>
 );

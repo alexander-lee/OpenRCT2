@@ -1143,12 +1143,73 @@ const BigPianoBase = composable<BigPianoProps, BigPianoBuilt>(
         // is the guest who stops on them. `faceAt` is the CASE, so a latched
         // guest turns and looks at the piano (and at the marquee) rather than
         // standing side-on to it.
+        //
+        // ---- IT HAS TO GIVE THEM TIME TO NOTICE (2026-07-28) -----------------
+        // Reported as "guests don't seem incentivized to try the big piano".
+        // Nothing in the sim ROUTES a guest here — `GameManager/navigation.ts`
+        // forms goals for rides, stalls, restrooms and benches and has no goal
+        // kind for an attention zone — so the zone is a catcher, and two numbers
+        // decide whether it ever catches:
+        //   * the latch is a 0.35 coin ONCE PER SIM SECOND while inside
+        //     (`GameManager/guestPass.ts`), and a guest walks ~1.2 u/s. A keybed
+        //     crossed the SHORT way (2 × halfD ≈ 1.2 u) is 1.0 s inside — ONE
+        //     flip, 35%. Crossed lengthwise (2 × halfW ≈ 3.3 u) it is 2.7 s —
+        //     three flips, 72%.
+        //   * guests walk EXACTLY along the node-to-node line, with no lateral
+        //     lane offset (`GameManager/locomotion.ts`), so a keybed the paths
+        //     merely pass BESIDE is not a low chance, it is zero.
+        // So: find the nearest walking edge, stretch the zone along it to at
+        // least 3.6 u of travel, and say so loudly when there is no edge to
+        // stretch along.
+        const net = park.paths?.net;
+        let zc: [number, number] = [position[0], position[2]];
+        let zr = rotation;
+        let zw = built.half[0] * scale;
+        let zd = built.half[1] * scale;
+        let reach = Infinity;
+        if (net && net.edges.length) {
+          let best: { d: number; px: number; pz: number; yaw: number } | null = null;
+          for (const [ai, bi] of net.edges) {
+            const A = net.nodes[ai];
+            const B = net.nodes[bi];
+            if (!A || !B) continue;
+            const ex = B[0] - A[0];
+            const ez = B[1] - A[1];
+            const l2 = ex * ex + ez * ez;
+            if (l2 < 1e-6) continue;
+            const tt = Math.max(0, Math.min(1, ((position[0] - A[0]) * ex + (position[2] - A[1]) * ez) / l2));
+            const px = A[0] + ex * tt;
+            const pz = A[1] + ez * tt;
+            const d = Math.hypot(px - position[0], pz - position[2]);
+            if (!best || d < best.d) best = { d, px, pz, yaw: Math.atan2(ex, ez) };
+          }
+          // 2.5 u: a keybed further than that from a walking line is dressing,
+          // and dragging the zone out to the street would stop guests short of
+          // the keys they are supposed to be standing on.
+          if (best && best.d <= 2.5) {
+            reach = best.d;
+            zr = best.yaw;                                                   // along the street
+            zw = Math.max(1.8, built.half[0] * scale);                        // ≥3.6 u of travel
+            zd = Math.max(built.half[1] * scale, best.d * 0.5 + 0.5);         // straddle the line
+            zc = [(position[0] + best.px) / 2, (position[2] + best.pz) / 2];
+          } else if (best) {
+            reach = best.d;
+          }
+        }
+        if (reach > 2.5) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[BigPiano] the keybed at [${position[0].toFixed(1)}, ${position[2].toFixed(1)}] is ${
+              reach === Infinity ? 'nowhere near' : `${reach.toFixed(1)} u from`
+            } a walking edge, so NOBODY WILL EVER PLAY IT — the keys only light for a guest whose own position is on them, and guests walk exactly along the path lines. Set it INTO a street or plaza with a path edge running ALONG the keys (components/BigPiano/Context.md).`,
+          );
+        }
         if (mgr.registerWatchZone) {
           mgr.registerWatchZone({
-            center: [position[0], position[2]],
-            halfW: built.half[0] * scale,
-            halfD: built.half[1] * scale,
-            rotation,
+            center: zc,
+            halfW: zw,
+            halfD: zd,
+            rotation: zr,
             faceAt: [cx, cz],
             // a TUNE, not a residency — and the manager's 30 s per-guest
             // cooldown is what keeps the street flowing over the keys

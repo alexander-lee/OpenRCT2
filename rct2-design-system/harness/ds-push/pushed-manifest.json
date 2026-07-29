@@ -2,7 +2,7 @@
   "version": 1,
   "designSystemId": "ds-fbd20bf8-b16d-4cf1-8440-d20bc095fc4a",
   "note": "EMPTY BASELINE. No entry here means \"never pushed as far as this manifest knows\", so the first status run reports the whole tree. Bootstrap it ONCE, when no push is in flight, with:  node manifest.mjs reconcile --server-list=<get_design_system json> --assume-clean   (see ../README.md, FAST PUSH PROTOCOL / Bootstrapping). Thereafter only ever grow it via `commit`, after the final file-list check.",
-  "updatedAt": "2026-07-29T00:40:53.366Z",
+  "updatedAt": "2026-07-29T02:13:52.731Z",
   "files": {
     "components/AetherBalloons/AetherBalloons.previews.tsx": {
       "sha256": "f608fecc90623a3551d5eea95ea18e7012c780acbee614ad4e7b1eee201d7d8e",
@@ -79,14 +79,14 @@
       "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/BeachedGalleon/Context.md": {
-      "sha256": "21edf8df9e828fe77c0a48dbab3cfabfe92ec6c043a6fd29b00a6f553bd1d841",
-      "bytes": 2267,
-      "pushedAt": "2026-07-28T21:47:37.258Z"
+      "sha256": "77cdc0ebf3f2754f54b41c19a533b2eb721809a6fddc2347d6280573728475b8",
+      "bytes": 4040,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/BeachedGalleon/index.tsx": {
-      "sha256": "5d3c46433b9438187d3ba73dcd403b10076580a1ad3b1e752c6fa690faf979ff",
-      "bytes": 7500,
-      "pushedAt": "2026-07-29T00:40:53.365Z"
+      "sha256": "b829c17402ebd22d024e4dbdd2972d47fe10e839279933ddcea7ebe798470cd1",
+      "bytes": 15211,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/BigPiano/BigPiano.previews.tsx": {
       "sha256": "05862b2af1e8e02884c296d13bc9e41c906604639d090eb49dbdf8c906949424",
@@ -101,10 +101,9 @@
       "source": "assumed"
     },
     "components/BigPiano/index.tsx": {
-      "sha256": "e00598f9ff82ed6dbfcf7f7dde4037a0bd4097c268a96a610540f1e4c5e87875",
-      "bytes": 62905,
-      "pushedAt": "2026-07-26T02:24:37.771Z",
-      "source": "assumed"
+      "sha256": "ba8f6e187238240b093bc67f6067f241f99aaf1555a4044d00ad932744c4c59d",
+      "bytes": 66413,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/Bobsleigh/Bobsleigh.previews.tsx": {
       "sha256": "ff19506b0716af1bf7822ef02df1752f1154359060630e96697f4bc5e6ae9ac0",
@@ -378,9 +377,9 @@
       "source": "assumed"
     },
     "components/DiscoBallFloor/Context.md": {
-      "sha256": "ab932b476f5f91ffc919811a3f14e3070776e6d8a87baf0eb7e5305d32d12af0",
-      "bytes": 2274,
-      "pushedAt": "2026-07-28T21:47:37.258Z"
+      "sha256": "04472a8890ee8d2f89f48a347031c6e573a7eec76f1d4a632c3fb097db4b4b5a",
+      "bytes": 3515,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/DiscoBallFloor/DiscoBallFloor.previews.tsx": {
       "sha256": "131293240f92bd6f2ca808cb7671bd589873dd4d400a3aebfd09e9318d377cea",
@@ -388,9 +387,9 @@
       "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/DiscoBallFloor/index.tsx": {
-      "sha256": "21dd3125b3a4e82d81d8d7803bf196875b3929ab0bab075c9304f859893367dc",
-      "bytes": 8179,
-      "pushedAt": "2026-07-28T22:00:15.905Z"
+      "sha256": "9d4a52a1922b1e9357cd80264f9d1e4d9d2ed81629a2a416422ecf0d57359b8d",
+      "bytes": 12571,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/Discotron/Context.md": {
       "sha256": "cc978eb350982084355d11c03533dcd739fc2bb27917dac317e276fba6eaa888",
@@ -411,9 +410,9 @@
       "source": "assumed"
     },
     "components/DragonRoost/Context.md": {
-      "sha256": "358976e823f2a873483f6a5916a5c9da211889dd412bb29dba5d25301ced086f",
-      "bytes": 2251,
-      "pushedAt": "2026-07-28T21:47:37.258Z"
+      "sha256": "4f7a420d80a54b523d69dfd8d820846d8de7b895e64b0111a9a83d4e98af935b",
+      "bytes": 3485,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/DragonRoost/DragonRoost.previews.tsx": {
       "sha256": "21ec6c75fbeea568a42e4c6d7dab4b72ff477ca1e95829f684367b8f9a787056",
@@ -421,9 +420,9 @@
       "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/DragonRoost/index.tsx": {
-      "sha256": "e6fc5cfeb1426fba1ede3534883cff193a9794bfda9ee0f4268f400671c96ddd",
-      "bytes": 6007,
-      "pushedAt": "2026-07-28T21:44:03.312Z"
+      "sha256": "d5fb112b535d93e3bc997f3777f9be6bc3e4fe107084b18b78f5b2df3a57259b",
+      "bytes": 9709,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/DropTower/Context.md": {
       "sha256": "dfedff57a56d39e6e0f9a935baca52b283f7d55f645c39e8d6b288999a992761",
@@ -777,9 +776,9 @@
       "source": "assumed"
     },
     "components/GreatZeppelin/Context.md": {
-      "sha256": "ab4671b2290998eb8e650a1cb1f24ae85ae01ac06572cf87d8712f1bf49fec2a",
-      "bytes": 2237,
-      "pushedAt": "2026-07-28T21:47:37.258Z"
+      "sha256": "5004e2006e532c2af540c6a48d8ad0814dfe56a283adb205d50383b8abb3c59f",
+      "bytes": 3441,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/GreatZeppelin/GreatZeppelin.previews.tsx": {
       "sha256": "632c03275db413b916d9e63d17cef2a7ffa2e63de7fcd8f1847d07f72ab333de",
@@ -787,9 +786,9 @@
       "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/GreatZeppelin/index.tsx": {
-      "sha256": "5a70339a543c27dd322be6115a47d77b1c246fad606e1b905b5f699f0e4bf322",
-      "bytes": 8148,
-      "pushedAt": "2026-07-29T00:40:53.365Z"
+      "sha256": "798eaf020bebf445428effaf8c6cd04f19ed701f8456008177079c436b6ec837",
+      "bytes": 13886,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/Guest/Context.md": {
       "sha256": "1b2545f6bf40a21d0b157c567b4d9bd0634a20f129bb3731d3e13add35c2bd5f",
@@ -1015,10 +1014,9 @@
       "source": "assumed"
     },
     "components/MagicMirror/index.tsx": {
-      "sha256": "fcfb0384457ab9073479dd439e089d56e1b3aa9c283c1bb4c49b82feb5941e44",
-      "bytes": 55582,
-      "pushedAt": "2026-07-26T02:24:37.771Z",
-      "source": "assumed"
+      "sha256": "b38ec3e2955e5b307c0eb35a60d1b4eb7c50085beb45b3599071cc2e11407b2b",
+      "bytes": 59602,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/MagmaRun/Context.md": {
       "sha256": "b1b33f5743f571f5e1b68eaea49d688b74d3286a391221dce7b6924d7e8e0d0b",
@@ -1366,9 +1364,9 @@
       "pushedAt": "2026-07-27T18:12:30.724Z"
     },
     "components/ParkBuilder/placement.ts": {
-      "sha256": "681038f292076498298ec3fce3c45ed9273465547a2fc70ca5124600ded60c35",
-      "bytes": 21511,
-      "pushedAt": "2026-07-27T18:12:30.724Z"
+      "sha256": "8399def6456173e9a176af763597cc6829eb25d27c1fd9147e50e76d8fb108c5",
+      "bytes": 22783,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/ParkBuilder/planLints.ts": {
       "sha256": "ab9bd98981234ab7c46920eb428d8e818694bbe2c2f518c9e9004cff028979eb",
@@ -1392,9 +1390,9 @@
       "pushedAt": "2026-07-27T18:12:30.724Z"
     },
     "components/ParkBuilder/validate.ts": {
-      "sha256": "3c8a308dd8dc7de6c1987a3a8c04da6153a1aa6293a18f64da451e37310a9565",
-      "bytes": 107538,
-      "pushedAt": "2026-07-29T00:05:14.699Z"
+      "sha256": "e38f30d30cc42ef78609a2d010d29fa28003d00c24d263b1536ed5d078cdb620",
+      "bytes": 108536,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/ParkBuilder/worlds.ts": {
       "sha256": "af38578bb17b8486b5b9c8f07c28750005709366ef7ade97ef50d680faa750b0",
@@ -1932,9 +1930,9 @@
       "pushedAt": "2026-07-27T17:58:45.236Z"
     },
     "components/Stage/Context.md": {
-      "sha256": "1a336d3395a91b884319adb323b10fba8e712312c46545cd9b1609b217d45073",
-      "bytes": 7465,
-      "pushedAt": "2026-07-28T00:48:20.374Z"
+      "sha256": "5f0835e6a920be22a844bc879803de6cad0d511884aaa287c263bd9d868cc78b",
+      "bytes": 9486,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/Stage/Stage.previews.tsx": {
       "sha256": "5d6aad50300014de01e6575916a476094fbd9c820b64c5b0731c5dc7ec33ce99",
@@ -1943,9 +1941,9 @@
       "source": "assumed"
     },
     "components/Stage/darkLights.ts": {
-      "sha256": "bd6b0e3d75d095d8725fb2fbb1b2d96f8efcffb4dc85c44b708685037e209a64",
-      "bytes": 16108,
-      "pushedAt": "2026-07-29T00:40:53.365Z"
+      "sha256": "8a79e8435a3de037c849f1248def301c9432d4801ab4300f221f6a5d262e8113",
+      "bytes": 17338,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/Stage/index.tsx": {
       "sha256": "71a125ca39d76ad23bf478b716e2a75ca21e98ae0052b956f4c48637ad4a4aa7",
@@ -2300,19 +2298,19 @@
       "pushedAt": "2026-07-28T23:14:42.071Z"
     },
     "components/WorldGround/WorldGround.previews.tsx": {
-      "sha256": "15e30f16c9ddc6613a2e198a2f711f8caf5479b29cf9a5430d0afe167089534d",
-      "bytes": 3733,
-      "pushedAt": "2026-07-28T23:14:42.071Z"
+      "sha256": "796ec9fffa27bdf3d7ee109b0bc05b402a4102aa6ce968a343acc4e4ac421e92",
+      "bytes": 4818,
+      "pushedAt": "2026-07-29T02:05:09.609Z"
     },
     "components/WorldGround/index.tsx": {
-      "sha256": "ca759814b94ed4457db992d1e8da99442e683cb465eb8abe52f158eb827f536e",
-      "bytes": 13213,
-      "pushedAt": "2026-07-29T00:40:53.365Z"
+      "sha256": "647ae3db4acc3b65e15f7bcae717ed68c4a020bdd1226ec17a65a6918854cbac",
+      "bytes": 14727,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/WorldLandmark/Context.md": {
-      "sha256": "4144c2b43d2aa633fc5b190d5a1504f52a14a59370b35b23b743a797df305c36",
-      "bytes": 4133,
-      "pushedAt": "2026-07-28T21:37:15.381Z"
+      "sha256": "87003b66b7cd86081b44b565a699d8a8dcae37011ad5fba4a9597961f578421b",
+      "bytes": 6415,
+      "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/WorldLandmark/WorldLandmark.previews.tsx": {
       "sha256": "80c9bdd20b490195aba729b05e4d63d2f242012280f2b01c256ce5939b55410c",
@@ -2430,9 +2428,9 @@
       "pushedAt": "2026-07-28T19:24:10.755Z"
     },
     "rules/setup.md": {
-      "sha256": "c3346d406bb9b8bcc676116b6249dc334bdd48a4268319e9672f6f69872c9445",
-      "bytes": 128212,
-      "pushedAt": "2026-07-29T00:05:14.699Z"
+      "sha256": "6cd59d3ab04bcb75bd7dee8be63f7adb5f81f36ea25e84ea2a415d9cc9d5a63b",
+      "bytes": 129686,
+      "pushedAt": "2026-07-29T02:13:52.731Z"
     },
     "rules/ui.md": {
       "sha256": "de5bd2fb1872dc81b87d8671f8f82c4a79f5a69d183887e1015c1a0842092412",

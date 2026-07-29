@@ -562,6 +562,29 @@ clean` is the only green line.
   }));
   ```
 
+  **⛔ RIDES MAY NEST — THEY MAY NEVER TOUCH.** Two rides sharing ground plan is not a mistake:
+  a coaster whose track flies clean over a flat ride's pad, a bobsleigh threading the middle of a
+  ferris wheel, a station tucked under a lift hill — that is the best thing a park can do with
+  its space, and a park that never does it reads as objects parked on a lawn.
+
+  What is forbidden is CONTACT. Two rides must not intersect, clip, or graze each other in 3D.
+
+  The footprint sweep used to be purely 2D, so it failed a legal overflight as if it were a
+  crash. Since 2026-07-28 a footprint may declare a VERTICAL EXTENT, and when two rects overlap
+  in plan but clear each other by **2.2 u** (`OVERFLY_CLEAR` — guest headroom plus a train) the
+  overlap is allowed and reported as `nestedFootprint`, not failed:
+
+  ```ts
+  park.registerFootprint({ cx, cz, hx, hz, yaw, label: 'Cinder Spine deck', y0: 4.2, y1: 6.4 });
+  //                                                                        ^^^^^^^^^^^^^^^^
+  //  declare what you occupy VERTICALLY and you may share the ground plan under it
+  ```
+
+  **A rect that does NOT declare `y0`/`y1` is still treated as floor-to-sky and still fails on
+  any overlap** — an undeclared height cannot be assumed short. So nesting is opt-in, by saying
+  where you actually are. The same 2.2 u is the clearance the track-overfly rule already uses, so
+  "legal to cross" means one thing everywhere in this design system.
+
   At author time the cheap defence is to keep every ride pad **clear of the ring
   beam's corridor**, not merely clear of its four decks: the beam runs the full
   rectangle through `RING_CELLS`, so treat that loop as a keep-out band a couple

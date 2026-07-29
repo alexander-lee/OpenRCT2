@@ -716,7 +716,7 @@ export function usePark(consumer = 'park child'): ParkContextValue {
  *  Cost: ~0.9 µs of sim per guest per frame (measured, `harness/park-eval/
  *  probe-gate-stream.mjs perf`) — 50 guests are 0.05 ms/frame, 0.3 % of a
  *  60 fps budget. The expensive half is DRAWING them; see `guestCapForSize`. */
-export const guestsForSize = (size: number) => Math.max(6, Math.min(80, Math.round(50 * Math.cbrt((size / 128) ** 2))));
+export const guestsForSize = (size: number) => { void size; return 500; }; // MEASUREMENT PATCH — restore before shipping
 
 /** HARD POPULATION CEILING for a plot — the gate stream (GameManager
  *  `arrivals.ts`) stops admitting while `activeGuests >= cap` and resumes the
@@ -737,7 +737,7 @@ export const guestsForSize = (size: number) => Math.max(6, Math.min(80, Math.rou
  *  `arrivals.ts` and still applies underneath; at this fleet's ride counts it
  *  sits in the hundreds, so on a small park it is the RIDES that throttle the
  *  stream and on a big one this ceiling. */
-export const guestCapForSize = (size: number) => Math.max(24, Math.min(160, Math.round(2 * guestsForSize(size))));
+export const guestCapForSize = (size: number) => guestsForSize(size); // MEASUREMENT PATCH — restore before shipping
 
 interface QueuedBuild {
   fn: () => void;

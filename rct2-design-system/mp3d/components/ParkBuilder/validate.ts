@@ -16,7 +16,7 @@ import type { CoasterType } from '../SplineRideKit';
 import { segDist, waterGridStep } from './climate';
 import { SECOND_WATER_MIN_FRAC, measurePlotRelief, waterBodyGapMin, waterBodyTarget } from './composition';
 import type { ReliefFloorReport } from './composition';
-import { obbOverlap, pathClearance } from './placement';
+import { obbOverlap, pathClearance, vertClear, OVERFLY_CLEAR } from './placement';
 import type { ParkFootRect } from './placement';
 import { WORLD_PRESET_IDS } from './worlds';
 import type { WorldAudit } from './worlds';
@@ -1487,6 +1487,22 @@ export function validatePark(t: typeof THREE, park: ValidateParkInput): ParkVali
           }
         }
         if (obbOverlap(a, b)) {
+          // NESTING IS LEGAL WHEN NOTHING TOUCHES. This sweep is 2D, so it used
+          // to fail a coaster whose track flies clean over another ride's pad —
+          // which is not a collision, it is one of the best things a park can
+          // do with its space. If both rects declare a vertical extent and they
+          // clear each other by OVERFLY_CLEAR, the plan-space overlap is allowed
+          // and reported as INFORMATION instead. Rects that do not declare a
+          // height are still treated as floor-to-sky and still fail, because an
+          // undeclared height cannot be assumed short.
+          if (vertClear(a, b)) {
+            warn(
+              'nestedFootprint',
+              `${a.label} and ${b.label} share ground plan but clear each other vertically ` +
+                `(${Math.max(a.y0! - b.y1!, b.y0! - a.y1!).toFixed(2)} u >= ${OVERFLY_CLEAR}) — legal, not a collision`,
+            );
+            continue;
+          }
           fail('footprints', `${a.label} overlaps ${b.label}${ownPadDetail(a, b)}`);
           failedPairs.add([a.label, b.label].sort().join(' | '));
         }

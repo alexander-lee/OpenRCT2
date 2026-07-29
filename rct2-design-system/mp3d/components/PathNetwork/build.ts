@@ -773,7 +773,20 @@ export function buildPathNetwork(t: typeof THREE, net: PathNet, opts: PathNetwor
     // ground beside the path (groundAt), sunk 0.02 so they never hover
     let a: number;
     if (dirs.length === 0) a = hash01(ni * 17 + 3) * Math.PI * 2;
-    else {
+    else if (dirs.length === 1) {
+      // A DEAD END HAS NO ANGULAR GAP TO AIM AT, and the general solve below
+      // gets it exactly backwards. With one approach at θ the widest gap is the
+      // whole remaining circle, so its midpoint is θ + π — pointing STRAIGHT
+      // AHEAD, down the path's own centreline, and the furniture lands ~1.19 u
+      // past the terminal node IN THE WALKING LINE. Every path stub and every
+      // queue-lane tail spur therefore had a litter bin planted in the middle
+      // of it. Guests walk exactly on the node-to-node lines (locomotion.ts has
+      // no lateral lane offset), so this was furniture in the road, not beside
+      // it. Offset PERPENDICULAR instead — the verge beside the end — with the
+      // side picked by hash so a row of stubs does not all dress the same way.
+      const th = Math.atan2(dirs[0][1], dirs[0][0]);
+      a = th + (hash01(ni * 23 + 7) < 0.5 ? Math.PI / 2 : -Math.PI / 2);
+    } else {
       const angles = dirs.map(([ex, ez]) => Math.atan2(ez, ex)).sort((p, q) => p - q);
       let bestGap = -1;
       let bestMid = 0;
@@ -800,9 +813,16 @@ export function buildPathNetwork(t: typeof THREE, net: PathNet, opts: PathNetwor
         group.add(pl);
         lampLights.push(pl);
       }
-    } else if (degree[ni] === 1) {
-      putBin([fx, fy - 0.02, fz], a); // litter bin at dead ends
     }
+    // NO BIN AT DEAD ENDS. There used to be one at every degree-1 node, which
+    // is how the same bin mesh ended up dotted through the park at the end of
+    // every stub and every queue-lane spur — reported as "we seem to be placing
+    // this mesh everywhere in the middle of roads". The perpendicular offset
+    // above now keeps dead-end furniture out of the walking line, but a bin on
+    // every terminal node was never right either: RCT2 does not bin each stub,
+    // and bins are already placed properly along the VERGE, alternating with
+    // benches on the `furn.seatEvery` cadence below. That is the only place a
+    // bin comes from now.
   });
 
   // ---- RCT2 PATH ADDITIONS ALONG THE VERGE --------------------------------

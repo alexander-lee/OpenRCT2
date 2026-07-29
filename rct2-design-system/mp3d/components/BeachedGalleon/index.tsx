@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import * as THREE from 'three';
-import { ball, box, cyl } from '../Stage';
+import { ball, box, cyl, mat, mergedBoxes } from '../Stage';
 import { composable } from '../Park';
 
 /** what each landmark builder returns */
@@ -56,63 +56,237 @@ export function buildBeachedGalleon(t: typeof THREE): LandmarkBuilt {
   hull.rotation.z = heel;
   hull.position.y = 0.15;
 
-  // ---- THE HULL — a lofted shell, curved in BOTH axes ---------------------
-  // The first build stacked plain boxes, which read as a staircase. Each station
-  // is now an ELLIPSOID slice: beam follows a fair curve fore-and-aft, and the
-  // bilge is round because the slice is a scaled sphere, not a cube.
-  const LEN = 6.2;
-  const STATIONS = 15;
-  for (let i = 0; i < STATIONS; i += 1) {
-    const u = i / (STATIONS - 1);                 // 0 stern .. 1 bow
-    // fair curve: full amidships, tapering to a narrow stern and a fine bow
-    const beam = Math.pow(Math.sin(Math.PI * (0.10 + 0.86 * u)), 0.62);
-    const w = 0.28 + 1.02 * beam;
-    const dep = 0.5 + 0.72 * beam;
-    const x = (u - 0.46) * LEN;
-    // sheer: the deck line rises toward bow and stern
-    const rise = 0.16 * (Math.pow(u - 0.5, 2) * 4);
-    const sl = ball(t, 1, i % 3 === 0 ? DARK : HULL, [x, dep * 0.5 + rise, 0], { rough: 0.95, flat: true });
-    sl.scale.set(LEN / STATIONS * 0.62, dep * 0.62, w * 0.62);
-    hull.add(sl);
+  // ---- THE HULL — ONE LOFTED SHELL, not a row of slices -------------------
+  // Reported as "the boat looks like it's all the same disk", and that is
+  // exactly what it was: 15 scaled SPHERES threaded on the centreline. Adjacent
+  // slices differ by a few percent of beam, so the eye saw one disk repeated,
+  // and because each was its own convex blob the silhouette was scalloped
+  // instead of fair.
+  //
+  // A hull is a SURFACE, so this builds the surface: three fair curves (beam,
+  // depth and sheer against the length) define a station, `sect()` walks one
+  // station across the beam, and `loft()` triangulates the grid into a single
+  // continuous shell. 25 stations × 19 points = one mesh, one draw call, and the
+  // bilge/tuck/entry all come out of the curves rather than being faked.
+  //
+  // DoubleSide is deliberate: she is a BROKEN shell heeled over with a hole in
+  // her side, so the inside of the far planking is part of the picture.
+  const LEN = 6.4;
+  const STA = 24;
+  const HALF = 9;
+  /** half-beam at u (0 stern … 1 bow): full amidships, fine at the entry */
+  const beamAt = (u: number) => 0.09 + 1.14 * Math.pow(Math.sin(Math.PI * (0.05 + 0.92 * u)), 0.78);
+  /** keel depth below the sheer */
+  const depAt = (u: number) => 0.60 + 0.62 * Math.pow(Math.sin(Math.PI * (0.12 + 0.82 * u)), 0.5);
+  /** the deck line — it RISES toward bow and stern, which is what makes a ship
+   *  look like a ship rather than a barge */
+  const sheerAt = (u: number) => 1.00 + 1.30 * Math.pow(Math.abs(u - 0.42), 2.1);
+  /** a point on station u, w = −1 port … 0 keel … +1 starboard */
+  const sect = (u: number, w: number) => {
+    const b = beamAt(u);
+    const d = depAt(u);
+    const s = sheerAt(u);
+    const aw = Math.abs(w);
+    return new t.Vector3(
+      (u - 0.46) * LEN,
+      s - d * (1 - Math.pow(aw, 1.85)),      // flat-ish floor, hard turn of bilge
+      b * Math.sign(w) * Math.pow(aw, 0.68), // full sections, not a V
+    );
+  };
+  /** quads between consecutive rows of equal length → one BufferGeometry */
+  const loft = (rows: THREE.Vector3[][]) => {
+    const pos: number[] = [];
+    const idx: number[] = [];
+    const cols = rows[0].length;
+    rows.forEach((r) => r.forEach((p) => pos.push(p.x, p.y, p.z)));
+    for (let i = 0; i < rows.length - 1; i += 1)
+      for (let j = 0; j < cols - 1; j += 1) {
+        const a = i * cols + j;
+        idx.push(a, a + cols, a + 1, a + 1, a + cols, a + cols + 1);
+      }
+    const geo = new t.BufferGeometry();
+    geo.setAttribute('position', new t.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const rows: THREE.Vector3[][] = [];
+  for (let i = 0; i <= STA; i += 1) {
+    const u = i / STA;
+    const row: THREE.Vector3[] = [];
+    for (let j = -HALF; j <= HALF; j += 1) row.push(sect(u, j / HALF));
+    rows.push(row);
   }
-  // planking strakes along the side — thin boxes following the sheer
+  const plankMat = mat(t, HULL, { tex: 'wood', rough: 0.95, repeat: [6, 2] });
+  plankMat.side = t.DoubleSide;
+  const shell = new t.Mesh(loft(rows), plankMat);
+  shell.castShadow = true;
+  shell.receiveShadow = true;
+  hull.add(shell);
+  // TRANSOM: the stern is cut off square, so it needs a face. A fan from the
+  // keel point closes the section the loft leaves open.
+  {
+    const r0 = rows[0];
+    const pos: number[] = [];
+    const idx: number[] = [];
+    r0.forEach((p) => pos.push(p.x - 0.04, p.y, p.z));
+    pos.push(r0[HALF].x - 0.04, sheerAt(0), 0); // apex at the deck centreline
+    const apex = r0.length;
+    for (let j = 0; j < r0.length - 1; j += 1) idx.push(j, j + 1, apex);
+    const geo = new t.BufferGeometry();
+    geo.setAttribute('position', new t.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const tr = new t.Mesh(geo, mat(t, DARK, { tex: 'wood', rough: 0.95 }));
+    tr.material.side = t.DoubleSide;
+    hull.add(tr);
+  }
+
+  // ---- oriented small parts, merged: wales, keel, frames, planks -----------
+  // Every strake, frame and plank below is placed FROM ITS TWO ENDS (the
+  // rotation that takes local +x onto b−a), so a part can follow a curve
+  // instead of being axis-aligned — and they all land in three merged meshes.
+  const XA = new t.Vector3(1, 0, 0);
+  const dv = new t.Vector3();
+  const mv = new t.Vector3();
+  const qq = new t.Quaternion();
+  const trimP: MergedBoxSpec[] = [];
+  const darkP: MergedBoxSpec[] = [];
+  const deckP: MergedBoxSpec[] = [];
+  const strut = (
+    a: THREE.Vector3, b: THREE.Vector3, th: number, tw: number, into: MergedBoxSpec[],
+  ) => {
+    dv.copy(b).sub(a);
+    const len = dv.length();
+    if (len < 1e-4) return;
+    mv.copy(a).add(b).multiplyScalar(0.5);
+    qq.setFromUnitVectors(XA, dv.normalize());
+    const m = new t.Matrix4().makeRotationFromQuaternion(qq);
+    m.setPosition(mv);
+    into.push({ dims: [len, th, tw], matrix: m });
+  };
+  // THREE WALES per side, following the surface — the horizontal lines that give
+  // a wooden hull its scale. The gap at u≈0.55 on the high side is the tear.
+  [-1, 1].forEach((sd) => {
+    [0.98, 0.80, 0.60].forEach((wv, k) => {
+      for (let i = 0; i < STA; i += 1) {
+        const u0 = i / STA;
+        const u1 = (i + 1) / STA;
+        if (sd > 0 && k === 0 && u0 > 0.50 && u0 < 0.66) continue;   // the torn gap
+        strut(sect(u0, sd * wv), sect(u1, sd * wv), 0.075 - k * 0.012, 0.095, k === 0 ? trimP : darkP);
+      }
+    });
+  });
+  // the KEEL, and the stem it runs up into
+  for (let i = 0; i < STA; i += 1)
+    strut(sect(i / STA, 0), sect((i + 1) / STA, 0), 0.15, 0.16, darkP);
+  // FRAMES standing proud of the planking on the torn side
+  for (let i = 0; i < 5; i += 1) {
+    const u = 0.49 + i * 0.045;
+    strut(sect(u, 0.34), sect(u, 1.0), 0.075, 0.075, darkP);
+    // and the broken rib ends above the sheer, snapped off at different heights
+    const top = sect(u, 1.0);
+    strut(top, new t.Vector3(top.x, top.y + 0.22 + h01(i * 5) * 0.3, top.z - 0.03), 0.07, 0.07, darkP);
+  }
+  // THE DECK — a lofted surface over the after two thirds, with plank seams
+  {
+    const drows: THREE.Vector3[][] = [];
+    for (let i = 0; i <= 14; i += 1) {
+      const u = 0.05 + (i / 14) * 0.62;
+      const b = beamAt(u) * 0.97;
+      const s = sheerAt(u);
+      drows.push([new t.Vector3((u - 0.46) * LEN, s - 0.02, -b), new t.Vector3((u - 0.46) * LEN, s - 0.02, b)]);
+    }
+    const deck = new t.Mesh(loft(drows), mat(t, DECK, { tex: 'wood', rough: 0.95, repeat: [8, 3] }));
+    deck.material.side = t.DoubleSide;
+    deck.receiveShadow = true;
+    hull.add(deck);
+    // plank seams across the deck, and the two hatch coamings
+    for (let i = 0; i < 13; i += 1) {
+      const u = 0.07 + (i / 13) * 0.58;
+      const b = beamAt(u) * 0.95;
+      deckP.push({ dims: [0.05, 0.035, b * 2], pos: [(u - 0.46) * LEN, sheerAt(u) + 0.01, 0] });
+    }
+  }
+  // BULWARKS: a low wall up from the deck edge, port and starboard, with a cap
+  // rail. Also lofted, so it follows the sheer instead of being a straight box.
+  [-1, 1].forEach((sd) => {
+    const brows: THREE.Vector3[][] = [];
+    for (let i = 0; i <= 16; i += 1) {
+      const u = 0.04 + (i / 16) * 0.74;
+      const p = sect(u, sd);
+      brows.push([p.clone(), new t.Vector3(p.x, p.y + 0.30, p.z - sd * 0.02)]);
+    }
+    const bw = new t.Mesh(loft(brows), mat(t, HULL, { tex: 'wood', rough: 0.95, repeat: [8, 1] }));
+    bw.material.side = t.DoubleSide;
+    bw.castShadow = true;
+    hull.add(bw);
+    // cap rail along its top
+    for (let i = 0; i < 16; i += 1) {
+      const u0 = 0.04 + (i / 16) * 0.74;
+      const u1 = 0.04 + ((i + 1) / 16) * 0.74;
+      if (sd > 0 && u0 > 0.50 && u0 < 0.66) continue;    // gone at the tear
+      const a = sect(u0, sd);
+      const b2 = sect(u1, sd);
+      strut(
+        new t.Vector3(a.x, a.y + 0.31, a.z - sd * 0.02),
+        new t.Vector3(b2.x, b2.y + 0.31, b2.z - sd * 0.02),
+        0.075, 0.13, trimP,
+      );
+    }
+  });
+  // GUN PORTS — six dark squares down each side on the middle wale
   [-1, 1].forEach((sd) =>
-    [0, 1, 2, 3, 4, 6, 7, 8].forEach((i) => {           // 5 is the TORN gap
-      const u = i / 9;
-      const beam = Math.pow(Math.sin(Math.PI * (0.10 + 0.86 * u)), 0.62);
-      const rise = 0.16 * (Math.pow(u - 0.5, 2) * 4);
-      hull.add(box(t, [LEN / 9 * 0.9, 0.13, 0.08], TRIM, [
-        (u - 0.46) * LEN, 0.92 + 0.28 * beam + rise, sd * (0.2 + 0.62 * beam),
-      ], { tex: 'wood', rough: 0.9 }));
+    [0.20, 0.30, 0.40, 0.62, 0.72, 0.80].forEach((u) => {
+      const p = sect(u, sd * 0.86);
+      deckP.push({ dims: [0.19, 0.19, 0.06], pos: [p.x, p.y, p.z], rotY: sd > 0 ? 0 : Math.PI });
     }),
   );
-  // the DECK, what is left of it — planks over the after two thirds
-  for (let k = 0; k < 7; k += 1)
-    hull.add(box(t, [0.42, 0.06, 1.5 - k * 0.06], DECK, [-2.3 + k * 0.5, 1.12, 0], { tex: 'wood', rough: 0.95 }));
-  // deck rail stanchions + cap rail on the high (starboard) side
-  for (let k = 0; k < 8; k += 1) {
-    const x = -2.5 + k * 0.52;
-    hull.add(box(t, [0.06, 0.3, 0.06], TRIM, [x, 1.3, 0.62], { tex: 'wood' }));
-  }
-  hull.add(box(t, [4.2, 0.07, 0.1], TRIM, [-1.2, 1.46, 0.62], { tex: 'wood' }));
-
-  // ---- the TORN side: broken frames standing in the gap -------------------
-  [-0.75, -0.3, 0.15, 0.6].forEach((x, i) =>
-    hull.add(cyl(t, 0.05, 0.075, 1.35 + (i % 2) * 0.25, DARK, [x, 0.78, 0.58], {
-      rotX: 0.22 + i * 0.04, rotZ: 0.06, tex: 'wood', rough: 1, seg: 6,
-    })),
-  );
-  // splintered plank ends round the hole
-  [[-0.95, 1.15, 0.66], [0.85, 1.05, 0.64]].forEach(([px, py, pz], i) =>
-    hull.add(box(t, [0.3, 0.09, 0.07], TRIM, [px, py, pz], { rotZ: i ? 0.4 : -0.35, tex: 'wood' })),
-  );
+  hull.add(mergedBoxes(t, trimP, TRIM, { tex: 'wood', rough: 0.9 }));
+  hull.add(mergedBoxes(t, darkP, DARK, { tex: 'wood', rough: 1 }));
+  hull.add(mergedBoxes(t, deckP, 0x3a2c1c, { tex: 'wood', rough: 1 }));
 
   // ---- stem, bowsprit, sterncastle, rudder --------------------------------
-  hull.add(box(t, [0.2, 2.0, 0.24], DARK, [2.85, 1.05, 0], { rotZ: -0.12, tex: 'wood' }));
-  hull.add(cyl(t, 0.06, 0.09, 1.7, TRIM, [3.5, 1.95, 0], { rotZ: Math.PI / 2 - 0.32, tex: 'wood', seg: 8 }));
-  hull.add(box(t, [1.05, 0.7, 1.15], HULL, [-2.55, 1.5, 0], { tex: 'wood', rough: 0.95 }));   // sterncastle
-  hull.add(box(t, [0.5, 0.42, 0.06], 0x3a2c1c, [-2.9, 1.6, 0.58], { tex: 'wood' }));           // stern window
-  hull.add(box(t, [0.12, 1.1, 0.5], DARK, [-3.1, 0.5, 0], { rotZ: 0.18, tex: 'wood' }));       // rudder
+  // THE STEM: a raked cutwater that grows out of the planking, in three
+  // shortening segments. One 1.9 u slab (the first attempt) read as a plank
+  // nailed to the front and hid the whole bow.
+  const bow = sect(1, 0);
+  // (plain boxes, not merged parts — the merge above has already been built, and
+  // three boxes is not worth a fourth batch)
+  [0, 1, 2].forEach((i) =>
+    hull.add(box(t, [0.20 - i * 0.03, 0.46, 0.24 - i * 0.05], DARK, [
+      bow.x - 0.02 + i * 0.13, bow.y + 0.16 + i * 0.36, 0,
+    ], { rotZ: -0.34, tex: 'wood', rough: 1 })),
+  );
+  // the bowsprit, springing FROM the stem head rather than hovering over it
+  // The rotation matters and it is easy to get backwards: after `rotZ = θ` a
+  // cylinder's axis points (−sinθ, cosθ, 0), so the FORWARD-AND-UP direction a
+  // bowsprit needs is θ = −(π/2 − rake). The first attempt used +(π/2 − rake),
+  // which aims it aft-and-down — and left the spar hanging in the air off the
+  // bow with a visible gap.
+  const RAKE = 0.37;
+  const SPRIT = 1.8;
+  const dirx = Math.cos(RAKE);
+  const diry = Math.sin(RAKE);
+  hull.add(cyl(t, 0.055, 0.095, SPRIT, TRIM, [
+    bow.x + 0.30 + dirx * SPRIT * 0.5, bow.y + 0.98 + diry * SPRIT * 0.5, 0,
+  ], { rotZ: -(Math.PI / 2 - RAKE), tex: 'wood', seg: 8 }));
+  // a carved trailboard each side of the stem instead of a wheel-shaped scroll
+  [-1, 1].forEach((sd) =>
+    hull.add(box(t, [0.52, 0.10, 0.05], TRIM, [bow.x - 0.06, bow.y + 0.62, sd * 0.13], {
+      rotZ: 0.42, rotY: sd * 0.22, tex: 'wood',
+    })),
+  );
+  // STERNCASTLE — two tiers with a window band and a taffrail, not one block
+  hull.add(box(t, [1.15, 0.60, 1.05], HULL, [-2.45, sheerAt(0) + 0.28, 0], { tex: 'wood', rough: 0.95, repeat: [3, 1] }));
+  hull.add(box(t, [0.85, 0.44, 0.85], HULL, [-2.55, sheerAt(0) + 0.78, 0], { tex: 'wood', rough: 0.95 }));
+  [-0.3, 0, 0.3].forEach((wz) =>
+    hull.add(box(t, [0.05, 0.26, 0.20], 0x2a2016, [-3.02, sheerAt(0) + 0.32, wz], { rough: 0.6, emissive: 0x120c06 })),
+  );
+  hull.add(box(t, [0.95, 0.07, 1.1], TRIM, [-2.5, sheerAt(0) + 1.03, 0], { tex: 'wood' }));   // taffrail
+  hull.add(box(t, [0.12, 1.2, 0.52], DARK, [-3.15, 0.45, 0], { rotZ: 0.18, tex: 'wood' }));   // rudder
+  // capstan on the foredeck
+  hull.add(cyl(t, 0.14, 0.18, 0.30, TRIM, [1.35, sheerAt(0.72) + 0.12, 0], { tex: 'wood', seg: 10 }));
 
   g.add(hull);
 

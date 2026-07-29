@@ -48,3 +48,24 @@ and counts for nothing toward the world's build-out.
 - **Deterministic** — all jitter is hashed (`h01`), never `Math.random`; a remount is identical.
 - **Night-gated** through `nightKOf(group)`. It takes the OBJECT, not the time.
 - The imperative builder is exported (`buildDragonRoost`) for previews and direct use.
+
+## The nest is WOVEN (2026-07-28)
+
+Reported as **"nest for dragon roost, all of the sticks are laid flat"** — literally true: all 22
+sticks were placed with `rotZ: Math.PI / 2` (dead horizontal) at one of three fixed heights, so the
+nest read as a stack of pencils on a table.
+
+A raptor nest is a BASKET, and a basket needs sticks that point in arbitrary directions — which
+`rotX/rotY/rotZ` on a cylinder cannot express. Each stick is now placed **from its two ends**:
+`setFromUnitVectors` builds the rotation taking local +x onto `b − a` and `Matrix4.setPosition`
+puts it at the midpoint. On that footing the nest is:
+
+- **three rim courses** (16 / 14 / 12 sticks), each rotated off the one below and each leaning
+  further out, with both ends at different heights — the crossing is what reads as "woven";
+- **14 radial sticks tipped down into the bowl** — the lining, and what stops the rim reading as a
+  fence;
+- **7 long spars jutting out and up** over the drop, because a nest is never tidy at its edge;
+- a dished bowl floor with a moss lining.
+
+~63 sticks in **2 draw calls**: they are boxes in two `mergedBoxes` batches (one per colour), and at
+0.08 u thick a square section is indistinguishable from a round one.

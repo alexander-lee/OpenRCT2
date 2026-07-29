@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import * as THREE from 'three';
-import { ball, box, cyl } from '../Stage';
+import { ball, box, cyl, mergedBoxes } from '../Stage';
 import { composable } from '../Park';
 
 /** what each landmark builder returns */
@@ -116,14 +116,83 @@ export function buildGreatZeppelin(t: typeof THREE): LandmarkBuilt {
     ship.add(fin);
   });
 
-  // ---- gondola: cabin, windows, nacelles, PROPELLERS ---------------------
+  // ---- THE GONDOLA — the one part a guest is ever close to -----------------
+  // It was a box, a nose cylinder and eight flat window squares: at 2.6 u long
+  // and hanging at eye height off the mast it read as a crate. A rigid airship's
+  // car is a little BOAT — a hull with a rounded forefoot, a promenade window
+  // band with mullions, a cambered roof, a door with steps, a keel skid it lands
+  // on, and the brass and pipework that says steampunk. All of that is static
+  // dressing, so the small repeated parts (mullions, rivets, roof ribs, steps)
+  // are MERGED — the whole car adds ~10 draw calls, not ~60.
   const gon = new t.Group();
-  gon.position.set(-1.7, -RMAX - 0.32, 0);
-  gon.add(box(t, [2.6, 0.62, 0.9], IRON, [0, 0, 0], { tex: 'metal', metal: 0.5, rough: 0.6 }));
-  gon.add(cyl(t, 0.31, 0.31, 0.9, IRON, [1.3, 0, 0], { rotX: Math.PI / 2, tex: 'metal', metal: 0.5, seg: 12 }));
-  [-0.45, 0.45].forEach((sz) =>
-    [-0.75, -0.25, 0.25, 0.75].forEach((sx) =>
-      gon.add(box(t, [0.26, 0.24, 0.03], GLASS, [sx, 0.08, sz], { emissive: 0x2b4d55, rough: 0.15, metal: 0.1 })),
+  gon.position.set(-1.7, -RMAX - 0.36, 0);
+  const GL = 2.9;                       // gondola length
+  const GW = 0.92;                      // beam
+  const trim: MergedBoxSpec[] = [];     // brass small parts
+  const dark: MergedBoxSpec[] = [];     // iron small parts
+  // hull: a lower body with a tucked-in bottom (two boxes + a chine) so the
+  // section is not a rectangle
+  gon.add(box(t, [GL, 0.46, GW], IRON, [0, 0.06, 0], { tex: 'metal', metal: 0.5, rough: 0.6 }));
+  gon.add(box(t, [GL * 0.94, 0.20, GW * 0.66], 0x4a4038, [0, -0.20, 0], { tex: 'metal', metal: 0.5, rough: 0.65 }));
+  // rounded forefoot + a raked stern, so she has a bow and a counter
+  gon.add(cyl(t, 0.33, 0.33, GW, IRON, [GL / 2 - 0.02, 0.06, 0], { rotX: Math.PI / 2, tex: 'metal', metal: 0.5, seg: 14 }));
+  gon.add(cyl(t, 0.20, 0.30, GW * 0.8, IRON, [-GL / 2 + 0.06, 0.02, 0], { rotX: Math.PI / 2, tex: 'metal', metal: 0.5, seg: 12 }));
+  // the CAMBERED ROOF: three shallow steps + ribs, instead of a flat lid
+  gon.add(box(t, [GL * 0.99, 0.07, GW * 0.98], 0x6a5c50, [0, 0.32, 0], { tex: 'metal', metal: 0.55, rough: 0.5 }));
+  gon.add(box(t, [GL * 0.90, 0.06, GW * 0.70], 0x6a5c50, [0, 0.38, 0], { tex: 'metal', metal: 0.55, rough: 0.5 }));
+  for (let i = 0; i < 9; i += 1)
+    trim.push({ dims: [0.05, 0.035, GW * 0.99], pos: [-GL / 2 + 0.26 + i * (GL * 0.92 / 8), 0.36, 0] });
+  // PROMENADE WINDOW BAND — one long glazing per side with mullions across it,
+  // which is how a real airship car looks; four separate squares never did
+  [-1, 1].forEach((sd) => {
+    gon.add(box(t, [GL * 0.74, 0.24, 0.03], GLASS, [0.06, 0.13, sd * (GW / 2 + 0.005)], {
+      emissive: 0x2b4d55, rough: 0.12, metal: 0.1,
+    }));
+    for (let i = 0; i < 8; i += 1)
+      trim.push({ dims: [0.045, 0.26, 0.05], pos: [0.06 - GL * 0.37 + i * (GL * 0.74 / 7), 0.13, sd * (GW / 2 + 0.01)] });
+    // the sill and header the band sits between
+    trim.push({ dims: [GL * 0.78, 0.045, 0.06], pos: [0.06, 0.005, sd * (GW / 2 + 0.01)] });
+    trim.push({ dims: [GL * 0.78, 0.05, 0.06], pos: [0.06, 0.27, sd * (GW / 2 + 0.01)] });
+    // rivet line along the hull bottom
+    for (let i = 0; i < 12; i += 1)
+      dark.push({ dims: [0.04, 0.04, 0.03], pos: [-GL / 2 + 0.2 + i * (GL * 0.86 / 11), -0.13, sd * (GW * 0.33 + 0.005)] });
+  });
+  // the CONTROL CAR at the bow: raked windscreen panes over the forefoot
+  [[-0.22, 0.20], [0.0, 0.235], [0.22, 0.20]].forEach(([wz, wy]) =>
+    gon.add(box(t, [0.30, 0.22, 0.03], GLASS, [GL / 2 + 0.12, wy, wz], {
+      rotZ: 0.42, rotY: -wz * 0.9, emissive: 0x2b4d55, rough: 0.12, metal: 0.1,
+    })),
+  );
+  trim.push({ dims: [0.34, 0.05, 0.78], pos: [GL / 2 + 0.06, 0.34, 0], rotZ: 0.3 });   // brow over the screens
+  // the DOOR, its steps, and the handrail — the human-scale cue
+  gon.add(box(t, [0.42, 0.40, 0.04], 0x54483e, [-0.62, 0.02, GW / 2 + 0.02], { tex: 'metal', metal: 0.45, rough: 0.6 }));
+  trim.push({ dims: [0.06, 0.06, 0.05], pos: [-0.46, 0.02, GW / 2 + 0.05] });           // handle
+  [0, 1, 2].forEach((k) =>
+    dark.push({ dims: [0.34, 0.035, 0.10], pos: [-0.62, -0.20 - k * 0.13, GW / 2 + 0.06 + k * 0.04] }),
+  );
+  [0, 1].forEach((k) =>
+    trim.push({ dims: [0.035, 0.42, 0.035], pos: [-0.44 - k * 0.36, -0.06, GW / 2 + 0.14] }),
+  );
+  // KEEL SKID she sets down on, on two struts
+  gon.add(box(t, [GL * 0.62, 0.06, 0.14], 0x3f382f, [-0.1, -0.44, 0], { tex: 'metal', metal: 0.6, rough: 0.5 }));
+  [-0.7, 0.5].forEach((sx) => dark.push({ dims: [0.07, 0.22, 0.07], pos: [sx, -0.33, 0] }));
+  // steampunk plumbing: two exhaust stacks and a copper pipe run down the side
+  [0.85, 0.45].forEach((sx, i) => {
+    gon.add(cyl(t, 0.055, 0.07, 0.30 + i * 0.08, 0x54483e, [sx, 0.52, -0.22], { tex: 'metal', metal: 0.7, seg: 8 }));
+    trim.push({ dims: [0.09, 0.04, 0.09], pos: [sx, 0.66 + i * 0.04, -0.22] });
+  });
+  trim.push({ dims: [GL * 0.5, 0.05, 0.05], pos: [-0.2, -0.10, -GW / 2 - 0.03] });
+  // navigation lights: red to port, green to starboard (they read at night)
+  gon.add(ball(t, 0.055, 0xd8402c, [GL / 2 - 0.1, 0.30, -GW / 2 + 0.06], { emissive: 0xd8402c, rough: 0.4 }));
+  gon.add(ball(t, 0.055, 0x3ec46a, [GL / 2 - 0.1, 0.30, GW / 2 - 0.06], { emissive: 0x3ec46a, rough: 0.4 }));
+  gon.add(mergedBoxes(t, trim, BRASS, { tex: 'metal', metal: 0.8, rough: 0.3 }));
+  gon.add(mergedBoxes(t, dark, IRON, { tex: 'metal', metal: 0.6, rough: 0.5 }));
+  // the four struts that actually carry her from the hull
+  [-1, 1].forEach((sd) =>
+    [-0.85, 0.75].forEach((sx) =>
+      gon.add(box(t, [0.07, 0.42, 0.07], IRON, [sx, 0.55, sd * 0.34], {
+        rotZ: -sx * 0.05, rotX: -sd * 0.16, tex: 'metal', metal: 0.65,
+      })),
     ),
   );
   ship.add(gon);
@@ -133,11 +202,21 @@ export function buildGreatZeppelin(t: typeof THREE): LandmarkBuilt {
     const nac = new t.Group();
     nac.position.set(0.6, -RMAX + 0.35, sz);
     nac.add(cyl(t, 0.3, 0.34, 0.85, IRON, [0, 0, 0], { rotZ: Math.PI / 2, tex: 'metal', metal: 0.6, seg: 12 }));
+    // COWLING, RADIATOR AND EXHAUST — a nacelle is an engine, not a tube. The
+    // cowl ring is what reads from a distance; the stubs are what reads close.
+    nac.add(cyl(t, 0.33, 0.30, 0.14, BRASS, [-0.44, 0, 0], { rotZ: Math.PI / 2, tex: 'metal', metal: 0.85, rough: 0.3, seg: 14 }));
+    nac.add(cyl(t, 0.24, 0.30, 0.16, IRON, [0.44, 0, 0], { rotZ: Math.PI / 2, tex: 'metal', metal: 0.6, seg: 12 }));
+    nac.add(box(t, [0.26, 0.30, 0.04], 0x3f382f, [0.30, 0.16, 0], { tex: 'metal', metal: 0.5, rough: 0.7 })); // radiator
+    [0.16, -0.16].forEach((oz) =>
+      nac.add(cyl(t, 0.035, 0.045, 0.26, 0x54483e, [0.05, 0.26, oz], { rotZ: 0.5, tex: 'metal', metal: 0.7, seg: 6 })),
+    );
     nac.add(box(t, [0.18, 0.5, 0.12], IRON, [0.1, 0.42, 0], { tex: 'metal', metal: 0.6 })); // pylon to the hull
+    nac.add(box(t, [0.05, 0.46, 0.05], BRASS, [-0.22, 0.40, 0], { rotZ: 0.28, tex: 'metal', metal: 0.8 })); // bracing strut
     // THE PROPELLER — its own group so it can actually spin
     const prop = new t.Group();
     prop.position.set(-0.55, 0, 0);
     prop.add(cyl(t, 0.09, 0.09, 0.16, BRASS, [0, 0, 0], { rotZ: Math.PI / 2, tex: 'metal', metal: 0.85, seg: 10 }));
+    prop.add(cyl(t, 0.02, 0.085, 0.17, BRASS, [-0.16, 0, 0], { rotZ: Math.PI / 2, tex: 'metal', metal: 0.9, rough: 0.25, seg: 10 })); // spinner
     [0, 1, 2].forEach((k) => {
       const blade = box(t, [0.04, 0.92, 0.16], BRASS, [0, 0, 0], { tex: 'metal', metal: 0.8, rough: 0.3 });
       blade.rotation.x = (k / 3) * Math.PI * 2;

@@ -1082,12 +1082,80 @@ const MagicMirrorBase = composable<MagicMirrorProps, MagicMirrorBuilt>(
         // guest turns and looks at the glass rather than standing side-on.
         const fx = position[0] + Math.sin(rotation) * FOCUS[2] * scale;
         const fz = position[2] + Math.cos(rotation) * FOCUS[2] * scale;
+        // ---- THE ZONE IS SNAPPED ONTO THE WALKING LINE (2026-07-28) ---------
+        // Reported as "guests don't seem incentivized to try the magic mirror".
+        // An attention zone is a CATCHER, not a lure: nothing in the sim ever
+        // routes a guest here (`GameManager/navigation.ts` has goal kinds for
+        // rides, stalls, restrooms and benches and none for a zone), so the ONLY
+        // way it fires is a wanderer whose position enters the rectangle — and
+        // guests walk EXACTLY along the node-to-node line, with no lateral lane
+        // offset (`GameManager/locomotion.ts`). Two consequences, both fatal to
+        // a zone sized to the prop:
+        //   1. a rectangle that does not CONTAIN a stretch of path polyline has
+        //      a latch probability of exactly ZERO, not merely a low one. A
+        //      mirror set back off the street is unvisitable however long it
+        //      stands there.
+        //   2. the latch coin is 0.35 ONCE PER SIM SECOND while inside
+        //      (`GameManager/guestPass.ts`), and a guest walks ~1.2 u/s, so a
+        //      2.3 u zone crossed square-on gives ~1.9 s ≈ two flips ≈ 58%. To
+        //      be reliably noticed the zone has to span ~3.5 u ALONG the
+        //      direction of travel: 3 flips ≈ 72%, 4 ≈ 82%.
+        // So the zone is aligned to the nearest walking EDGE and stretched along
+        // it, rather than being a square centred on the prop.
+        const net = park.paths?.net;
+        let zc: [number, number] = [fx, fz];
+        let zr = rotation;
+        let zw = 1.15 * scale;
+        let zd = 1.15 * scale;
+        let reach = Infinity;
+        if (net && net.edges.length) {
+          let best: { d: number; px: number; pz: number; yaw: number } | null = null;
+          for (const [ai, bi] of net.edges) {
+            const A = net.nodes[ai];
+            const B = net.nodes[bi];
+            if (!A || !B) continue;
+            const ex = B[0] - A[0];
+            const ez = B[1] - A[1];
+            const l2 = ex * ex + ez * ez;
+            if (l2 < 1e-6) continue;
+            const tt = Math.max(0, Math.min(1, ((fx - A[0]) * ex + (fz - A[1]) * ez) / l2));
+            const px = A[0] + ex * tt;
+            const pz = A[1] + ez * tt;
+            const d = Math.hypot(px - fx, pz - fz);
+            if (!best || d < best.d) best = { d, px, pz, yaw: Math.atan2(ex, ez) };
+          }
+          // 3.0 u is the reach: further than that and the mirror is not beside a
+          // street at all, and stretching a zone out to grab one would stop
+          // guests in the middle of nowhere facing a mirror they cannot see.
+          if (best && best.d <= 3.0) {
+            reach = best.d;
+            zr = best.yaw;                                     // align WITH the street
+            zw = Math.max(1.8, 1.15 * scale);                  // ≥3.6 u of travel
+            zd = Math.max(0.85 * scale, best.d * 0.5 + 0.55);  // straddle the line
+            zc = [(fx + best.px) / 2, (fz + best.pz) / 2];     // …from prop to line
+          } else if (best) {
+            reach = best.d;
+          }
+        }
+        // A WARNING, deliberately not a `park.reportLint`: an unmapped lint kind
+        // reaches `harness/park-eval/score-park.mjs`, and a placement note has no
+        // business moving a park's score before someone has decided which axis it
+        // belongs to. This is the same COMPONENT-prefixed console channel the
+        // fleet already uses for advice.
+        if (reach > 3.0) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[MagicMirror] at [${position[0].toFixed(1)}, ${position[2].toFixed(1)}] is ${
+              reach === Infinity ? 'nowhere near' : `${reach.toFixed(1)} u from`
+            } a walking edge, so NO GUEST WILL EVER STOP AT IT — an attention zone only fires for a guest whose own position enters it, and guests walk exactly on the path lines. Mount it within ~2 u of a street or plaza edge.`,
+          );
+        }
         if (mgr.registerWatchZone) {
           mgr.registerWatchZone({
-            center: [fx, fz],
-            halfW: 1.15 * scale,
-            halfD: 1.15 * scale,
-            rotation,
+            center: zc,
+            halfW: zw,
+            halfD: zd,
+            rotation: zr,
             faceAt: [position[0], position[2]],
             // a LOOK, not a residency — and the manager's per-guest cooldown
             // (30 s by default) is what keeps the street flowing past it

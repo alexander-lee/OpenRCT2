@@ -23,6 +23,32 @@ export interface ParkFootRect {
   hz: number;
   yaw: number;
   label: string;
+  /** OPTIONAL vertical extent, world y. Declare these and the footprint sweep
+   *  will let this rect share ground-plan space with another that is cleanly
+   *  ABOVE or BELOW it — a coaster flying over a flat ride's pad is a real
+   *  layout, not a collision, and until 2026-07-28 it was failed as one because
+   *  the sweep was purely 2D. Omit them and the rect is treated as floor-to-sky,
+   *  i.e. exactly the old conservative behaviour. */
+  y0?: number;
+  y1?: number;
+}
+
+/** vertical clearance a piece of track must keep when it flies over something
+ *  else — the same 2.2 u the published overfly rule uses (guest headroom plus a
+ *  train), so "legal to cross" means one thing everywhere. */
+export const OVERFLY_CLEAR = 2.2;
+
+/**
+ * Are these two rects cleanly separated in HEIGHT?
+ *
+ * True only when BOTH declare a vertical extent and the gap between them is at
+ * least `OVERFLY_CLEAR`. Unknown extent answers false: a rect that has not said
+ * how tall it is cannot be assumed short.
+ */
+export function vertClear(a: ParkFootRect, b: ParkFootRect): boolean {
+  if (a.y0 == null || a.y1 == null || b.y0 == null || b.y1 == null) return false;
+  const gap = a.y0 >= b.y1 ? a.y0 - b.y1 : b.y0 >= a.y1 ? b.y0 - a.y1 : -1;
+  return gap >= OVERFLY_CLEAR;
 }
 
 /** 2D OBB overlap via SAT — the same conservative test placeAccess audits

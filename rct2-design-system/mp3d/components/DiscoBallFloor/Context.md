@@ -48,3 +48,22 @@ and counts for nothing toward the world's build-out.
 - **Deterministic** — all jitter is hashed (`h01`), never `Math.random`; a remount is identical.
 - **Night-gated** through `nightKOf(group)`. It takes the OBJECT, not the time.
 - The imperative builder is exported (`buildDiscoBallFloor`) for previews and direct use.
+
+## The ball is a MIRROR, never emissive (2026-07-28)
+
+Reported as **"disco ball has a fake reflection effect"**. Every facet carried an `emissive` in
+magenta / cyan / amber, so the ball GLOWED in flat colour — a beach ball, not a mirror ball.
+
+A mirror is not a colour, it is whatever is around it:
+
+- facets are **metalness 1, roughness 0.05, no emissive**, in three near-silver tints;
+- they reflect a **cached 256 x 128 equirectangular canvas `envMap`** — sky, horizon band, dark
+  ground, a sun blob and a scatter of neon spots. There is no scene-wide environment in this design
+  system, and a live `CubeCamera` would add a full render pass EVERY FRAME (see
+  `Stage/darkLights.ts` for what a park's frame can actually afford), so the environment is drawn
+  once at module scope and shared;
+- **340 facets, not 150**, at 0.33 u — a mirror ball's read is the density of small mirrors, and at
+  150 the gaps were wider than the tiles. Still 3 draw calls (merged per tint);
+- three **hoops** (equator + two tropics) that the mirrors are strung on;
+- the night response is `envMapIntensity` 1.3 → 2.0 through `nightKOf`, nothing else. The COLOUR
+  work belongs to the chasing floor and the eight collar lamps, which actually emit.
