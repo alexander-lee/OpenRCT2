@@ -1,9 +1,51 @@
 import React from 'react';
 import * as THREE from 'three';
-import { box, cyl, ball, mergedBoxes, nightKOf } from '../Stage';
+import { box, cyl, ball, mat, mergedBoxes, nightKOf } from '../Stage';
+import type { MergedBoxSpec } from '../Stage';
 import { buildPeep, SHIRTS, SKIN_TONES } from '../Guest';
 import { createMotionGate, makeSeatWorld } from '../GameManager';
 import { composableRide } from '../Park';
+
+/** quads between consecutive rows of equal length → ONE indexed geometry */
+function loftRows(t: typeof THREE, rows: THREE.Vector3[][]): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const cols = rows[0].length;
+  rows.forEach((r) => r.forEach((p) => pos.push(p.x, p.y, p.z)));
+  for (let i = 0; i < rows.length - 1; i += 1)
+    for (let j = 0; j < cols - 1; j += 1) {
+      const a = i * cols + j;
+      idx.push(a, a + cols, a + 1, a + 1, a + cols, a + cols + 1);
+    }
+  const geo = new t.BufferGeometry();
+  geo.setAttribute('position', new t.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * ENDPOINT PLACEMENT — a box of section `th × tw` spanning a → b. rotX/rotY/rotZ
+ * cannot express the direction of an arbitrary member (a broken rafter, an iron
+ * fence rail on an arc, a bone), so the rotation carrying local +x onto (b − a)
+ * is built as a quaternion and baked into the spec's `matrix`.
+ */
+function strutSpec(
+  t: typeof THREE,
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  th: number,
+  tw: number,
+  repeat?: [number, number],
+): MergedBoxSpec | null {
+  const d = new t.Vector3().subVectors(b, a);
+  const len = d.length();
+  if (len < 1e-4) return null;
+  const q = new t.Quaternion().setFromUnitVectors(new t.Vector3(1, 0, 0), d.normalize());
+  const m = new t.Matrix4().makeRotationFromQuaternion(q);
+  m.setPosition(new t.Vector3().addVectors(a, b).multiplyScalar(0.5));
+  return { dims: [len, th, tw], matrix: m, ...(repeat ? { repeat } : {}) };
+}
 
 // Ghost Train dark ride modelled on the RCT2 Ghost Train: a small enclosed
 // show building (dark stepped-gable walls, geometric skull sign, flap doors at
@@ -49,6 +91,19 @@ export function buildGhostTrainScene(
         const BONE = 0xe8e4da;
         const IRON = 0x2c2c30;
 
+        // THE SHOW'S LIGHT SOURCES. Almost everything the reveal is made of is
+        // EMISSIVE, not lit: three real PointLights is this ride's whole budget
+        // and they are already spoken for. Note the trap `mat()` sets — it bakes
+        // the colour into the TEXTURE and leaves `material.color` white, so a
+        // mapped material needs `emissiveMap = map` (the same texture object,
+        // free) before its glow has the right shape. Everything self-lit here is
+        // deliberately UNMAPPED so plain `emissive` is the whole story.
+        const showGlow: THREE.MeshStandardMaterial[] = []; // green reveals
+        const showFlame: THREE.MeshStandardMaterial[] = []; // candle flames
+        const SHOW_GREEN = 0x39ff9a;
+        const glowMat = (col: number, emis: number, base = 0.16) =>
+          new t.MeshStandardMaterial({ color: col, roughness: 0.55, emissive: new t.Color(emis), emissiveIntensity: base });
+
         // ---- track: closed loop through the building + outdoor graveyard dip
         const P = (x: number, y: number, z: number) => new t.Vector3(x, y, z);
         const curve = new t.CatmullRomCurve3(
@@ -72,22 +127,33 @@ export function buildGhostTrainScene(
         );
         const trackLen = curve.getLength();
 
-        // ties (sleepers) + support posts on the outdoor sections
+        // ties (sleepers) + support posts on the outdoor sections.
+        // The ties used to be ~60 separate meshes, each inside its own holder
+        // Group, i.e. 60 draw calls and 60 shadow-pass draws for the cheapest
+        // dressing on the ride — a tenth of this component's entire budget.
+        // They are one MERGED mesh now, each tie's basis built the same way
+        // `Object3D.lookAt` builds it (local +z onto the tangent, +x = up × z)
+        // and baked into the spec's `matrix`, so the geometry is identical.
         const nTies = Math.floor(trackLen / 0.22);
+        const tieP: MergedBoxSpec[] = [];
+        const upA = new t.Vector3(0, 1, 0);
         for (let i = 0; i < nTies; i++) {
           const u = i / nTies;
           const p = curve.getPointAt(u);
-          const tan = curve.getTangentAt(u);
-          const tie = box(t, [0.34, 0.035, 0.09], 0x4a3828, [0, 0, 0], { tex: 'wood', repeat: [2, 1], rough: 0.9 });
-          const holder = new t.Group();
-          holder.position.copy(p);
-          holder.lookAt(p.clone().add(tan));
-          holder.add(tie);
-          g.add(holder);
+          const zA = curve.getTangentAt(u).normalize();
+          const xA = new t.Vector3().crossVectors(upA, zA).normalize();
+          const yA = new t.Vector3().crossVectors(zA, xA);
+          const m4 = new t.Matrix4().makeBasis(xA, yA, zA);
+          m4.setPosition(p);
+          tieP.push({ dims: [0.34, 0.035, 0.09], matrix: m4, repeat: [2, 1] });
           if (i % 6 === 0 && p.x > -0.3 && p.y > 0.16) {
             g.add(cyl(t, 0.028, 0.035, p.y, 0x3a3a40, [p.x, p.y / 2 - 0.02, p.z], { metal: 0.4, rough: 0.6, seg: 8 }));
           }
         }
+        const ties = mergedBoxes(t, tieP, 0x4a3828, { tex: 'wood', rough: 0.9 });
+        ties.castShadow = true;
+        ties.receiveShadow = true;
+        g.add(ties);
         // twin rails: offset closed curves swept as tubes
         const railMat = new t.MeshStandardMaterial({ color: 0x565b63, metalness: 0.7, roughness: 0.35 });
         [-1, 1].forEach((side) => {
@@ -164,7 +230,17 @@ export function buildGhostTrainScene(
         [-1, 1].forEach((s) => {
           g.add(box(t, [2.32, 0.09, 0.13], TRIMC, [-1.65, 0.42, s * 1.35], { tex: 'wood', repeat: [8, 1], rough: 0.9 })); // wainscot band
           [-2.25, -1.05].forEach((wx) => {
-            g.add(box(t, [0.42, 0.5, 0.05], 0x14121a, [wx, 0.92, s * 1.39], { rough: 0.8 })); // dark opening
+            // the FORWARD window on each flank is not boarded shut — the glass
+            // is broken and the show is leaking out between the nailed boards.
+            // A dark ride whose every opening is a black rectangle has nothing
+            // to say after dark, which is exactly when it should say most.
+            if (wx === -1.05) {
+              const paneMat = glowMat(0x0c1c12, SHOW_GREEN, 0.45);
+              showGlow.push(paneMat);
+              const pn = new t.Mesh(new t.BoxGeometry(0.42, 0.5, 0.05), paneMat);
+              pn.position.set(wx, 0.92, s * 1.39);
+              g.add(pn);
+            } else g.add(box(t, [0.42, 0.5, 0.05], 0x14121a, [wx, 0.92, s * 1.39], { rough: 0.8 })); // dark opening
             g.add(box(t, [0.5, 0.06, 0.06], TRIMC, [wx, 1.19, s * 1.4], { tex: 'wood', rough: 0.9 })); // header
             g.add(box(t, [0.5, 0.06, 0.06], TRIMC, [wx, 0.65, s * 1.4], { tex: 'wood', rough: 0.9 })); // sill
             g.add(box(t, [0.52, 0.07, 0.045], 0x7a5c3c, [wx, 0.95, s * 1.41], { tex: 'wood', repeat: [3, 1], rough: 0.95, rotZ: 0.35 })); // nailed board
@@ -210,6 +286,23 @@ export function buildGhostTrainScene(
         // deterministic wobble, all merged into one draw call per slope. The
         // scalloped shadow line down the roof is most of what makes the
         // building read as built rather than blocked out.
+        //
+        // THE REVEAL. A dark ride's whole point is its interior, and a sealed
+        // box has none: at noon this building read as a well-detailed shed and
+        // at night as a well-detailed shed with two lanterns on it. Nothing an
+        // outside camera could see said "there is a SHOW in here". The park is
+        // viewed from an elevated three-quarter camera, so the opening that
+        // actually reveals anything is a hole in the ROOF — and a derelict
+        // haunted house wanting a collapsed roof is not a compromise, it is the
+        // theme. The FRONT slope (si 1) loses a panel between the ridge and
+        // mid-slope: the deck is cut into four pieces round the void (still one
+        // merged mesh), every slate whose centre falls in the void is dropped,
+        // slates within 0.14 of the lip are tipped and dragged down so the edge
+        // is RAGGED and not sawn, and the structure that was under the slates —
+        // rafters and purlins, two of them snapped and drooping into the hole —
+        // is now on show. Everything below in `showRoom` is built to be seen
+        // through it.
+        const HOLE = { x0: -0.62, x1: 0.1, z0: -0.5, z1: 0.6 };
         [
           [-2.26, slopeAng],
           [-1.04, -slopeAng],
@@ -217,8 +310,49 @@ export function buildGhostTrainScene(
           const slope = new t.Group();
           slope.position.set(cx, 1.78, 0);
           slope.rotation.z = ang;
-          slope.add(box(t, [1.42, 0.06, 3.06], ROOF, [0, 0, 0], { tex: 'concrete', repeat: [4, 8], rough: 0.85 }));
-          const tabs: { dims: [number, number, number]; pos: [number, number, number]; rotZ?: number }[] = [];
+          const open = si === 1; // the front slope carries the collapse
+          if (!open) {
+            slope.add(box(t, [1.42, 0.06, 3.06], ROOF, [0, 0, 0], { tex: 'concrete', repeat: [4, 8], rough: 0.85 }));
+          } else {
+            // deck in four pieces round the void — one merged mesh, same cost
+            const deckP: MergedBoxSpec[] = [
+              { dims: [1.42, 0.06, HOLE.z0 + 1.53], pos: [0, 0, (-1.53 + HOLE.z0) / 2], repeat: [4, 3] },
+              { dims: [1.42, 0.06, 1.53 - HOLE.z1], pos: [0, 0, (HOLE.z1 + 1.53) / 2], repeat: [4, 3] },
+              { dims: [HOLE.x0 + 0.71, 0.06, HOLE.z1 - HOLE.z0], pos: [(-0.71 + HOLE.x0) / 2, 0, (HOLE.z0 + HOLE.z1) / 2] },
+              { dims: [0.71 - HOLE.x1, 0.06, HOLE.z1 - HOLE.z0], pos: [(HOLE.x1 + 0.71) / 2, 0, (HOLE.z0 + HOLE.z1) / 2], repeat: [2, 2] },
+            ];
+            const deck = mergedBoxes(t, deckP, ROOF, { tex: 'concrete', rough: 0.85 });
+            deck.castShadow = true;
+            deck.receiveShadow = true;
+            slope.add(deck);
+            // rafters up the slope + purlins across, two of each SNAPPED and
+            // drooping into the void. Placed from their two endpoints — a
+            // drooping rafter end has no axis-aligned rotation.
+            const timb: MergedBoxSpec[] = [];
+            [-0.42, -0.14, 0.14, 0.42].forEach((rz, k) => {
+              const snapped = k === 1 || k === 2;
+              const stop = snapped ? HOLE.x0 + 0.16 + k * 0.08 : 0.71;
+              const sp = strutSpec(t, new t.Vector3(-0.71, -0.05, rz), new t.Vector3(stop, -0.05, rz), 0.05, 0.055, [3, 1]);
+              if (sp) timb.push(sp);
+              if (snapped) {
+                // the broken end hangs into the room
+                const d = strutSpec(t, new t.Vector3(stop, -0.05, rz), new t.Vector3(stop + 0.2, -0.26, rz + (k === 1 ? -0.05 : 0.06)), 0.045, 0.05);
+                if (d) timb.push(d);
+                // ...and the rest of the rafter survives past the void
+                const r2 = strutSpec(t, new t.Vector3(HOLE.x1 + 0.06, -0.05, rz), new t.Vector3(0.71, -0.05, rz), 0.05, 0.055, [2, 1]);
+                if (r2) timb.push(r2);
+              }
+            });
+            [-0.45, -0.08].forEach((px, k) => {
+              const zEnd = k === 0 ? HOLE.z1 : HOLE.z1 - 0.22;
+              const sp = strutSpec(t, new t.Vector3(px, -0.11, HOLE.z0 - 0.28), new t.Vector3(px, -0.11, zEnd), 0.055, 0.06, [3, 1]);
+              if (sp) timb.push(sp);
+            });
+            const rafters = mergedBoxes(t, timb, 0x2a2129, { tex: 'wood', rough: 0.95 });
+            rafters.castShadow = true;
+            slope.add(rafters);
+          }
+          const tabs: { dims: [number, number, number]; pos: [number, number, number]; rotZ?: number; rotX?: number }[] = [];
           for (let c = 0; c < 5; c++) {
             const lx = -0.71 + 0.15 + c * 0.28;
             const stagger = c % 2 ? 0.13 : 0; // courses break joint, like real slate
@@ -226,6 +360,22 @@ export function buildGhostTrainScene(
               const tz = -1.5 + 0.14 + stagger + i * 0.27;
               if (tz > 1.53) continue;
               const h = ((c * 7 + i * 13 + si * 5) % 4) * 0.004; // weathered sag
+              if (open) {
+                const inHole = lx > HOLE.x0 - 0.12 && lx < HOLE.x1 + 0.12 && tz > HOLE.z0 - 0.1 && tz < HOLE.z1 + 0.1;
+                if (inHole) continue;
+                const nearLip =
+                  lx > HOLE.x0 - 0.3 && lx < HOLE.x1 + 0.3 && tz > HOLE.z0 - 0.26 && tz < HOLE.z1 + 0.26;
+                if (nearLip) {
+                  // slipped slates round the lip: tipped both ways and dropped
+                  tabs.push({
+                    dims: [0.3, 0.028, 0.25],
+                    pos: [lx + (((c + i) % 2) - 0.5) * 0.05, 0.043 - h - 0.02, tz + (((c * 3 + i) % 3) - 1) * 0.03],
+                    rotZ: (((c + i) % 3) - 1) * 0.14,
+                    rotX: (((c * 5 + i) % 3) - 1) * 0.12,
+                  });
+                  continue;
+                }
+              }
               tabs.push({ dims: [0.3, 0.028, 0.25], pos: [lx, 0.043 - h, tz], rotZ: ((c + i) % 3) * 0.012 });
             }
           }
@@ -376,69 +526,124 @@ export function buildGhostTrainScene(
         });
         [-0.08, 0.08].forEach((dz) => g.add(cyl(t, 0.012, 0.012, 0.55, IRON, [caseX + 0.33, 0.85, winZ + dz], { metal: 0.5, rough: 0.6, seg: 6 }))); // bars
         /**
-         * THE GHOSTS. A sheet spectre instead of a cone with a ball on top:
-         * a domed head under a cowl, a shroud that flares to a HEM OF TATTERS
-         * (tapered lobes of uneven length hung off the rim — the silhouette is
-         * what sells a ghost at any distance), two stubby raised arms, sunken
-         * eyes and an open mouth. The cloth is translucent and faintly
-         * self-lit, so it reads as a spectre in daylight and glows on the
-         * night gate below. Built facing +x; `k` scales it whole.
+         * THE GHOSTS — a lofted SHROUD, not a stack of primitives.
+         *
+         * Second rebuild. The first one already knew what the silhouette had to
+         * be (narrow head, sloping shoulders, a shroud that flares to a hem of
+         * tatters) and then built it out of a ball, two cylinders, EIGHT MORE
+         * BALLS for the hem lobes and three cones for the drips — twenty-odd
+         * convex blobs threaded on one axis. That is the same defect as a hull
+         * made of stacked discs: adjacent blobs differ by a few percent, so the
+         * eye reads one shape repeated, the silhouette comes out bobbled rather
+         * than draped, and it cost 20 draw calls a ghost.
+         *
+         * Cloth is a SURFACE, so this lofts the surface. A profile table gives
+         * the radius and height down the body (crown → head → neck → shoulders
+         * → flare → hem); the hem is then modulated IN TWO WAYS at once, which
+         * is what a torn sheet actually does and what no stack of lobes can do:
+         *   - the RADIUS gains eight lobes, ramping in below the shoulders, so
+         *     the shroud swells and pinches round its circumference;
+         *   - the HEM EDGE drops by a per-angle amount built from the lobe
+         *     phase plus a slower 3-cycle, so the tatters hang at UNEVEN
+         *     lengths — the bottom edge is a ragged curve, not a scalloped ring.
+         * One mesh, 16 × 28 quads. With the two sleeves, the trailing wisp and
+         * a merged 3-box face that is 5 draws a ghost instead of 20.
+         *
+         * Built facing +x; `k` scales it whole. One cloth material per ghost,
+         * shared by shroud/sleeves/wisp, so the night gate has one handle.
          */
         const ghostSheets: THREE.MeshStandardMaterial[] = [];
         const buildGhost = (k: number, alpha: number): THREE.Group => {
           const gh = new t.Group();
           const SHEET = 0xf6f7f2;
           const HOLLOW = 0x0a0a10;
-          const cloth = { rough: 0.92, opacity: alpha, emissive: 0x1d4a30 };
-          const keep = (m: THREE.Mesh) => {
-            ghostSheets.push(m.material as THREE.MeshStandardMaterial);
-            gh.add(m);
-            return m;
-          };
-          // SILHOUETTE FIRST. The first pass was a cylinder with a ball on it
-          // and it read as a marshmallow. A sheet ghost is a NARROW head over
-          // SLOPING shoulders over a shroud that FLARES, finished with a hem of
-          // deep scallops — the wavy bottom edge and the taper above it are the
-          // whole silhouette, and they have to be big enough to survive at 40
-          // pixels. Head 0.09 against a 0.19 hem is roughly a 1:2 taper.
-          const head = keep(ball(t, 0.09, SHEET, [0, 0.205, 0], cloth));
-          head.scale.set(0.95, 1.08, 0.95);
-          keep(cyl(t, 0.078, 0.14, 0.14, SHEET, [0, 0.1, 0], { ...cloth, seg: 16 })); // shoulders
-          keep(cyl(t, 0.14, 0.19, 0.26, SHEET, [0, -0.06, 0], { ...cloth, seg: 18 })); // flaring shroud
-          // THE HEM — 8 deep scallops round the rim, every other one drawn out
-          // into a drip. Uneven lengths, deterministic.
-          for (let i = 0; i < 8; i++) {
-            const a = (i / 8) * Math.PI * 2 + 0.25;
-            const cx = Math.cos(a) * 0.172;
-            const cz = Math.sin(a) * 0.172;
-            const lobe = keep(ball(t, 0.058, SHEET, [cx, -0.185, cz], cloth));
-            lobe.scale.set(1, 1.15, 1);
-            if (i % 3 === 0) {
-              const len = 0.06 + ((i * 29) % 3) * 0.018;
-              keep(cyl(t, 0.05, 0, len, SHEET, [cx, -0.2 - len / 2, cz], { ...cloth, seg: 8 })); // drip
+          // ONE material for the whole spectre. `mat()` with no `tex` leaves
+          // `color` on the material (not baked into a map), so the explicit
+          // green `emissive` is the only thing the night gate has to lift.
+          const cloth = new t.MeshStandardMaterial({
+            color: SHEET,
+            roughness: 0.92,
+            transparent: true,
+            opacity: alpha,
+            emissive: new t.Color(0x1d4a30),
+            emissiveIntensity: 0.22,
+          });
+          cloth.side = t.DoubleSide;
+          ghostSheets.push(cloth);
+          // profile: [v, radius, y] from crown to hem
+          const PROF: [number, number, number][] = [
+            [0.0, 0.006, 0.3],
+            [0.09, 0.062, 0.272],
+            [0.2, 0.09, 0.216],
+            [0.32, 0.068, 0.152],
+            [0.45, 0.116, 0.104],
+            [0.62, 0.152, 0.012],
+            [0.8, 0.181, -0.1],
+            [1.0, 0.196, -0.213],
+          ];
+          const profAt = (v: number): [number, number] => {
+            for (let i = 1; i < PROF.length; i += 1) {
+              if (v <= PROF[i][0]) {
+                const [v0, r0, y0] = PROF[i - 1];
+                const [v1, r1, y1] = PROF[i];
+                const f = (v - v0) / (v1 - v0);
+                return [r0 + (r1 - r0) * f, y0 + (y1 - y0) * f];
+              }
             }
+            return [PROF[PROF.length - 1][1], PROF[PROF.length - 1][2]];
+          };
+          const NV = 16;
+          const NA = 28;
+          const rows: THREE.Vector3[][] = [];
+          for (let i = 0; i <= NV; i += 1) {
+            const v = i / NV;
+            const [r0, y0] = profAt(v);
+            const la = Math.max(0, (v - 0.5) / 0.5); // lobes ramp in below the shoulders
+            const row: THREE.Vector3[] = [];
+            for (let j = 0; j <= NA; j += 1) {
+              const th = (j / NA) * Math.PI * 2;
+              const r = r0 * (1 + 0.15 * la * Math.cos(8 * th));
+              // TATTERS: the hem drops unevenly — the 8-lobe phase sets which
+              // folds hang low, a 3-cycle makes the whole hem asymmetric
+              const dy =
+                Math.pow(la, 1.7) *
+                (0.055 + 0.095 * (0.5 + 0.5 * Math.cos(8 * th)) + 0.05 * (0.5 + 0.5 * Math.cos(3 * th + 0.9)));
+              row.push(new t.Vector3(Math.cos(th) * r, y0 - dy, Math.sin(th) * r));
+            }
+            rows.push(row);
           }
-          // a trailing wisp off the back, so it reads as FLOATING not standing
-          const wisp = keep(cyl(t, 0.09, 0, 0.2, SHEET, [-0.07, -0.24, 0], { ...cloth, seg: 10 }));
-          wisp.rotation.z = -0.5;
-          // draped SLEEVES thrown up and out, tapered to points (the old round
-          // "hands" were what made it a snowman)
+          const shroud = new t.Mesh(loftRows(t, rows), cloth);
+          shroud.castShadow = false;
+          gh.add(shroud);
+          // draped SLEEVES thrown up and out, tapered to points
           [-1, 1].forEach((sz) => {
-            const arm = keep(cyl(t, 0.062, 0.012, 0.22, SHEET, [0.015, 0.075, sz * 0.155], { ...cloth, seg: 9 }));
+            const arm = new t.Mesh(new t.CylinderGeometry(0.058, 0.012, 0.22, 9), cloth);
+            arm.position.set(0.015, 0.075, sz * 0.155);
             arm.rotation.x = -sz * 1.15;
             arm.rotation.z = 0.18;
+            gh.add(arm);
           });
-          // FACE — three big dark shapes. This is the entire read at distance,
-          // so they are sized against the head, not against realism: each eye
-          // is a third of the face wide and the mouth is a full open howl.
-          [-1, 1].forEach((sz) => {
-            const eye = ball(t, 0.032, HOLLOW, [0.064, 0.218, sz * 0.037], { rough: 1 });
-            eye.scale.set(0.5, 1.15, 0.85);
-            gh.add(eye);
-          });
-          const mouth = ball(t, 0.034, HOLLOW, [0.058, 0.15, 0], { rough: 1 });
-          mouth.scale.set(0.5, 1.5, 0.85);
-          gh.add(mouth);
+          // a trailing wisp off the back, so it reads as FLOATING not standing
+          const wisp = new t.Mesh(new t.CylinderGeometry(0.09, 0, 0.22, 10), cloth);
+          wisp.position.set(-0.075, -0.26, 0);
+          wisp.rotation.z = -0.5;
+          gh.add(wisp);
+          // FACE — three big dark shapes, merged. This is the entire read at
+          // distance, so they are sized against the head rather than against
+          // realism: each socket is a third of the face wide and canted, and
+          // the mouth is a full open howl.
+          gh.add(
+            mergedBoxes(
+              t,
+              [
+                { dims: [0.026, 0.062, 0.03], pos: [0.07, 0.222, 0.037], rotX: 0.25 },
+                { dims: [0.026, 0.062, 0.03], pos: [0.07, 0.222, -0.037], rotX: -0.25 },
+                { dims: [0.024, 0.072, 0.032], pos: [0.064, 0.152, 0] },
+              ],
+              HOLLOW,
+              { rough: 1 },
+            ),
+          );
           gh.scale.setScalar(k);
           return gh;
         };
@@ -456,59 +661,153 @@ export function buildGhostTrainScene(
         g.add(graveGhost);
 
         // ---- graveyard: tombstones, dead tree, iron fence -------------------
-        // bare-earth patch under the graveyard
-        const earth = new t.Mesh(
-          new t.CircleGeometry(1.15, 24),
-          new t.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 1 }),
-        );
-        earth.rotation.x = -Math.PI / 2;
-        earth.position.set(2.45, 0.004, 0);
+        // THE EARTH. It was a `CircleGeometry` — a perfect flat brown disc laid
+        // on the grass, which from the elevated park camera is the single most
+        // visible cheat on the ride: a decal, with a hard geometric edge no
+        // amount of colour can rescue. It is a LOFTED graded mound now, with
+        // (a) an IRREGULAR OUTLINE, two harmonics of it, because the circle is
+        // what gives a decal away before anything else, (b) real relief —
+        // 0.055 crowned at the middle, feathering to 2 mm at the rim, with a
+        // hashed bumpiness so mourners' feet and settled graves show, and (c) a
+        // scatter of merged clods and sods straddling the boundary, so the edge
+        // is a transition and not a cut.
+        const hash01 = (n: number) => {
+          const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        const EARTH_C = new t.Vector3(2.45, 0, 0);
+        const rEdge = (th: number) => 1.15 * (1 + 0.14 * Math.sin(3 * th + 0.4) + 0.07 * Math.sin(7 * th + 1.9));
+        const NTHE = 40;
+        const earthRows: THREE.Vector3[][] = [];
+        for (let i = 0; i <= 7; i += 1) {
+          const k = i / 7;
+          const row: THREE.Vector3[] = [];
+          for (let j = 0; j <= NTHE; j += 1) {
+            // theta walks BACKWARDS on purpose. `loftRows` winds each quad
+            // (row, row+1, col+1), so the face normal comes out as
+            // rowDir × colDir = radial × tangential — which for a
+            // counter-clockwise theta is (0, −1, 0), i.e. the mound's front
+            // faces point at the ground and the whole thing is backface-culled
+            // into invisibility from the only camera that ever looks at it.
+            // First pass shipped exactly that: a graveyard of clods on bare
+            // grass with no earth under them.
+            const th = -(j / NTHE) * Math.PI * 2;
+            const rr = rEdge(th) * k;
+            const bump = (hash01(i * 13.7 + j * 3.3) - 0.5) * 0.014 * (1 - k);
+            const y = 0.002 + 0.053 * Math.pow(1 - k, 1.4) + bump;
+            row.push(new t.Vector3(EARTH_C.x + Math.cos(th) * rr, y, EARTH_C.z + Math.sin(th) * rr));
+          }
+          earthRows.push(row);
+        }
+        const earth = new t.Mesh(loftRows(t, earthRows), mat(t, 0x4a3a2a, { tex: 'concrete', repeat: [5, 5], rough: 1, bump: 0.05 }));
         earth.receiveShadow = true;
         g.add(earth);
+        // clods and sods straddling the boundary
+        const clodP: MergedBoxSpec[] = [];
+        for (let i = 0; i < 26; i += 1) {
+          const th = (i / 26) * Math.PI * 2 + hash01(i * 5.1) * 0.2;
+          const rr = rEdge(th) * (0.88 + hash01(i * 7.7) * 0.28);
+          const w = 0.09 + hash01(i * 2.3) * 0.16;
+          clodP.push({
+            dims: [w, 0.035 + hash01(i * 3.9) * 0.03, w * (0.6 + hash01(i * 11.3) * 0.7)],
+            pos: [EARTH_C.x + Math.cos(th) * rr, 0.014, EARTH_C.z + Math.sin(th) * rr],
+            rotY: hash01(i * 9.1) * 3.14,
+          });
+        }
+        const clods = mergedBoxes(t, clodP, 0x453728, { tex: 'concrete', rough: 1 });
+        clods.castShadow = false;
+        g.add(clods);
         const stone = 0x8f948f;
         /** a tombstone: plinth, marker, CARVED face (a sunk panel plus rows of
          *  chiselled inscription lines), a kerbed grave slab and moss on the
          *  weather side. `kind` picks the head shape — round, gabled or a
          *  broken stump snapped off at an angle. */
+        // FIVE MARKERS, ONE BATCH. Every grave used to be a Group of 12-13
+        // separate meshes — four graves plus the cross came to ~56 draw calls
+        // for static stone that never moves relative to itself. The geometry is
+        // unchanged; each part's transform is now COMPOSED (the grave's own
+        // yaw/settle matrix times the part's local offset) and baked into a
+        // MergedBoxSpec, so the whole churchyard lands in four merged meshes
+        // banded by tone — furniture, marker stone, sunk panel, inscription —
+        // plus one moss batch and the two round headstone caps.
+        const furnP: MergedBoxSpec[] = []; // plinths, slabs, kerbs, footings
+        const markP: MergedBoxSpec[] = []; // the markers themselves
+        const panelP: MergedBoxSpec[] = []; // sunk carved panels
+        const inscP: MergedBoxSpec[] = []; // chiselled lines
+        const mossP: MergedBoxSpec[] = [];
+        const roundCaps: [number, number, number, number][] = []; // x, y, z, ry
         const grave = (x: number, z: number, ry: number, kind: 'round' | 'gable' | 'broken', tilt = 0) => {
-          const gr = new t.Group();
-          gr.position.set(x, 0, z);
-          gr.rotation.y = ry;
-          gr.rotation.z = tilt; // settled ground
+          // the grave's own frame: yaw, then settle (three.js Euler order XYZ)
+          const G = new t.Matrix4().makeRotationFromEuler(new t.Euler(0, ry, tilt, 'XYZ'));
+          G.setPosition(x, 0, z);
+          /** compose a part's local transform into the grave's frame */
+          const at = (
+            dims: [number, number, number],
+            pos: [number, number, number],
+            rot?: [number, number, number],
+            repeat?: [number, number],
+          ): MergedBoxSpec => {
+            const L = new t.Matrix4().makeRotationFromEuler(new t.Euler(rot?.[0] ?? 0, rot?.[1] ?? 0, rot?.[2] ?? 0, 'XYZ'));
+            L.setPosition(pos[0], pos[1], pos[2]);
+            return { dims, matrix: new t.Matrix4().multiplyMatrices(G, L), ...(repeat ? { repeat } : {}) };
+          };
           const h = kind === 'broken' ? 0.21 : 0.3;
-          gr.add(box(t, [0.26, 0.05, 0.1], 0x7f847f, [0, 0.025, 0], { tex: 'concrete', rough: 0.95 })); // plinth
-          gr.add(box(t, [0.2, h, 0.055], stone, [0, 0.05 + h / 2, 0], { tex: 'concrete', repeat: [2, 2], rough: 0.95 }));
-          if (kind === 'round') gr.add(cyl(t, 0.1, 0.1, 0.055, stone, [0, 0.05 + h, 0], { rotX: Math.PI / 2, tex: 'concrete', rough: 0.95, seg: 14 }));
+          furnP.push(at([0.26, 0.05, 0.1], [0, 0.025, 0])); // plinth
+          markP.push(at([0.2, h, 0.055], [0, 0.05 + h / 2, 0], undefined, [2, 2]));
+          if (kind === 'round') {
+            const c = new t.Vector3(0, 0.05 + h, 0).applyMatrix4(G);
+            roundCaps.push([c.x, c.y, c.z, ry]);
+          }
           if (kind === 'gable')
-            [-1, 1].forEach((s) => gr.add(box(t, [0.145, 0.05, 0.055], stone, [s * 0.036, 0.05 + h + 0.017, 0], { tex: 'concrete', rough: 0.95, rotZ: -s * 0.72 })));
+            [-1, 1].forEach((sg) => markP.push(at([0.145, 0.05, 0.055], [sg * 0.036, 0.05 + h + 0.017, 0], [0, 0, -sg * 0.72])));
           if (kind === 'broken') {
-            gr.add(box(t, [0.2, 0.07, 0.055], stone, [0.02, 0.05 + h, 0], { tex: 'concrete', rough: 0.95, rotZ: 0.28 })); // snapped top
-            gr.add(box(t, [0.13, 0.16, 0.05], stone, [0.19, 0.03, 0.06], { tex: 'concrete', rough: 0.95, rotZ: 1.2, rotY: 0.4 })); // the fallen piece
+            markP.push(at([0.2, 0.07, 0.055], [0.02, 0.05 + h, 0], [0, 0, 0.28])); // snapped top
+            markP.push(at([0.13, 0.16, 0.05], [0.19, 0.03, 0.06], [0, 0.4, 1.2])); // the fallen piece
           }
           // carved face: a recessed panel with chiselled inscription lines
-          gr.add(box(t, [0.15, h - 0.07, 0.012], 0x787d78, [0, 0.06 + h / 2, 0.03], { rough: 0.98 }));
-          for (let i = 0; i < 3; i++)
-            gr.add(box(t, [0.1 - i * 0.022, 0.012, 0.008], 0x5f645f, [0, 0.03 + h - i * 0.055, 0.035], { rough: 1 }));
-          gr.add(box(t, [0.3, 0.045, 0.34], 0x7a7f7a, [0, 0.022, 0.2], { tex: 'concrete', rough: 0.95 })); // grave slab
-          [-1, 1].forEach((s) => gr.add(box(t, [0.03, 0.06, 0.34], 0x868b86, [s * 0.15, 0.03, 0.2], { tex: 'concrete', rough: 0.95 }))); // kerbs
-          gr.add(ball(t, 0.045, 0x4c6e30, [0.085, 0.055, -0.02], { tex: 'leaf', flat: true, rough: 0.95 })); // moss
-          gr.add(ball(t, 0.03, 0x53753a, [-0.07, 0.045, 0.05], { tex: 'leaf', flat: true, rough: 0.95 }));
-          g.add(gr);
+          panelP.push(at([0.15, h - 0.07, 0.012], [0, 0.06 + h / 2, 0.03]));
+          for (let i = 0; i < 3; i++) inscP.push(at([0.1 - i * 0.022, 0.012, 0.008], [0, 0.03 + h - i * 0.055, 0.035]));
+          furnP.push(at([0.3, 0.045, 0.34], [0, 0.022, 0.2])); // grave slab
+          [-1, 1].forEach((sg) => furnP.push(at([0.03, 0.06, 0.34], [sg * 0.15, 0.03, 0.2]))); // kerbs
+          mossP.push(at([0.075, 0.05, 0.07], [0.085, 0.05, -0.02], [0, 0.6, 0]));
+          mossP.push(at([0.052, 0.036, 0.05], [-0.07, 0.042, 0.05], [0, 1.1, 0]));
         };
         grave(2.85, 0.35, -0.9, 'round');
         grave(2.75, -0.5, -2.2, 'gable', 0.07);
         grave(2.1, -0.95, -1.4, 'broken', -0.05);
         grave(3.0, 0.95, -0.55, 'round', 0.05);
-        // cross-shaped marker, leaning, with a mossy footing
-        const cross = new t.Group();
-        cross.position.set(2.05, 0, 0.72);
-        cross.rotation.y = 0.5;
-        cross.rotation.z = 0.12; // leaning
-        cross.add(box(t, [0.06, 0.42, 0.06], stone, [0, 0.21, 0], { tex: 'concrete', rough: 0.95 }));
-        cross.add(box(t, [0.24, 0.06, 0.06], stone, [0, 0.3, 0], { tex: 'concrete', rough: 0.95 }));
-        cross.add(box(t, [0.05, 0.05, 0.05], stone, [0, 0.345, 0], { tex: 'concrete', rough: 0.95, rotY: 0.78 })); // finial
-        cross.add(box(t, [0.16, 0.05, 0.16], 0x7a7f7a, [0, 0.025, 0], { tex: 'concrete', rough: 0.95 })); // footing
-        g.add(cross);
+        // cross-shaped marker, leaning, with a mossy footing — same batch
+        {
+          const G = new t.Matrix4().makeRotationFromEuler(new t.Euler(0, 0.5, 0.12, 'XYZ'));
+          G.setPosition(2.05, 0, 0.72);
+          const at = (dims: [number, number, number], pos: [number, number, number], ryy = 0): MergedBoxSpec => {
+            const L = new t.Matrix4().makeRotationY(ryy);
+            L.setPosition(pos[0], pos[1], pos[2]);
+            return { dims, matrix: new t.Matrix4().multiplyMatrices(G, L) };
+          };
+          markP.push(at([0.06, 0.42, 0.06], [0, 0.21, 0]));
+          markP.push(at([0.24, 0.06, 0.06], [0, 0.3, 0]));
+          markP.push(at([0.05, 0.05, 0.05], [0, 0.345, 0], 0.78)); // finial
+          furnP.push(at([0.16, 0.05, 0.16], [0, 0.025, 0])); // footing
+        }
+        [
+          [furnP, 0x7f847f] as const,
+          [markP, stone] as const,
+          [panelP, 0x787d78] as const,
+          [inscP, 0x5f645f] as const,
+        ].forEach(([parts, col]) => {
+          const m = mergedBoxes(t, parts, col, { tex: 'concrete', rough: 0.96 });
+          m.castShadow = true;
+          m.receiveShadow = true;
+          g.add(m);
+        });
+        g.add(mergedBoxes(t, mossP, 0x4c6e30, { tex: 'leaf', rough: 0.95 }));
+        roundCaps.forEach(([cx, cy, cz, ry]) => {
+          const cap = cyl(t, 0.1, 0.1, 0.055, stone, [cx, cy, cz], { tex: 'concrete', rough: 0.95, seg: 14 });
+          cap.rotation.set(Math.PI / 2, 0, 0);
+          cap.rotateY(ry);
+          g.add(cap);
+        });
         // DEAD TREE — a real branching skeleton instead of four sticks in a
         // trunk: a buttressed, kinked bole and two generations of limbs, each
         // child growing off the TIP of its parent (so the joints actually
@@ -534,47 +833,266 @@ export function buildGhostTrainScene(
           tree.add(ball(t, r1 * 1.25, BARK, [p[0] + hx * len, p[1] + hy * len, p[2] + hz * len], { tex: 'wood', flat: true, rough: 0.95 })); // knuckle
           return [p[0] + hx * len, p[1] + hy * len, p[2] + hz * len];
         };
+        /** a TWIG: the same endpoint-placed segment, but merged instead of drawn
+         *  — twenty tapered cylinders and their knuckles were twenty draws for
+         *  parts a few millimetres thick. The taper is the only thing lost. */
+        const twigP: MergedBoxSpec[] = [];
+        const twig = (p: [number, number, number], yaw: number, pitch: number, len: number, r: number) => {
+          const h = new t.Vector3(Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw));
+          const a = new t.Vector3(p[0], p[1], p[2]);
+          const b = a.clone().addScaledVector(h, len);
+          const sp = strutSpec(t, a, b, r * 1.7, r * 1.7);
+          if (sp) twigP.push(sp);
+        };
         const bole = limb(limb([0, 0, 0], 0.5, 1.5, 0.62, 0.1, 0.075), -0.6, 1.42, 0.46, 0.075, 0.055); // kinked trunk
         for (let i = 0; i < 5; i++) {
           const yaw = (i / 5) * Math.PI * 2 + 0.9;
           const tip = limb(bole, yaw, 0.72 + (i % 3) * 0.16, 0.44 - (i % 2) * 0.07, 0.05, 0.028);
-          for (let k = 0; k < 2; k++) limb(tip, yaw + (k ? 0.8 : -0.7), 0.5 + (i % 2) * 0.35, 0.26 - k * 0.05, 0.026, 0.008); // twigs (limb() self-adds)
+          for (let k = 0; k < 2; k++) twig(tip, yaw + (k ? 0.8 : -0.7), 0.5 + (i % 2) * 0.35, 0.26 - k * 0.05, 0.022);
         }
+        const twigs = mergedBoxes(t, twigP, BARK, { tex: 'wood', rough: 0.95 });
+        twigs.castShadow = true;
+        tree.add(twigs);
         g.add(tree);
-        // weeds and a fallen urn under it — bare earth alone reads unfinished
-        for (let i = 0; i < 9; i++) {
+        // weeds and a fallen urn under it — bare earth alone reads unfinished.
+        // 27 weed stalks were 27 draws; they are one merged clump now, each
+        // blade placed from its base and its leaning tip.
+        const weedP: MergedBoxSpec[] = [];
+        for (let i = 0; i < 11; i++) {
           const a = i * 2.399;
-          const rr = 0.45 + ((i * 17) % 7) * 0.09;
+          const rr = 0.42 + ((i * 17) % 7) * 0.1;
           const wx = 2.45 + Math.cos(a) * rr;
           const wz = Math.sin(a) * rr;
-          for (let b = 0; b < 3; b++)
-            g.add(cyl(t, 0.002, 0.012, 0.1 + (b % 2) * 0.05, 0x5b6141, [wx + b * 0.02 - 0.02, 0.05, wz + (b % 2) * 0.02], { rough: 1, seg: 4, rotZ: (b - 1) * 0.4 }));
+          for (let b = 0; b < 4; b++) {
+            const hh = 0.11 + (b % 2) * 0.06 + hash01(i * 3.1 + b) * 0.05;
+            const lean = 0.3 + hash01(i + b * 2.7) * 0.55;
+            const dir = a + (b - 1.5) * 0.9;
+            const base = new t.Vector3(wx + Math.cos(dir) * 0.02, 0.02, wz + Math.sin(dir) * 0.02);
+            const sp = strutSpec(t, base, new t.Vector3(base.x + Math.cos(dir) * lean * hh, base.y + hh, base.z + Math.sin(dir) * lean * hh), 0.014, 0.014);
+            if (sp) weedP.push(sp);
+          }
         }
+        const weeds = mergedBoxes(t, weedP, 0x5b6141, { tex: 'leaf', rough: 1 });
+        weeds.castShadow = false;
+        g.add(weeds);
         const urn = new t.Group();
         urn.position.set(2.62, 0.06, -0.95);
         urn.rotation.z = 1.35; // toppled
         urn.add(cyl(t, 0.07, 0.045, 0.14, 0x8a8f8a, [0, 0, 0], { tex: 'concrete', rough: 0.95, seg: 12 }));
         urn.add(cyl(t, 0.085, 0.085, 0.02, 0x8a8f8a, [0, 0.08, 0], { tex: 'concrete', rough: 0.95, seg: 12 }));
         g.add(urn);
-        // rusty iron fence guarding the graveyard's outer arc
+        // rusty iron fence guarding the graveyard's outer arc — pickets, spear
+        // finials and both rails in ONE merged mesh (it was 34), with every
+        // rail placed from the two picket tops it spans and two pickets bent
+        // out of true, because a fence with no casualties reads as a fresh one.
         const FR = 3.05;
-        for (let i = 0; i < 9; i++) {
+        const fenceP: MergedBoxSpec[] = [];
+        const picketAt = (i: number) => {
           const a = -0.6 + (i / 8) * 1.2;
-          g.add(cyl(t, 0.014, 0.014, 0.4, IRON, [Math.cos(a) * FR, 0.2, Math.sin(a) * FR], { metal: 0.5, rough: 0.6, seg: 6 }));
-          g.add(ball(t, 0.022, IRON, [Math.cos(a) * FR, 0.41, Math.sin(a) * FR], { rough: 0.5 })); // spike finial
+          const lean = i === 3 ? 0.16 : i === 6 ? -0.11 : 0;
+          return { a, lean, x: Math.cos(a) * FR, z: Math.sin(a) * FR };
+        };
+        for (let i = 0; i < 9; i++) {
+          const q = picketAt(i);
+          const base = new t.Vector3(q.x, 0.0, q.z);
+          const top = new t.Vector3(q.x + Math.cos(q.a) * q.lean * 0.4, 0.4, q.z + Math.sin(q.a) * q.lean * 0.4);
+          const sp = strutSpec(t, base, top, 0.028, 0.028);
+          if (sp) fenceP.push(sp);
+          // spear finial: a short taper-substitute above the picket top
+          const tip = top.clone().addScaledVector(new t.Vector3().subVectors(top, base).normalize(), 0.055);
+          const spF = strutSpec(t, top, tip, 0.036, 0.036);
+          if (spF) fenceP.push(spF);
         }
         [0.14, 0.34].forEach((fy) => {
           for (let i = 0; i < 8; i++) {
-            const a0 = -0.6 + (i / 8) * 1.2;
-            const a1 = -0.6 + ((i + 1) / 8) * 1.2;
-            const mx = ((Math.cos(a0) + Math.cos(a1)) / 2) * FR;
-            const mz = ((Math.sin(a0) + Math.sin(a1)) / 2) * FR;
-            const len = Math.hypot(Math.cos(a1) - Math.cos(a0), Math.sin(a1) - Math.sin(a0)) * FR;
-            const rail = box(t, [0.025, 0.025, len], IRON, [mx, fy, mz], { metal: 0.5, rough: 0.6 });
-            rail.rotation.y = Math.atan2(Math.cos(a1) - Math.cos(a0), Math.sin(a1) - Math.sin(a0));
-            g.add(rail);
+            const q0 = picketAt(i);
+            const q1 = picketAt(i + 1);
+            const k = fy / 0.4;
+            const a = new t.Vector3(q0.x + Math.cos(q0.a) * q0.lean * 0.4 * k, fy, q0.z + Math.sin(q0.a) * q0.lean * 0.4 * k);
+            const b = new t.Vector3(q1.x + Math.cos(q1.a) * q1.lean * 0.4 * k, fy, q1.z + Math.sin(q1.a) * q1.lean * 0.4 * k);
+            const sp = strutSpec(t, a, b, 0.025, 0.025);
+            if (sp) fenceP.push(sp);
           }
         });
+        const fence = mergedBoxes(t, fenceP, IRON, { tex: 'metal', metal: 0.5, rough: 0.6 });
+        fence.castShadow = true;
+        g.add(fence);
+
+        // ------------------------------------------------------------------
+        // THE SHOW ROOM — what the collapsed roof reveals.
+        //
+        // The track inside the building is a C, open toward the facade, and the
+        // whole band |z| < 0.6 east of x −2.08 is free: the train only crosses
+        // the full width of the room at |z| ≈ 0.65-0.75. That is where the show
+        // goes, so nothing here is anywhere near the car envelope (rail centres
+        // ±0.085, car half-width 0.18 ⇒ a 0.19 sweep, and the tightest
+        // clearance below is 0.13 at the organ).
+        //
+        // Everything in here is night-driven, and almost all of it is EMISSIVE
+        // rather than lit: three real PointLights is the whole budget for this
+        // ride, so the candles, the coffin's glow, the organ's music desk and
+        // the doorway reveals all carry their own light. Note the trap: `mat()`
+        // bakes the colour into the TEXTURE and leaves `material.color` white,
+        // so a mapped material has to be given `emissiveMap = map` (the same
+        // texture object — free) for its glow to have the right shape, and an
+        // unmapped one just takes `emissive`. Everything self-lit below is
+        // deliberately UNMAPPED for that reason.
+        // ------------------------------------------------------------------
+        // 1. flagstone floor inside the show band, laid proud of the plinth so
+        //    the doorways look into a FLOOR rather than out at the grass
+        const flagP: MergedBoxSpec[] = [];
+        for (let i = 0; i < 5; i += 1)
+          for (let j = 0; j < 4; j += 1) {
+            const w = 0.26 + hash01(i * 3.1 + j) * 0.07;
+            flagP.push({
+              dims: [w, 0.03, 0.24 + hash01(i + j * 2.7) * 0.07],
+              pos: [-2.02 + i * 0.29, 0.185, -0.44 + j * 0.3],
+              rotY: (hash01(i * 7.7 + j) - 0.5) * 0.08,
+            });
+          }
+        const flags = mergedBoxes(t, flagP, 0x3a3a44, { tex: 'concrete', repeat: [1, 1], rough: 0.95 });
+        flags.receiveShadow = true;
+        g.add(flags);
+
+        // 2. THE COFFIN, lid ajar on a trestle bier, with green light climbing
+        //    out of it. This is the reveal the hole is aimed at.
+        const COF = new t.Vector3(-1.66, 0.2, 0.02);
+        const cofP: MergedBoxSpec[] = [];
+        const bierP: MergedBoxSpec[] = [];
+        [-0.28, 0.28].forEach((dz) => {
+          bierP.push({ dims: [0.3, 0.05, 0.07], pos: [COF.x, COF.y + 0.3, COF.z + dz] });
+          [-1, 1].forEach((sx) => {
+            const a = new t.Vector3(COF.x + sx * 0.12, COF.y + 0.3, COF.z + dz);
+            const b = new t.Vector3(COF.x + sx * 0.16, COF.y, COF.z + dz);
+            const sp = strutSpec(t, a, b, 0.04, 0.04);
+            if (sp) bierP.push(sp);
+          });
+        });
+        g.add(mergedBoxes(t, bierP, 0x2a2129, { tex: 'wood', rough: 0.95 }));
+        // a tapered casket: shoulders wide, foot narrow — three boxes, not one
+        cofP.push({ dims: [0.26, 0.15, 0.3], pos: [COF.x, COF.y + 0.4, COF.z + 0.16], repeat: [2, 1] });
+        cofP.push({ dims: [0.22, 0.15, 0.16], pos: [COF.x, COF.y + 0.4, COF.z - 0.05] });
+        cofP.push({ dims: [0.15, 0.15, 0.2], pos: [COF.x, COF.y + 0.4, COF.z - 0.24] });
+        // the LID, hinged on the far side and thrown open
+        {
+          const L = new t.Matrix4().makeRotationX(-0.85);
+          L.setPosition(COF.x, COF.y + 0.49, COF.z + 0.24);
+          cofP.push({ dims: [0.28, 0.03, 0.62], matrix: L, repeat: [2, 3] });
+        }
+        const coffin = mergedBoxes(t, cofP, 0x3d2a1c, { tex: 'wood', rough: 0.9 });
+        coffin.castShadow = true;
+        g.add(coffin);
+        // the glow inside it, and the pale hands on the rim
+        const cofGlowMat = glowMat(0x0d2a1a, SHOW_GREEN, 0.85);
+        showGlow.push(cofGlowMat);
+        const cofGlow = new t.Mesh(new t.BoxGeometry(0.2, 0.02, 0.52), cofGlowMat);
+        cofGlow.position.set(COF.x, COF.y + 0.47, COF.z);
+        g.add(cofGlow);
+        g.add(
+          mergedBoxes(
+            t,
+            [
+              { dims: [0.05, 0.03, 0.09], pos: [COF.x - 0.08, COF.y + 0.5, COF.z + 0.12], rotZ: 0.2 },
+              { dims: [0.05, 0.03, 0.09], pos: [COF.x + 0.08, COF.y + 0.5, COF.z + 0.12], rotZ: -0.2 },
+            ],
+            0xe8e4da,
+            { rough: 0.6 },
+          ),
+        );
+
+        // 3. THE CANDELABRA, hung off the surviving purlin over the coffin
+        const CH = new t.Vector3(COF.x + 0.06, 1.62, COF.z + 0.05);
+        const chainP: MergedBoxSpec[] = [{ dims: [0.018, 0.34, 0.018], pos: [CH.x, CH.y + 0.19, CH.z] }];
+        for (let i = 0; i < 5; i += 1) {
+          const a = (i / 5) * Math.PI * 2 + 0.3;
+          const arm = strutSpec(
+            t,
+            new t.Vector3(CH.x, CH.y, CH.z),
+            new t.Vector3(CH.x + Math.cos(a) * 0.13, CH.y + 0.03, CH.z + Math.sin(a) * 0.13),
+            0.016,
+            0.016,
+          );
+          if (arm) chainP.push(arm);
+          chainP.push({ dims: [0.035, 0.03, 0.035], pos: [CH.x + Math.cos(a) * 0.13, CH.y + 0.05, CH.z + Math.sin(a) * 0.13] });
+        }
+        chainP.push({ dims: [0.06, 0.05, 0.06], pos: [CH.x, CH.y - 0.02, CH.z] });
+        g.add(mergedBoxes(t, chainP, 0x1e1f24, { tex: 'metal', metal: 0.5, rough: 0.55 }));
+        const waxP: MergedBoxSpec[] = [];
+        const flameP: MergedBoxSpec[] = [];
+        for (let i = 0; i < 5; i += 1) {
+          const a = (i / 5) * Math.PI * 2 + 0.3;
+          const hh = 0.07 + (i % 3) * 0.022; // candles burn down unevenly
+          const cx = CH.x + Math.cos(a) * 0.13;
+          const cz = CH.z + Math.sin(a) * 0.13;
+          waxP.push({ dims: [0.026, hh, 0.026], pos: [cx, CH.y + 0.065 + hh / 2, cz] });
+          flameP.push({ dims: [0.02, 0.05, 0.02], pos: [cx, CH.y + 0.065 + hh + 0.028, cz] });
+        }
+        g.add(mergedBoxes(t, waxP, 0xe6dfc8, { rough: 0.7 }));
+        const flameMat = glowMat(0xffe1a0, 0xffb040, 1.5);
+        showFlame.push(flameMat);
+        const flames = new t.Mesh(mergedBoxes(t, flameP, 0xffe1a0, { rough: 0.7 }).geometry, flameMat);
+        flames.castShadow = false;
+        g.add(flames);
+
+        // 4. THE ORGAN in the back corner — the tallest silhouette in the room,
+        //    which is what the sight line through the hole actually lands on.
+        //    Front face at x −2.42, clearing the car envelope (−2.29) by 0.13.
+        const ORG = new t.Vector3(-2.55, 0.2, -0.92);
+        const orgP: MergedBoxSpec[] = [
+          { dims: [0.26, 0.62, 0.6], pos: [ORG.x, ORG.y + 0.31, ORG.z], repeat: [1, 2] }, // case
+          { dims: [0.3, 0.05, 0.66], pos: [ORG.x, ORG.y + 0.64, ORG.z] }, // cornice
+          { dims: [0.16, 0.05, 0.5], pos: [ORG.x + 0.19, ORG.y + 0.46, ORG.z] }, // music desk shelf
+          { dims: [0.06, 0.3, 0.62], pos: [ORG.x - 0.02, ORG.y + 0.82, ORG.z] }, // pipe backboard
+        ];
+        const pipeP: MergedBoxSpec[] = [];
+        for (let i = 0; i < 13; i += 1) {
+          // a real organ front is a symmetric V of mitred pipes
+          const k = Math.abs(i - 6) / 6;
+          const hh = 0.5 - 0.3 * k;
+          pipeP.push({ dims: [0.055, hh, 0.042], pos: [ORG.x + 0.06, ORG.y + 0.67 + hh / 2, ORG.z - 0.26 + i * 0.043] });
+        }
+        g.add(mergedBoxes(t, orgP, 0x2f2231, { tex: 'wood', rough: 0.9 }));
+        const pipes = mergedBoxes(t, pipeP, 0x8f9299, { tex: 'metal', metal: 0.55, rough: 0.4 });
+        pipes.castShadow = true;
+        g.add(pipes);
+        // the keyboard, and the sheet of music glowing on the desk
+        g.add(box(t, [0.1, 0.03, 0.44], 0xe6e2d6, [ORG.x + 0.22, ORG.y + 0.49, ORG.z], { rough: 0.7 }));
+        const deskMat = glowMat(0x0d2a1a, SHOW_GREEN, 0.65);
+        showGlow.push(deskMat);
+        const desk = new t.Mesh(new t.BoxGeometry(0.13, 0.02, 0.34), deskMat);
+        desk.position.set(ORG.x + 0.2, ORG.y + 0.53, ORG.z);
+        desk.rotation.z = 0.35;
+        g.add(desk);
+
+        // 5. interior cobwebs in the two back corners, seen through the hole
+        cornerWeb(-2.64, 1.4, -1.2, 0.36, 1, Math.PI);
+        cornerWeb(-2.64, 1.4, 1.2, 0.36, -1, Math.PI);
+
+        // 6. DOORWAY REVEALS — the doors used to be two black rectangles day
+        //    and night, which is the opposite of what a dark ride's mouth
+        //    should do. Each opening gets a glowing jamb strip either side and
+        //    a soffit under the lintel, all inboard of the wall face so nothing
+        //    can foul the train passing through. One merged mesh, one material,
+        //    night-gated with the rest of the show.
+        const jambP: MergedBoxSpec[] = [];
+        doorZs.forEach((dz) => {
+          [-1, 1].forEach((sz) => jambP.push({ dims: [0.05, 0.86, 0.045], pos: [wallX - 0.05, 0.53, dz + sz * 0.27] }));
+          jambP.push({ dims: [0.05, 0.045, 0.56], pos: [wallX - 0.05, 0.93, dz] });
+        });
+        const jambMat = glowMat(0x0d2a1a, SHOW_GREEN, 0.5);
+        showGlow.push(jambMat);
+        const jambs = new t.Mesh(mergedBoxes(t, jambP, 0x0d2a1a, { rough: 0.55 }).geometry, jambMat);
+        jambs.castShadow = false;
+        g.add(jambs);
+
+        // 7. a fourth spectre rising OUT OF THE COFFIN, framed by the hole
+        const cryptGhost = buildGhost(0.85, 0.62);
+        cryptGhost.position.set(COF.x, COF.y + 0.62, COF.z + 0.04);
+        g.add(cryptGhost);
+
+        // the daylight base of every reveal, snapshotted once — the night gate
+        // lifts each one off its OWN base rather than off a shared constant
+        const showGlowBase = showGlow.map((m) => m.emissiveIntensity);
 
         // ---- the train: 3 two-seat cars, lamp on the lead car ---------------
         const CARBODY = 0x27343f; // midnight slate
@@ -638,8 +1156,12 @@ export function buildGhostTrainScene(
         vehicle = cars[0].grp;
 
         // ---- night rig: 3 real lights, all nightK-gated ----------------------
+        // moved off the doorway and INTO the show room: at (-1.1, 0.7, 0) it lit
+        // the inside of the front wall and nothing else, so the only thing it
+        // achieved was a faint rim on the door flaps. Over the coffin it lights
+        // the reveal the roof hole is aimed at AND still spills out both doors.
         const doorGlow = new t.PointLight(0x40ff80, 0, 4, 2); // eerie interior spill
-        doorGlow.position.set(-1.1, 0.7, 0);
+        doorGlow.position.set(-1.62, 0.78, 0.04);
         g.add(doorGlow);
         const graveWash = new t.PointLight(0x58ff9a, 0, 4.5, 2);
         graveWash.position.set(2.4, 0.9, 0);
@@ -669,6 +1191,20 @@ export function buildGhostTrainScene(
           graveGhost.rotation.y = -wa + Math.PI / 2; // faces the way it drifts
           graveGhost.rotation.z = 0.08 * Math.sin(time * 1.5);
           for (const m of ghostSheets) m.emissiveIntensity = 0.22 + (1.15 - 0.22) * ease;
+          // the show room: the green reveals climb hard after dark and BREATHE
+          // (three offset sines so no two surfaces pulse together — one shared
+          // clock would read as a single flickering bulb wired to everything),
+          // and the candles flicker on their own faster clock.
+          showGlow.forEach((m, i) => {
+            m.emissiveIntensity = showGlowBase[i] + ease * (1.5 + 0.28 * Math.sin(time * (1.7 + i * 0.43) + i * 1.9));
+          });
+          showFlame.forEach((m) => {
+            m.emissiveIntensity = 1.5 + ease * (1.6 + 0.5 * Math.sin(time * 11.3) + 0.3 * Math.sin(time * 17.7));
+          });
+          // the crypt spectre climbs slowly out of the coffin and sinks back
+          cryptGhost.position.y = COF.y + 0.6 + 0.11 * Math.sin(time * 0.55);
+          cryptGhost.rotation.y = 0.5 * Math.sin(time * 0.42) + Math.PI * 0.15;
+          cryptGhost.rotation.z = 0.07 * Math.sin(time * 1.1);
           // train: constant crawl around the loop, cars glued to the rails
           const uHead = ((time * 0.38) / trackLen + 0.52) % 1; // phased so the train opens OUTDOORS
           cars.forEach(({ grp, off }) => {

@@ -2,7 +2,7 @@
   "version": 1,
   "designSystemId": "ds-fbd20bf8-b16d-4cf1-8440-d20bc095fc4a",
   "note": "EMPTY BASELINE. No entry here means \"never pushed as far as this manifest knows\", so the first status run reports the whole tree. Bootstrap it ONCE, when no push is in flight, with:  node manifest.mjs reconcile --server-list=<get_design_system json> --assume-clean   (see ../README.md, FAST PUSH PROTOCOL / Bootstrapping). Thereafter only ever grow it via `commit`, after the final file-list check.",
-  "updatedAt": "2026-07-29T03:15:26.710Z",
+  "updatedAt": "2026-07-29T03:56:31.336Z",
   "files": {
     "components/AetherBalloons/AetherBalloons.previews.tsx": {
       "sha256": "f608fecc90623a3551d5eea95ea18e7012c780acbee614ad4e7b1eee201d7d8e",
@@ -2427,9 +2427,9 @@
       "pushedAt": "2026-07-28T19:24:10.755Z"
     },
     "rules/setup.md": {
-      "sha256": "d19b4b9fdb9fa93ffd04786ec159bc0806b7d242e27a09f10651c508eb28f8d4",
-      "bytes": 143178,
-      "pushedAt": "2026-07-29T03:15:26.710Z"
+      "sha256": "c1da141c13939c01c1eaf11525815518213581a3ca0d51e9672a73693abfe9dc",
+      "bytes": 150372,
+      "pushedAt": "2026-07-29T03:56:31.336Z"
     },
     "rules/ui.md": {
       "sha256": "de5bd2fb1872dc81b87d8671f8f82c4a79f5a69d183887e1015c1a0842092412",

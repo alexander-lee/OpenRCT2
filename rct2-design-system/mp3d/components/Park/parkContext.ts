@@ -713,38 +713,53 @@ export function usePark(consumer = 'park child'): ParkContextValue {
  *  ---- RE-ANCHORED ON 500 AT THE DEFAULT PLOT (2026-07-28) -------------------
  *
  *  A park now OPENS WITH A REAL CROWD: 500 guests on the 128 default, ten times
- *  the old 50. The SHAPE of the curve above is unchanged — it is still the
- *  measured cube-root-of-plot-area fit, because that is how this corpus's street
- *  networks actually grow — only the anchor moved:
+ *  the old 50. The measured cube-root-of-plot-area SHAPE above is unchanged — it
+ *  is still how this corpus's street networks actually grow — only the anchor
+ *  moved. But a flat 10x at EVERY size is absurd on a diorama: it would have put
+ *  125 guests on a 16-u plot, which is a mosh pit, and it would have rewritten
+ *  every small reference park's screenshot.
  *
- *      guests(size) = clamp(round(500 · (size / 128)^(2/3)), 60, 800)
+ *  So the curve is bounded by a DENSITY, and both ends of it are measured points:
+ *
+ *      guests(size) = clamp(min(500 * (size / 128)^(2/3), size^2 / 20), 6, 800)
+ *
+ *  …where the 500 is the new default-plot figure and the `size^2 / 20` is the
+ *  density of the ONLY small-plot count anyone has rendered and scored good —
+ *  `DemoPark`'s 13 guests on a 16-u plot, i.e. 256 / 13 = 19.7 u^2 per guest. The
+ *  density bound binds below ~96 and the crowd figure binds above it:
  *
  *  | size |  16 |  32 |  48 |  64 |  96 | 128 | 160 | 192 | 256 |
  *  | ---- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
- *  | open | 125 | 198 | 260 | 315 | 413 | 500 | 580 | 655 | 794 |
+ *  | open |  13 |  51 | 115 | 205 | 413 | 500 | 580 | 655 | 794 |
  *
- *  WHY THIS IS AFFORDABLE, AND WHAT IT COST TO MAKE IT SO. Ten times the crowd
- *  is not ten times the frame, because the guests are no longer ten times the
+ *  Note the left column: **a size-16 park still opens with 13, exactly as before**,
+ *  so nothing pinned or previewed at a reference size moved.
+ *
+ *  WHY THIS IS AFFORDABLE, AND WHAT IT COST TO MAKE IT SO. Ten times the crowd is
+ *  not ten times the frame, because the guests are no longer ten times the
  *  MESHES. Measured on `parkA-99` (size 128) with
  *  `harness/mp3d-render/probe-frame-cost.mjs --gpu=metal` — a REAL GPU (ANGLE
  *  Metal, M4 Pro), never SwiftShader:
  *
- *    | population | frame (gpuMs) | draws | the crowd's share |
- *    | ---------- | ------------- | ----- | ----------------- |
- *    |  99 (old)  |     16.32     |  3176 | 3.4 ms /  839     |
- *    | 500 before |     35.34     |  6614 | 20.6 ms / 4272    |
- *    | 500 after  |  see crowd.ts |       | ~8 draws          |
+ *    | population  | frame (gpuMs) | draws | rAF gap | validatePark |
+ *    | ----------- | ------------- | ----- | ------- | ------------ |
+ *    |  99 (old)   |     16.32     |  3176 | 18.9 ms |      1035 ms |
+ *    | 500 before  |     35.34     |  6614 | 40.0 ms |      5761 ms |
+ *    | 500 after   |   **10.06**   |  2366 | 12.4 ms |   **431 ms** |
  *
- *  The lever was MESH COUNT, not triangles: `GameManager/crowd.ts` draws every
- *  guest outside the camera's detail radius from eight shared `InstancedMesh`
- *  pools and takes their rigs out of the scene graph, so the far crowd is eight
- *  draw calls at ANY population and only the ~72 guests you can actually see
- *  carry a 13-mesh articulated rig. Read that file before changing this number:
- *  the reason 500 works is entirely in there.
+ *  i.e. five times the crowd for LESS than a hundred guests used to cost, and the
+ *  acceptance gate got faster too. Two levers, both about the crowd rather than
+ *  about triangles: `GameManager/crowd.ts` draws every guest outside the camera's
+ *  detail radius from eight shared `InstancedMesh` pools and takes their rigs out
+ *  of the scene graph, and `PathNetwork`'s `walkYAt` — which every guest samples
+ *  every frame and which a CPU profile put at **21 % of all self time**, the
+ *  single most expensive function in a populated park — is now a bucket grid.
+ *  Read crowd.ts before changing this number: the reason 500 works is in there.
  *
  *  A park that wants a different opening crowd still passes `<Park guests={n}>`,
  *  and every reference preview does. */
-export const guestsForSize = (size: number) => Math.max(60, Math.min(800, Math.round(500 * Math.cbrt((size / 128) ** 2))));
+export const guestsForSize = (size: number) =>
+  Math.max(6, Math.min(800, Math.round(Math.min(500 * Math.cbrt((size / 128) ** 2), (size * size) / 20))));
 
 /** HARD POPULATION CEILING for a plot — the gate stream (GameManager
  *  `arrivals.ts`) stops admitting while `activeGuests >= cap` and resumes the
@@ -759,11 +774,14 @@ export const guestsForSize = (size: number) => Math.max(60, Math.min(800, Math.r
  *  at 1000, and a ceiling is a PROMISE ABOUT THE WORST CASE — the frame has to
  *  hold AT it, not at the opening figure. So the headroom is 20 %:
  *
- *      cap(size) = clamp(round(1.2 * guests(size)), 72, 960)
+ *      cap(size) = clamp(round(1.2 * guests(size)), 24, 960)
  *
  *  | size |  16 |  32 |  48 |  64 |  96 | 128 | 160 | 192 | 256 |
  *  | ---- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
- *  | cap  | 150 | 238 | 312 | 378 | 496 | 600 | 696 | 786 | 953 |
+ *  | cap  |  24 |  61 | 138 | 246 | 496 | 600 | 696 | 786 | 953 |
+ *
+ *  The 16-u column is 24 against the old 26 — a size-16 diorama is left exactly
+ *  where it was, on purpose (see `guestsForSize`'s density bound).
  *
  *  600 at the default plot: enough that a well-run park visibly fills over a few
  *  minutes and that the departures a badly-run one suffers can be made good,
@@ -781,7 +799,7 @@ export const guestsForSize = (size: number) => Math.max(60, Math.min(800, Math.r
  *     loop the population figures sit inside - a well-run park climbs to this
  *     ceiling, a badly-run one drains toward empty and cannot refill until it
  *     fixes itself. */
-export const guestCapForSize = (size: number) => Math.max(72, Math.min(960, Math.round(1.2 * guestsForSize(size))));
+export const guestCapForSize = (size: number) => Math.max(24, Math.min(960, Math.round(1.2 * guestsForSize(size))));
 
 interface QueuedBuild {
   fn: () => void;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScenePreview, Station, Lift, Drop, TurnL, Straight } from '../Park';
-import { RiverRapids } from './index';
+import { RiverRapids, buildRapidsRaft } from './index';
 
 const previews = {
   componentName: 'RiverRapids',
@@ -19,6 +19,38 @@ const previews = {
             <Straight length={4.1} />
             <TurnL angle={180} radius={2} />
             <Straight length={1.2} />
+          </RiverRapids>
+        </ScenePreview>
+      ) },
+    { name: 'RAPBOAT raft (vehicle detail)', description:
+        "The boat on its own, turning slowly. The tube is ONE lofted surface whose radius pulses six times round the ring — six welded air chambers with a pinched seam between each — not a `TorusGeometry`, which has a constant tube radius and can therefore only ever read as a smooth doughnut. Under it, a fabric floor lofted to SAG toward the middle under the riders' weight; round it, a black rubber rubbing strake on the outer equator, twelve steel D-rings with the handline hanging in a catenary scallop between each pair, and six outward-facing seats. Outer radius 0.452 against the channel walls' 0.48 inner faces — tighter than the ring it replaces, so every verified clearance on every course still holds.",
+      render: () => (
+        <ScenePreview distance={2.4} targetY={0.2} height={360} autoRotate={false} background="#cfe4ea"
+          dress={(t, g, api) => {
+            api.setCameraPose?.([1.5, 1.05, 1.5], [0, 0.16, 0]);
+            const raft = buildRapidsRaft(t, 0xd42a1c, 0xf2c318);
+            g.add(raft);
+            return (time) => { raft.rotation.y = time * 0.35; };
+          }} />
+      ) },
+    { name: 'Raft, bank & station (detail)', description:
+        "Close on what this component builds around the compiled channel. THE RAFT: the tube is a LOFTED surface whose radius pulses six times round the ring — the six welded air chambers of a real inflatable, with a pinched seam between each pair — over a fabric floor lofted to SAG under its riders, finished with a black rubbing strake, twelve D-rings and a handline hanging in a scallop between each pair, and a chromed grab hoop on the centre console. It replaces a `TorusGeometry` doughnut and its envelope is TIGHTER (outer radius 0.452 against 0.455). THE BANK: coarse boulders across a 3× size range in five tones, seated on the ground outside the kit's own boulder line, with gravel, grass tufts and driftwood between them — and a masonry coping course capping the channel walls so the sweep has a unit of measure on it. THE CASCADES: a lofted falling sheet that leaves its stone spout almost horizontally and lands almost vertically, narrowing as it accelerates, with a foam pile where it hits the flow.",
+      render: () => (
+        <ScenePreview distance={8} targetY={0.9} height={420} autoRotate={false} background="#bfe6f2"
+          dress={(_t, _g, api) => api.setCameraPose?.([4.6, 2.7, 5.4], [-0.5, 0.6, 0.1])}>
+          <RiverRapids position={[-2.5, -3.3]}>
+            <Station />
+            <Lift height={0.8} />
+            <TurnL />
+            <Straight length={2} />
+            <TurnL />
+            <Drop height={0.4} />
+            <Straight length={0.8} />
+            <Drop height={0.4} />
+            <Straight length={0.8} />
+            <TurnL />
+            <Straight length={2} />
+            <TurnL />
           </RiverRapids>
         </ScenePreview>
       ) },

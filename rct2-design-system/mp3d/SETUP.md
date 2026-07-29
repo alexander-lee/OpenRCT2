@@ -688,7 +688,7 @@ ambitious broken one, and row 12 is the only one with no partial credit.
   | `turnL` / `turnR` | `angle` (default 90) + `radius` (default 1.5) | **nothing forces 90° or 2.5.** 45°, 135° and 180° all compile; mixed radii read as a real layout |
   | `loop` (`loopL`/`loopR`) | a 360° VERTICAL LOOP | **STEEL only.** `radius` is HALF-HEIGHT (default 1.8, clamped 0.7–2.6); `offset` is the lateral step (default 1.2, floored at 1.0); `angle` is ignored with a warn |
   | `corkscrewL` / `corkscrewR` | inverting barrel roll | STEEL only; on water/monorail profiles it silently becomes an `sbend` |
-  | `helixL` / `helixR` | `angle` (default 360) + `height` | buys height and length. A **flat** 360° helix returns to its own entry point; a CLIMBING one does NOT — MEASURED 5.48 u forward at `height` 1, 7.86 at 2, 10.0 at 4. `angle` over 360° measures identical to 360° |
+  | `helixL` / `helixR` | `angle` (default 360) + `height` | **free height: a 360° helix returns to its own entry point at ANY `height`** (re-measured — the old "a climbing one does not" was a measurement artefact). A negative `height` still CLIMBS. `angle` over 360° measures identical to 360° |
   | `sbend` | lateral shift, heading preserved | `radius` = offset (default 1.2, +ve left) |
   | `hill` | camelback — starts and ends level | airtime on the crest |
   | `lift` / `drop` | eased climb/descent | pitch-legal by construction |
@@ -786,17 +786,23 @@ ambitious broken one, and row 12 is the only one with no partial credit.
   | `corkscrewL` / `corkscrewR` | **2.40** | |
   | `sbend length L` | ≈ `L` (4 → 4.09) | |
   | `hill h` | **3.98 @ 0.4 · 5.63 @ 0.8 · 6.90 @ 1.2 · 8.91 @ 2.0** | |
-  | `lift h` / `drop h` | **≈ 8.4 + 2.6 h** (h 1 → 10.96, h 3 → 17.43, h 5 → 22.59) | **the expensive one** |
-  | `helix 360°` | **0 at height 0 — but 5.48 @ h 1, 7.86 @ h 2, 10.0 @ h 4** | see below |
+  | ONE `lift h` **or** ONE `drop h` | **5.48 @1 · 7.86 @2 · 8.71 @3 · 10.0 @4 · 11.3 @5 · 12.6 @6** | **the expensive one.** `≈ 8.4 + 2.6 h` is the lift AND its matching drop TOGETHER — re-measured, see below |
+  | `helix 360°`, ANY `height` | **0.00** | free height at zero plan cost — re-measured, see below |
 
-  **⛔ A LIFT IS ENORMOUS.** Even a 1-unit lift eats **11 u** of forward travel, and a 5-unit
-  lift eats **22.6**. That is more than a whole side of a normal hexagon. Budget the lift FIRST
-  and lay the polygon out around it — do not design a pretty shape and then try to fit a lift in.
+  **⛔ A LIFT IS ENORMOUS.** A 5-unit lift eats **11.3 u** of forward travel and its drop eats
+  another 11.3 — most of a hexagon side each. Budget the lift FIRST and lay the polygon out
+  around it; do not design a pretty shape and then try to fit a lift in.
 
-  **⛔ AND A CLIMBING HELIX DOES NOT COME BACK.** A **flat** 360° helix returns to its own entry
-  point (cost 0) — that is the documented behaviour and it is true. Give it a `height` and it
-  does not: h 2 displaces **7.86 u**. (`angle` above 360° measured identical to 360°, so a
-  720° helix buys you nothing.)
+  **⛔ AND THOSE LAST TWO ROWS WERE DOUBLE-COUNTED UNTIL 2026-07-28 — HERE IS WHY, so nobody
+  re-derives the old numbers.** Both were measured off the synthesized return straight, and when
+  an authored list ends at a DIFFERENT HEIGHT from the station the closure inserts its OWN ramp
+  home, whose forward run got added to the reading. Re-measured against height-NEUTRAL lists
+  (`probe-theme-coasters.mjs cost3`): a `lift h + drop h` pair costs exactly what the old table
+  claimed for ONE of them, and **a CLIMBING 360° helix returns to its own entry point just like a
+  flat one** — traced control points, entry `(0, 8.60)` → exit `(0, 8.60)`, 3.0 u higher. So a
+  helix is the cheapest lift in the kit. But `helixR { height: -2 }` does NOT descend: it climbs
+  2 and synthesizes `lift 2.00`. Only `drop` goes down. (`angle` over 360° measures the same as
+  360°, so a 720° helix still buys nothing.)
 
   **A LOOP IS DELIBERATELY HELICAL, AND THAT COSTS INVERSION — PICK `radius` ACCORDINGLY.**
   The lateral step is not decoration: a perfectly planar vertical loop would have its two legs
@@ -821,11 +827,9 @@ ambitious broken one, and row 12 is the only one with no partial credit.
   polygon as surely as a length error. **`loopR` and `loopL` on opposite sides cancel exactly.**
   Pair your inversions.
 
-  **A caution, measured and not yet solved:** combining a real lift-and-drop with inversions on
-  a wide-turn polygon drove `maxLatG` to **1.82** against the 1.275 guard — the train exits the
-  drop and enters the next turn at full speed. If you go this way, put a speed-bleeding `hill`
-  between the drop and the next turn, and CHECK. A rectangle with a verified loop beats a
-  hexagon that renders red.
+  **That caution — lift + drop + inversions on a wide-turn polygon reading `maxLatG` 1.82 — IS
+  NOW SOLVED, and the old fix was wrong:** a speed-bleeding `hill` between the drop and the next
+  turn does nothing (MEASURED 1.93 → 1.96). Read *PUT EVERY TURN ON THE TOP DECK* below.
 
   Then prove it at module scope rather than hoping. **The thing to read is
   `report.closure.synthesized` — the list of pieces the compiler had to INVENT.**
@@ -846,6 +850,86 @@ ambitious broken one, and row 12 is the only one with no partial credit.
   Note the call signature — **`compileTrackPieces(pieces, opts)` takes the pieces FIRST and
   needs no `THREE` argument.** (`checkCoasterDesign` is the one that takes `THREE` first.)
 
+- **⛔ PUT EVERY TURN ON THE TOP DECK — ONE LAW, AND IT BUYS THE WHOLE DRAMA BUDGET.**
+  `ratings.ts`: `latG = v²·κ_h·(1 − |roll|/0.6)/9.8`, `v = sqrt(2·(energy − 9.8·y))`, energy fixed
+  by `maxY`. A turn's lateral load is set by how far it sits BELOW the highest point — and the
+  bank ramps OUT near the station, so a turn at the foot of a real drop is what kills authored
+  circuits. MEASURED on one hexagon, nothing else changed: bottom turn present **2.18 g**, bottom
+  turn removed **1.15 g**.
+
+  > **THE MEGA-SIDE.** Station in the MIDDLE of one straight side. The lift climbs forward off it,
+  > every turn happens up on the deck, the plunge comes back down THE SAME LINE into the station.
+  > `station, st(a), lift h, [turn] st(s₁) [turn] … [turn], st(g), drop h, ⟨drama⟩, st(tail)`
+
+  Same law fixes the inversions: on a straight leg a loop pair measures `κ_h` **0.03**, wedged
+  between two turns **0.46** — the closed Catmull-Rom bleeds neighbouring curvature into whatever
+  you put there, so **fast drama belongs mid-straight, far from any corner.** The price is size:
+  plan diameter ≥ `station + lift + drop + drama`, so these run 28–54 u on the long axis. `COASTER_PRESET_PLUNGE`
+  is 27.5 u instead by taking a bottom turn, and pays for it at **1.23 g against the 1.275 guard**
+  — 4 % of margin. The five below sit at **0.18–0.73 g**, which is what makes them safe to EDIT.
+
+- **⛔ EVERY WORLD'S COASTER MUST READ AS *THAT* WORLD'S COASTER.** Five lands sharing one
+  coaster idea is the loudest thing wrong with the shipped parks. Each land already owns three
+  themed rigs — the coaster's job is the thing they CANNOT do, in that land's own shape:
+
+  | preset | the coaster's job — what its 3 rigs CANNOT do | plan | signature move |
+  |---|---|---|---|
+  | `fire` | be the TALL one; nothing else in the caldera climbs | **hexagon rim** round the cone, 6 × `turnR 60°` | the tallest lift in the land, spent in ONE 5-u plunge down the lava field into a `loopR`+`loopL` pair on the crater floor — the only true vertical loops in the park |
+  | `pirateBeach` | be the only DRY ride, and go OUT over the water | **out-and-back**, 2 × `turnR 180` — a 10 × 53 u pier | out to sea, hairpin past `<BeachedGalleon>` (blocker r 3.4), home leg barrel-rolling (`corkscrewR`+`corkscrewL`) over the hull at ≥ 2.2 u |
+  | `steampunk` | reach `<GreatZeppelin>`'s altitude (mast h 4.6), look MACHINED | **octagon = a cog**, 8 × `turnL 45°` r 2.5 | a `helixL 360°` spiral tower at the mooring mast, free in plan. NO inversions — a Victorian scenic railway |
+  | `enchantedForest` | be TIMBER, and wander | **four DIFFERENT corners** — 105/75/60/120 | `type="wooden"`, which forbids inversions. `sbend` chicanes round the trunks, camelback airtime, all under 4.6 u so the canopy stays above you |
+  | `neon` | be RHYTHMIC, and fly over `<DiscoBallFloor>` (r 3.3) | **triangle**, 3 × `turnL 120°` r 2.5 | a `hill` on each of the three streets = the beat; drop → `corkscrewL`+`corkscrewR` = the spin. Nest the ground run over the dance floor with `y0`/`y1` |
+
+  **STARTING POINTS, NOT ARRAYS TO COPY.** All five verified as printed (`probe-theme-coasters.mjs
+  final`, three fresh processes, identical). VARY the side lengths (keep the pattern — an even-N
+  polygon wants opposite sides equal), the radii, `h`, the drama, the inversion count. Do NOT touch
+  the mega-side structure, and never put a turn after the drop. **Re-run `verifyCircuit` after every
+  edit** — a 345-case sweep once claimed 17 passers whose own best re-compiled FATAL at 1.82 g.
+
+  ```ts
+  const S = (length: number): TrackPiece => ({ type: 'straight', length });
+  const TR = (angle: number, radius: number): TrackPiece => ({ type: 'turnR', angle, radius });
+  const TL = (angle: number, radius: number): TrackPiece => ({ type: 'turnL', angle, radius });
+
+  /** fire · CALDERA PLUNGE — E 5.22 I 5.92 N 2.20 · latG 0.36 · inv 2 · drop 5.01
+   *  29.8 × 53.3 u maxY 5.55 · closure.synthesized [] */
+  const CALDERA: TrackPiece[] = ['station', S(2), { type: 'lift', height: 5 },
+    ...[4, 23.5, 23.8, 23.5, 4].flatMap((L) => [TR(60, 3), S(L)]),   // the rim, all 5 corners up top
+    TR(60, 3), S(3), { type: 'drop', height: 5 },                    // the whole height, once
+    { type: 'loopR', radius: 2.2 }, S(2), { type: 'loopL', radius: 2.2 }, S(2), S(2.6)];
+
+  /** pirateBeach · TIDELINE OUT-AND-BACK — E 5.07 I 5.95 N 2.10 · latG 0.18 · inv 2 · drop 5.01
+   *  10.4 × 53.5 u · syn [] — the thinnest footprint in the set: lay it ALONG the shore */
+  const TIDELINE: TrackPiece[] = ['station', S(3), { type: 'lift', height: 5 },
+    TR(180, 5), S(43.5), TR(180, 5), S(3),                           // both hairpins on the deck
+    { type: 'drop', height: 5 },
+    { type: 'corkscrewR' }, S(2.4), { type: 'corkscrewL' }, S(3), S(2.5)];
+
+  /** steampunk · GEARWORKS OCTAGON — E 5.16 I 6.99 N 2.69 · latG 0.35 · inv 1 · drop 5.01
+   *  28.0 × 44.5 u · syn [] — the helix IS the lift and costs nothing in plan */
+  const GEARWORKS: TrackPiece[] = ['station', S(3), { type: 'helixL', angle: 360, height: 5 },
+    ...[6, 6, 18, 14, 18, 6, 6].flatMap((L) => [TL(45, 2.5), S(L)]), // eight equal teeth
+    TL(45, 2.5), S(3), { type: 'drop', height: 5 }, { type: 'hill', height: 1.2 }, S(2), S(2.6)];
+
+  /** enchantedForest · THORNWICK TRESTLE (wooden, rate at bank 0.42) — E 5.81 I 8.77 N 4.13
+   *  latG 0.73 · inv 0 · drop 3.99 · 31.5 × 48.1 u · syn [] */
+  const TRESTLE: TrackPiece[] = ['station', S(5.3), { type: 'lift', height: 4 },
+    TR(105, 5), { type: 'sbend', length: 5, radius: 1.6 }, S(17.8),  // no two corners alike
+    TR(75, 3.5), S(23.2),
+    TR(60, 6), { type: 'sbend', length: 5, radius: -1.6 }, S(20),
+    TR(120, 4), S(3.6), { type: 'drop', height: 4 }, { type: 'hill', height: 0.8 }, S(2)];
+
+  /** neon · BASSLINE DELTA — E 5.45 I 6.59 N 2.30 · latG 0.53 · inv 2 · drop 2.70
+   *  36.9 × 41.4 u maxY 5.75 · syn [] */
+  const BASSLINE: TrackPiece[] = ['station', S(2), { type: 'lift', height: 4 },
+    ...[29.5, 29.5].flatMap((L) => [TL(120, 2.5), { type: 'hill', height: 1.2 } as TrackPiece, S(L)]),
+    TL(120, 2.5), S(3), { type: 'drop', height: 4 },
+    { type: 'corkscrewL' }, S(2.4), { type: 'corkscrewR' }, S(2)];
+  ```
+
+  Rate the wooden one at `bank: 0.42` (its 25° limit), the other four at `0.7`. **Only `fire`,
+  `pirateBeach` and `neon` can invert** — `wooden` forbids it, the cog is upright on purpose — so
+  the "inversion on the flagship" flagship is the caldera, the pier or the delta.
 
 - **EVERY SPLINE RIDE *ACCEPTS* `pieces` — CUSTOMISING IS AN UPGRADE, NOT A TOLL.**
   Omitting `pieces` ships the rig's stock layout, byte-identical in every park that ever

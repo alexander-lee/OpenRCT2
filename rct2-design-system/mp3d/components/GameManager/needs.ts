@@ -283,12 +283,34 @@ export function createNeeds(s: Sim) {
    *  (`navigation.ts`, gated on `!g.worn`) sends the same guests back forever. */
   const canDeliver = (st: StallRec): boolean => st.cfg.item !== 'wearable' || !!st.cfg.heldItem;
 
+  /**
+   * NEAREST *REACHABLE* STALL SELLING `item`.
+   *
+   * The `st.attach` filter is a BUG FIX, and it is the difference between a park
+   * whose stalls trade and one whose stalls never sell a thing. A stall is reached
+   * by ROUTING TO ITS ATTACH SPUR (`navigation.ts` sets
+   * `goal = { node: st.attach.node }`), so a stall that never got a spur cannot be
+   * walked to at all — but this returned the nearest stall *of that item*
+   * regardless, and every caller then does `if (st && st.attach)` and gives up.
+   * One unattachable stall standing closer than the working ones therefore
+   * BLOCKED THE WHOLE ITEM for the entire park.
+   *
+   * MEASURED on parkA-99 (size 128, three `<Bazaar>` rows: 4 food, 3 drink, 1
+   * balloon, 526 guests, 294 sim-s): **0 food and 0 drink sold, ever**, with the
+   * balloon stand — the one whose spur landed — selling 41. Guests pushed "I'm
+   * hungry" / "I'm thirsty" thoughts the whole time and never walked to a counter.
+   *
+   * The filter is conditional on `routing`: with no path network there are no
+   * spurs and `fallbackStep` walks straight at `st.front`, which is the preview
+   * behaviour and must not change.
+   */
   const nearestStall = (g: SimGuest, item: StallItemKind): StallRec | null => {
     let best: StallRec | null = null;
     let bestD = Infinity;
     for (const st of stalls) {
       if (st.cfg.item !== item) continue;
       if (!canDeliver(st)) continue;
+      if (routing && !st.attach) continue; // no spur = unreachable, not merely far
       const d = (st.front.x - g.x) ** 2 + (st.front.z - g.z) ** 2;
       if (d < bestD) {
         bestD = d;

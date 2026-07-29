@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScenePreview, Station, Lift, Drop, TurnL, Straight, SBend } from '../Park';
-import { LogFlume } from './index';
+import { LogFlume, buildLog } from './index';
 
 const previews = {
   componentName: 'LogFlume',
@@ -19,6 +19,36 @@ const previews = {
             <Straight length={9.05} />
             <TurnL angle={180} radius={2.2} />
             <Straight length={1.2} />
+          </LogFlume>
+        </ScenePreview>
+      ) },
+    { name: 'Hollowed log (vehicle detail)', description:
+        "The boat on its own, turning slowly. It was a `LatheGeometry` barrel: a circular section revolved with a CONSTANT-angle slot cut out of the top, so the scoop ran the whole length and both ends had to be patched shut afterwards with two more lathe bands and two ball plugs — five meshes and two seams to fake one shape. It is now a real lofted surface. Three fair curves against the length (outer radius, scoop half-angle, bore radius) define a station; three lofts triangulate the grid — the outer hull, the BORE whose radius falls to zero at both ends so the hollow closes itself into rounded inboard ends and needs no caps, and one continuous RIM band that traverses the port rim bow-ward and the starboard rim stern-ward and closes through the degenerate quads where the scoop pinches out. The scoop is WIDE amidships and pinched at the ends because the curve says so, which is what a hollowed log actually looks like — and it is 3 draws instead of 10. Origin, keel height and bow direction are unchanged, so `wheelOffset: 0.25` and every existing caller still hold.",
+      render: () => (
+        <ScenePreview distance={3} targetY={0} height={360} autoRotate={false} background="#cfe4ea"
+          dress={(t, g, api) => {
+            api.setCameraPose?.([1.55, 0.95, 1.55], [0, -0.02, 0]);
+            const log = buildLog(t);
+            g.add(log);
+            return (time) => { log.rotation.y = time * 0.35; };
+          }} />
+      ) },
+    { name: 'Station house & plunge pool (detail)', description:
+        "Close on the two structures this component builds around the compiled circuit. THE STATION HOUSE: a planked boarding platform on knee-braced posts, a railed outer edge, a shingled gable canopy carried on four posts that reaches back across the boarding channel as well as the deck, valanced gable boards, an operator booth with a glazed hatch and control levers, and three hanging lanterns that light after dark. THE PLUNGE POOL: the run-out drop lands in a raised pool the trestle stands in — a LOFTED graded bed (the depth gradient has to come from the bed read through the sheet, because WaterTile's alpha follows wave height and not depth), a wet band straddling the waterline instead of a hard clip edge, a real animated water ribbon, a timber retaining kerb and boulder rockwork. Behind both, the TRESTLE VIADUCT: the kit's bents laced together bay by bay with stringers, ledgers and alternating sway diagonals, every member placed from its two endpoints.",
+      render: () => (
+        <ScenePreview distance={9} targetY={1.0} height={420} autoRotate={false} background="#bfe6f2"
+          dress={(_t, _g, api) => api.setCameraPose?.([5.6, 3.4, 6.2], [-0.6, 0.85, 0.2])}>
+          <LogFlume position={[-2.5, -4.4]}>
+            <Station />
+            <Lift height={1.2} length={3.2} />
+            <TurnL />
+            <Straight length={2} />
+            <TurnL />
+            <Drop />
+            <Straight length={2.66} />
+            <TurnL />
+            <Straight length={2} />
+            <TurnL />
           </LogFlume>
         </ScenePreview>
       ) },

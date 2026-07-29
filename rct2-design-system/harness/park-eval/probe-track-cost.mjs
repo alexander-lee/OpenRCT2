@@ -8,21 +8,30 @@
 // `design.ok` was true. The physics were fine. The circuit simply never came
 // back. Nothing in the published material explained how to make one close, and
 // the guidance that did exist about piece costs was guessed, not measured —
-// SETUP.md claimed `hill ~ 3.6` (it is 3.98-8.91, height-dependent), `lift ~
-// height/0.55` (it is ~8.4 + 2.6h, so an h-1 lift eats ELEVEN units), and that a
-// 360 helix "returns to its entry point" (only when height is 0).
+// SETUP.md claimed `hill ~ 3.6` (it is 3.98-8.91, height-dependent) and
+// `lift ~ height/0.55`.
 //
-// This probe measures all of it. Its numbers are what SETUP.md now publishes.
+// THEN THIS PROBE GOT TWO OF ITS OWN NUMBERS WRONG, and the correction is the
+// most useful thing in this file. Its first instrument measured the closure's
+// synthesized return straight, which silently includes the RAMP the closure
+// invents whenever the authored list ends off-level. So:
+//   - `lift h` was published as `8.4 + 2.6h`. That is a lift AND its matching
+//     drop TOGETHER. One ramp is 5.48 @1 · 7.86 @2 · 10.0 @4 · 12.6 @6.
+//   - a climbing 360 helix was published as displacing 5.48/7.86/10.0 at
+//     h 1/2/4. Those are exactly the one-ramp costs above, because that is what
+//     was being measured. A climbing helix DOES return to its entry point —
+//     cost 0 at any height. (`helixR { height: -2 }` still climbs; there is no
+//     descending helix.)
 //
-// TWO MEASUREMENT TRICKS worth knowing before reading the code:
+// THREE MEASUREMENT TRICKS worth knowing before reading the code:
 //
-//  1. You cannot read forward cost off `points[]`. The compiler CLOSES the
-//     circuit, so the last point is always back at the station. The
-//     displacement shows up instead in the U-turn straight it SYNTHESIZES to
-//     get home — diff that against a straights-only baseline. Sanity check
-//     built in: `straight 4` must measure exactly 4.00.
+//  1. You cannot read forward cost off the last point — the compiler CLOSES the
+//     circuit, so it is always back at the station. Use the z-EXTENT.
 //
-//  2. `report.closure.gap` is NOT a closure error. It reads a constant ~1.2 on
+//  2. Any piece that ends at a different HEIGHT than it started contaminates the
+//     reading with the closure's ramp home. Read those LEVEL. See `forward`.
+//
+//  3. `report.closure.gap` is NOT a closure error. It reads a constant ~1.2 on
 //     a perfect circuit because it is the brake tail. The honest signal is
 //     `report.closure.synthesized` — the list of pieces the compiler invented.
 //     `[]` is a clean close.
@@ -67,12 +76,29 @@ const { compileTrackPieces, rateCoaster } = await import(bp);
 const OPTS = { profile: 'coaster', type: 'steel', heading: 0, start: [0, 0.55, 0], bounds: 256 };
 const compile = (pieces, o = {}) => compileTrackPieces(pieces, { ...OPTS, ...o });
 
-/** the synthesized return straight = forward displacement (+ a constant that cancels) */
+/**
+ * Forward cost, measured as the compiled curve's z-EXTENT.
+ *
+ * ⚠ THIS INSTRUMENT IS CONTAMINATED FOR ANY PIECE THAT ENDS AT A DIFFERENT
+ * HEIGHT THAN IT STARTED, and the first version of this probe published two
+ * wrong numbers because of it. When the authored list ends off-level the closure
+ * inserts its OWN ramp home, and that ramp's forward run lands in the reading.
+ *
+ * Proof, from this file's own output: `drop 2` alone reads 15.73 while
+ * `helix 360 h2 -> drop 2` reads 7.86. Adding a real 2-unit drop after the helix
+ * costs ZERO extra, because the closure was already paying for that ramp — so
+ * 15.73 is TWO ramps (the drop's, plus the closure lifting back up) and one ramp
+ * at h 2 is 7.86. The helix contributes nothing.
+ *
+ * So: for a height-CHANGING piece, always end the list level (pair a lift with a
+ * drop, or follow a climbing helix with a matching drop) and attribute the cost
+ * to the ramp, not to the piece that moved you.
+ */
 const forward = (extra) => {
-  const { report } = compile(['station', { type: 'straight', length: 2 }, ...extra,
+  const { points } = compile(['station', { type: 'straight', length: 2 }, ...extra,
     { type: 'straight', length: 2 }]);
-  const s = (report.closure?.synthesized ?? []).find((x) => /^straight/.test(x) && !/brake/.test(x));
-  return s ? parseFloat(s.split(' ')[1]) : NaN;
+  const zs = points.map((p) => p[2]);
+  return Math.max(...zs) - Math.min(...zs);
 };
 /** the synthesized TURN pair — an even 180/180 means no lateral drift */
 const lateral = (extra) => {
@@ -96,10 +122,13 @@ for (const [name, ex] of [
   ['hill 0.8', [{ type: 'hill', height: 0.8 }]],
   ['hill 1.2', [{ type: 'hill', height: 1.2 }]],
   ['hill 2.0', [{ type: 'hill', height: 2.0 }]],
-  ['lift 1', [{ type: 'lift', height: 1 }]],
-  ['lift 3', [{ type: 'lift', height: 3 }]],
-  ['lift 5', [{ type: 'lift', height: 5 }]],
-  ['drop 3', [{ type: 'drop', height: 3 }]],
+  // height-changing pieces MUST be read level — see `forward`'s note. These
+  // pairs read as ONE ramp each, which is the honest per-ramp cost.
+  ['lift 1 + drop 1', [{ type: 'lift', height: 1 }, { type: 'drop', height: 1 }]],
+  ['lift 2 + drop 2', [{ type: 'lift', height: 2 }, { type: 'drop', height: 2 }]],
+  ['lift 4 + drop 4', [{ type: 'lift', height: 4 }, { type: 'drop', height: 4 }]],
+  ['lift 6 + drop 6', [{ type: 'lift', height: 6 }, { type: 'drop', height: 6 }]],
+  ['helix h2 + drop 2', [{ type: 'helixR', angle: 360, height: 2 }, { type: 'drop', height: 2 }]],
   ['loop r1.4', [{ type: 'loop', radius: 1.4 }]],
   ['loop r1.8', [{ type: 'loop', radius: 1.8 }]],
   ['loop r2.2', [{ type: 'loop', radius: 2.2 }]],
@@ -114,10 +143,14 @@ for (const [name, ex] of [
 }
 check(Math.abs(forward([{ type: 'helixR', angle: 360, height: 0 }]) - BASE) < 0.02,
   'a FLAT 360 helix must return to its entry point');
-check(forward([{ type: 'helixR', angle: 360, height: 2 }]) - BASE > 5,
-  'a CLIMBING 360 helix must NOT (SETUP.md asserted the unqualified claim twice)');
-check(forward([{ type: 'lift', height: 1 }]) - BASE > 9,
-  'a 1-unit lift really does cost ~11 u — the single most under-budgeted piece');
+// A CLIMBING helix also returns to its entry point — cost 0 at any height. Read
+// it with the circuit ending LEVEL or the closure's ramp is charged to the helix.
+check(Math.abs(forward([{ type: 'helixR', angle: 360, height: 2 }, { type: 'drop', height: 2 }])
+  - forward([{ type: 'drop', height: 2 }, { type: 'helixR', angle: 360, height: 2 }])) < 0.05,
+  'a CLIMBING 360 helix costs the same whichever side of its matching drop it sits — i.e. 0');
+check(Math.abs(forward([{ type: 'drop', height: 2 }]) - BASE
+  - 2 * (forward([{ type: 'helixR', angle: 360, height: 2 }]) - BASE)) < 0.1,
+  'a lone drop reads as TWO ramps (its own + the closure lifting back) — the contamination itself');
 
 console.log('\n  LATERAL DRIFT — an even 180/180 means the piece stayed on its line');
 console.log('  ' + '-'.repeat(60));

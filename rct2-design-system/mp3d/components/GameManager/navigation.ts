@@ -207,7 +207,17 @@ export function createNavigation(s: Sim) {
       chooseNext(g, prev);
       return;
     }
-    const stallHere = stallAt.get(n);
+    // WHICH STALL IS THIS NODE? `stallAt` is a Map, so when several stalls share
+    // one attach node — which is the NORMAL case for a row of shops, and every
+    // `<Bazaar>` is a row of shops — only the LAST one registered owns the slot.
+    // A guest walking to any of the others therefore arrived at their stall,
+    // failed `g.goal.stall === stallHere`, had the goal cleared as stale two lines
+    // below, and wandered off; they could never buy, ever. MEASURED on arch-ref
+    // (2 stalls): `Glacier Soda` sold and `Summit Grill` sold 0, indefinitely.
+    // A guest who is HEADING FOR a specific stall recognises its own attach node
+    // regardless of who holds the map slot; the walk-past impulse still uses the
+    // map, which is the right behaviour for "whoever is standing here".
+    const stallHere = g.goal?.stall && g.goal.stall.attach?.node === n ? g.goal.stall : stallAt.get(n);
     // passing impulse: consumables when peckish; accessories are a joy buy —
     // guests with a balloon already rarely step up again, and a guest whose
     // hands are BOTH full still occasionally tries (and is refused with the
@@ -227,44 +237,61 @@ export function createNavigation(s: Sim) {
       return;
     }
     if (g.goal && n === g.goal.node) g.goal = null; // reached a stale goal node
-    // pressing need first: seek the nearest restroom once toilet ≥ 200
-    if (!g.goal && g.toilet >= TOILET_SEEK && restrooms.length) {
-      const rr = s.registry.nearestRestroom(g);
-      if (rr && rr.attach) g.goal = { kind: 'restroom', node: rr.attach.node, restroom: rr };
+
+    // ---- PRESSING NEEDS, AND THEY PREEMPT A PLEASURE GOAL --------------------
+    //
+    // A full bladder, then thirst, then hunger — the order a guest feels them.
+    //
+    // THE PREEMPTION IS THE WHOLE POINT, and it is a BUG FIX. These used to be
+    // gated on `!g.goal`, i.e. a guest only ever noticed a need while completely
+    // aimless — but `seekRide` claims a goal on 45 % of aimless arrivals and a
+    // ride is many nodes away, so a guest is goal-directed almost all the time
+    // and the appetite branches were practically unreachable. MEASURED on
+    // arch-ref (116 guests, 180 sim-s, counters on the branches): the DRINK
+    // branch was entered **4 times** and the FOOD branch **once** in the entire
+    // run, and the park sold 2 drinks and 0 food while every guest was down at
+    // thirst 6 / hunger 7 and thinking "I'm thirsty".
+    //
+    // So a real need now overrides a ride the guest was merely fancying (`kind
+    // === 'ride'`), which is the priority the design asks for: thirsty → drink,
+    // hungry → food, OTHERWISE a ride. It cannot thrash, because the need goal is
+    // resolved to a REACHABLE target FIRST and only replaces the old goal if one
+    // was found — a hungry guest in a park with no reachable food stall keeps
+    // walking to their ride.
+    const needsDrink = !g.holding && g.thirst <= THIRST_SEEK;
+    const needsFood = !g.holding && g.hunger <= HUNGER_SEEK;
+    if (g.toilet >= TOILET_SEEK || needsDrink || needsFood) {
+      let need: SimGuest['goal'] = null;
+      if (g.toilet >= TOILET_SEEK && restrooms.length) {
+        const rr = s.registry.nearestRestroom(g);
+        if (rr && rr.attach) need = { kind: 'restroom', node: rr.attach.node, restroom: rr };
+      }
+      // whichever appetite is MORE pressing goes first (both are stored inverted,
+      // so the LOWER number is the hungrier/thirstier one) and thirst breaks an
+      // exact tie, being the quicker and cheaper fix. A strict thirst-then-hunger
+      // order starves the food stalls: the two needs drain at the same rate, so
+      // they come due together, thirst would always win, and `!g.holding` then
+      // bars food for the whole 1.6-3.2-minute drink.
+      const order: ('drink' | 'food')[] = g.thirst <= g.hunger ? ['drink', 'food'] : ['food', 'drink'];
+      for (const item of order) {
+        if (need) break;
+        if (item === 'drink' ? !needsDrink : !needsFood) continue;
+        const st = s.needs.nearestStall(g, item);
+        if (st && st.attach) need = { kind: 'stall', node: st.attach.node, stall: st };
+      }
+      if (need && (!g.goal || g.goal.kind === 'ride')) {
+        g.goal = need;
+        g.path = [];
+      }
     }
-    // ---- decisions when aimless: PRESSING NEEDS, THEN RIDES, THEN WHIMS -------
-    // The order is the one a guest actually feels: a pressing restroom need was
-    // already handled above (TOILET_SEEK), then THIRST, then HUNGER, and only a
-    // guest with nothing pressing goes looking for a ride to enjoy. Thirst wins
-    // the tie with hunger because a drink is the quicker, cheaper fix and the two
-    // needs drain at the same rate here (needs.ts), so they come due together and
-    // the tie has to break somewhere.
-    //
-    // `!g.holding` gates both: a guest already carrying a burger or a cup would
-    // only earn RCT2's "I haven't finished my drink yet" at the counter
-    // (Guest.cpp:1553), so the trip would be wasted.
-    //
-    // EVERY STAGE FALLS THROUGH TO THE NEXT WHEN IT FINDS NOTHING, and that is
-    // not a stylistic choice — it is a BUG FIX. These used to be one if/else-if
-    // chain, so a guest who WANTED a drink but whose nearest drink stall had no
-    // routing spur (`st.attach === null`) took the drink branch, set no goal, and
-    // skipped the ride appetite and every whim as well. MEASURED on parkA-99
-    // (size 128, 526 guests, 284 sim-s): once thirst fell under the seek
-    // threshold the park sold **0 food and 0 drink and stopped setting goals
-    // altogether** — 41 balloons had sold in the first three minutes and then
-    // nothing, while `riddenTotal` only crept up off the walk-past roll, which
-    // needs no goal. The narrow old thresholds (`hunger <= 10`) hid this because
-    // guests were rarely inside the branch at all.
+    // ---- and THEN the pleasures: a RIDE first, then the whims ----------------
+    // Only a guest with nothing pressing gets here — the needs above have already
+    // taken their pick, and one of them may have just taken this guest's ride goal
+    // away. `!g.holding` gates the appetites up there for RCT2's reason: a guest
+    // already carrying a burger or a cup would only earn "I haven't finished my
+    // drink yet" at the counter (Guest.cpp:1553), so the trip would be wasted.
     if (!g.goal) {
-      if (!g.holding && g.thirst <= THIRST_SEEK) {
-        const st = s.needs.nearestStall(g, 'drink');
-        if (st && st.attach) g.goal = { kind: 'stall', node: st.attach.node, stall: st };
-      }
-      if (!g.goal && !g.holding && g.hunger <= HUNGER_SEEK) {
-        const st = s.needs.nearestStall(g, 'food');
-        if (st && st.attach) g.goal = { kind: 'stall', node: st.attach.node, stall: st };
-      }
-      if (!g.goal) {
+      {
         // RIDES ARE SOUGHT FIRST, off their OWN draw (see seekRide) — a guest who
         // wants a ride should not be competing with the sit/watch/balloon whims
         // for the same slice of one random number.

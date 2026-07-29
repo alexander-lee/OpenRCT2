@@ -7,8 +7,7 @@ const previews = {
   importPath: 'components/Enterprise',
   previews: [
     { name: '3D rig', description: "Enterprise: pink-spoked pod wheel that spins up and lifts toward vertical (ENTERP).", render: () => (
-        <ScenePreview distance={10.5}
-      targetY={2.3}>
+        <ScenePreview distance={10.5} targetY={2.3} ground height={620}>
           <Enterprise />
         </ScenePreview>
       ) },

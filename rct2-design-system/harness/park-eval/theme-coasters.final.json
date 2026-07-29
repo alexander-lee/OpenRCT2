@@ -1,0 +1,60 @@
+{
+ "FIRE  Caldera Plunge": { "opts": { "type": "steel" }, "pieces": [
+  "station", { "type": "straight", "length": 2 }, { "type": "lift", "height": 5 },
+  { "type": "turnR", "angle": 60, "radius": 3 }, { "type": "straight", "length": 4 },
+  { "type": "turnR", "angle": 60, "radius": 3 }, { "type": "straight", "length": 23.5 },
+  { "type": "turnR", "angle": 60, "radius": 3 }, { "type": "straight", "length": 23.8 },
+  { "type": "turnR", "angle": 60, "radius": 3 }, { "type": "straight", "length": 23.5 },
+  { "type": "turnR", "angle": 60, "radius": 3 }, { "type": "straight", "length": 4 },
+  { "type": "turnR", "angle": 60, "radius": 3 }, { "type": "straight", "length": 3 },
+  { "type": "drop", "height": 5 },
+  { "type": "loopR", "radius": 2.2 }, { "type": "straight", "length": 2 },
+  { "type": "loopL", "radius": 2.2 }, { "type": "straight", "length": 2 },
+  { "type": "straight", "length": 2.6 } ] },
+
+ "SEA   Tideline Out-and-Back": { "opts": { "type": "steel" }, "pieces": [
+  "station", { "type": "straight", "length": 3 }, { "type": "lift", "height": 5 },
+  { "type": "turnR", "angle": 180, "radius": 5 }, { "type": "straight", "length": 43.5 },
+  { "type": "turnR", "angle": 180, "radius": 5 }, { "type": "straight", "length": 3 },
+  { "type": "drop", "height": 5 },
+  { "type": "corkscrewR" }, { "type": "straight", "length": 2.4 },
+  { "type": "corkscrewL" }, { "type": "straight", "length": 3 },
+  { "type": "straight", "length": 2.5 } ] },
+
+ "COG   Gearworks Octagon": { "opts": { "type": "steel" }, "pieces": [
+  "station", { "type": "straight", "length": 3 },
+  { "type": "helixL", "angle": 360, "height": 5 },
+  { "type": "turnL", "angle": 45, "radius": 2.5 }, { "type": "straight", "length": 6 },
+  { "type": "turnL", "angle": 45, "radius": 2.5 }, { "type": "straight", "length": 6 },
+  { "type": "turnL", "angle": 45, "radius": 2.5 }, { "type": "straight", "length": 18 },
+  { "type": "turnL", "angle": 45, "radius": 2.5 }, { "type": "straight", "length": 14 },
+  { "type": "turnL", "angle": 45, "radius": 2.5 }, { "type": "straight", "length": 18 },
+  { "type": "turnL", "angle": 45, "radius": 2.5 }, { "type": "straight", "length": 6 },
+  { "type": "turnL", "angle": 45, "radius": 2.5 }, { "type": "straight", "length": 6 },
+  { "type": "turnL", "angle": 45, "radius": 2.5 }, { "type": "straight", "length": 3 },
+  { "type": "drop", "height": 5 },
+  { "type": "hill", "height": 1.2 }, { "type": "straight", "length": 2 },
+  { "type": "straight", "length": 2.6 } ] },
+
+ "WOOD  Thornwick Trestle": { "opts": { "type": "wooden" }, "pieces": [
+  "station", { "type": "straight", "length": 5.3 }, { "type": "lift", "height": 4 },
+  { "type": "turnR", "angle": 105, "radius": 5 },
+  { "type": "sbend", "length": 5, "radius": 1.6 }, { "type": "straight", "length": 17.8 },
+  { "type": "turnR", "angle": 75, "radius": 3.5 }, { "type": "straight", "length": 23.2 },
+  { "type": "turnR", "angle": 60, "radius": 6 },
+  { "type": "sbend", "length": 5, "radius": -1.6 }, { "type": "straight", "length": 20 },
+  { "type": "turnR", "angle": 120, "radius": 4 }, { "type": "straight", "length": 3.6 },
+  { "type": "drop", "height": 4 },
+  { "type": "hill", "height": 0.8 }, { "type": "straight", "length": 2 } ] },
+
+ "NEON  Bassline Delta": { "opts": { "type": "steel" }, "pieces": [
+  "station", { "type": "straight", "length": 2 }, { "type": "lift", "height": 4 },
+  { "type": "turnL", "angle": 120, "radius": 2.5 },
+  { "type": "hill", "height": 1.2 }, { "type": "straight", "length": 29.5 },
+  { "type": "turnL", "angle": 120, "radius": 2.5 },
+  { "type": "hill", "height": 1.2 }, { "type": "straight", "length": 29.5 },
+  { "type": "turnL", "angle": 120, "radius": 2.5 }, { "type": "straight", "length": 3 },
+  { "type": "drop", "height": 4 },
+  { "type": "corkscrewL" }, { "type": "straight", "length": 2.4 },
+  { "type": "corkscrewR" }, { "type": "straight", "length": 2 } ] }
+}
