@@ -231,7 +231,14 @@ async function setPose(azDeg, elevDeg, r = R) {
 // session, where puppeteer takes a PER-COMMAND `timeout`. `page.screenshot` is
 // kept as the fallback, and every failure is recorded so the run can hand the
 // remainder to `shot-fallback.mjs` instead of finishing with nothing.
-const cdp = await page.createCDPSession().catch(() => null);
+// GUARD THE EXISTENCE, not just the rejection. `createCDPSession` is a
+// PUPPETEER-ONLY method: on a playwright page it is `undefined`, so
+// `page.createCDPSession()` throws a synchronous TypeError and the `.catch()`
+// below never runs — there is no promise to reject. Since `PARK_BROWSER=playwright`
+// became a supported path (evaltags.mjs — it exists because Chrome-for-Testing is
+// the RAM-hungry one), that turned the whole of eval.mjs into
+// "page.createCDPSession is not a function" the moment anyone used it.
+const cdp = typeof page.createCDPSession === 'function' ? await page.createCDPSession().catch(() => null) : null;
 const CAPTURE_MS = Number(opt('shotTimeout') || 900000); // 15 min per shot
 const failedShots = [];
 async function capture(fileName) {

@@ -410,6 +410,29 @@ clean` is the only green line.
 
 ### 0-P.4 THE BUILD MANDATES — state them positively, because they are unconditional
 
+**THE WHOLE JOB, ON ONE SCREEN.** This section is long because each rule carries the
+measurement that justifies it. **You do not have to synthesise it — plan from this table, then
+read only the rows you are unsure about.** Everything below is detail on one of these lines.
+
+| # | requirement | done when |
+|---|---|---|
+| 1 | plot | `<Park>` at **size 128** (omit `size`) |
+| 2 | terrain | one landform, ≥ 1 water body, no blanket `keepDry` |
+| 3 | streets | one connected lattice from the gate; every ride + stall reachable |
+| 4 | gate | `<ParkEntrance>` with its forecourt and turnstile |
+| 5 | **five worlds** | `fire` · `pirateBeach` · `steampunk` · `enchantedForest` · `neon`, on the verified fan |
+| 6 | per world | its 3 themed rides (fire: `EmberWings`+`MagmaRun`) · its stall · **25** themed scenery placements · `<WorldGround>` · `<WorldLandmark>` · a path spur |
+| 7 | by name | `<WyrmsHollow>` in the glade · `<MagicMirror>` ×1 · `<BigPiano>` ×1 |
+| 8 | siting | `pirateBeach` on the water; every giant clear of its own streets |
+| 9 | rides | ≥ 2 tracked rides, ≥ 1 inversion, ≥ 5 categories; nesting fine, contact never |
+| 10 | coasters | closure balanced (`closure.synthesized` ≈ `[]`), `maxLatG ≤ 1.275`, first drop ≥ 0.9 |
+| 11 | stalls | a bazaar row per world, its own counter stocked first, restrooms |
+| 12 | never | abort the park, fabricate a component, or invent a prop |
+
+**If you are short on budget, satisfy rows 1-8 first.** A complete plain park scores far above an
+ambitious broken one, and row 12 is the only one with no partial credit.
+
+
 - **BUILD AT SIZE 128.** Omit the `size` prop (`parkRoot.tsx:137` — 128 is the default)
   unless the user asked for a different plot. 128 is what every published number,
   skeleton, seed row, corridor table and clearance figure is measured at. **Do not pick
@@ -569,10 +592,9 @@ clean` is the only green line.
 
   What is forbidden is CONTACT. Two rides must not intersect, clip, or graze each other in 3D.
 
-  The footprint sweep used to be purely 2D, so it failed a legal overflight as if it were a
-  crash. Since 2026-07-28 a footprint may declare a VERTICAL EXTENT, and when two rects overlap
-  in plan but clear each other by **2.2 u** (`OVERFLY_CLEAR` — guest headroom plus a train) the
-  overlap is allowed and reported as `nestedFootprint`, not failed:
+  A footprint may declare a VERTICAL EXTENT. When two rects overlap in plan but clear each
+  other by **2.2 u** (`OVERFLY_CLEAR`), the overlap is allowed and reported as
+  `nestedFootprint` rather than failed:
 
   ```ts
   park.registerFootprint({ cx, cz, hx, hz, yaw, label: 'Cinder Spine deck', y0: 4.2, y1: 6.4 });
@@ -720,14 +742,10 @@ clean` is the only green line.
   the last authored piece **~0.3 u short of the start, on the station axis**, or the closure
   invents the difference and spends it against that 40 %.
 
-  **⛔ CLOSURE IS THE ONE THAT ACTUALLY KILLS AUTHORED CIRCUITS.** A measured park lost all 8
-  thrill points to a single line — *"the synthesized closure is 24.6 u — 46 % of the 53.5 u
-  authored (limit 40 %)"*. The ride was legal on every other count. It simply never came back.
-
-  It is arithmetic, not taste. `compileTrackPieces` walks a cursor: `turnL`/`turnR` do
-  `yaw += ±angle` and **every other piece preserves heading** (a 360° `helix` returns to its own
-  entry point and heading; `loop`, `corkscrew` and `sbend` change nothing about where you end up
-  facing). So:
+  **⛔ CLOSURE IS WHAT KILLS AUTHORED CIRCUITS.** A park lost all 8 thrill points to
+  *"synthesized closure 46 % of the authored length (limit 40 %)"* — legal on every other count,
+  it just never came back. It is arithmetic: `turnL`/`turnR` do `yaw += ±angle` and every other
+  piece preserves heading. So:
 
   > **Your signed turn angles must sum to ±360°, and your straights must close as a polygon.**
 
@@ -798,11 +816,10 @@ clean` is the only green line.
   fast.** If the loop is the ride, use `radius` 2.0–2.6 and leave `offset` alone. A `radius` 1.2
   loop only reaches 145° and reads more like a steep hump than an inversion.
 
-  **⛔ AND `loop` AND `sbend` STEP SIDEWAYS.** A `loop` carries an `offset` (default 1.2) and an
-  `sbend` is a lateral shift by definition, so both leave you on a **parallel line**, not the
-  one you were on. That breaks a polygon just as surely as a length error. MEASURED: one
-  `loopR` alone left the closure split `turnL 174° / 186°`; **`loopR` and `loopL` on opposite
-  sides cancel exactly** and restore a clean `180° / 180°`. Pair your inversions.
+  **⛔ `loop` AND `sbend` STEP SIDEWAYS.** A `loop` carries an `offset` (default 1.2) and an
+  `sbend` is a lateral shift by definition, so both leave you on a parallel line — that breaks a
+  polygon as surely as a length error. **`loopR` and `loopL` on opposite sides cancel exactly.**
+  Pair your inversions.
 
   **A caution, measured and not yet solved:** combining a real lift-and-drop with inversions on
   a wide-turn polygon drove `maxLatG` to **1.82** against the 1.275 guard — the train exits the
@@ -835,10 +852,8 @@ clean` is the only green line.
   mounted it — which is why the flume, the karts and the bobsleigh look the same everywhere.
   So author one where you can: it is the cheapest way to make a land feel bespoke.
 
-  **⛔ BUT NEVER SKIP A RIDE BECAUSE YOU DID NOT WANT TO AUTHOR ITS TRACK.** That trade is the
-  worst outcome available and a park has already made it — it dodged every themed ride that
-  runs on rails and left two worlds with **zero**. Stock track in the right world beats an
-  empty world every time. Order of preference, best to worst:
+  **⛔ BUT NEVER SKIP A RIDE BECAUSE YOU DID NOT WANT TO AUTHOR ITS TRACK.** Stock track in the
+  right world beats an empty world. Order of preference, best to worst:
 
   1. themed ride, custom `pieces` — the land feels made for it
   2. themed ride on its `DEFAULT_PIECES` — **completely fine, and always better than 3**
@@ -1020,23 +1035,12 @@ clean` is the only green line.
   <Bazaar plan={COVE_ROW} />      {/* …then everything that stands on it */}
   ```
 
-  **⛔ A GIANT IS SOLID — KEEP IT OFF THE STREET.** As of 2026-07-28 all five giants register a
-  BLOCKER, so guests route around them instead of walking through them. They always claimed to
-  (every header said "it registers a footprint so guests and the OBB sweep route around it") and
-  only `<Volcano>` actually did; the other four declared nothing and guests walked straight
-  through the galleon's hull and the zeppelin's mooring mast.
-
-  Now that they are solid, **a giant parked on a path is a `blockers` FAIL** — measured on the
-  landmark test park the moment the blockers went in: **11 failures**, street edges running
-  through `<BeachedGalleon>` and `<DragonRoost>` that had been silently passing through the mass
-  for six waves. Their blocking radii are large: galleon **3.4**, disco floor **3.3**, zeppelin
-  and roost **2.7** — that is a 6.8 u circle for the ship.
-
-  So place the giant at the world's centre of MASS, not on its wire: take a cell that is clear of
-  every street node and edge by more than its radius (`offPathCell(net, at, { clear })` answers
-  this), and put the path spur AROUND it rather than through it. If the world's rect cannot hold
-  the giant clear of its own streets, the rect is too small or the streets are laid wrong — do
-  not shrink the giant.
+  **⛔ A GIANT IS SOLID — KEEP IT OFF THE STREET.** All five register a BLOCKER, so **a giant
+  parked on a path is a `blockers` FAIL.** Radii: galleon **3.4**, disco floor **3.3**, zeppelin
+  and roost **2.7** (a 6.8 u circle for the ship). Place it at the world's centre of MASS on a
+  cell clear of every street node and edge by more than its radius
+  (`offPathCell(net, at, { clear })`), and route the spur AROUND it. If the rect cannot hold the
+  giant clear of its own streets, the rect is too small — do not shrink the giant.
 
   **⛔ AND GIVE EVERY WORLD ITS GIANT — `<WorldLandmark plan={W} />`.** `fire` always had
   `<Volcano>`: radius 2.75 (5.5 tiles across), height 2.55, a cone visible from the gate. No
@@ -1107,23 +1111,15 @@ clean` is the only green line.
   dispatchers for list-driven placement.
 
   **⛔ INSTALLING A COMPONENT IS NOT MOUNTING IT. THE AUDIT COUNTS *REGISTERED* RIDES.**
-  MEASURED on the first five-world park: it installed `MagmaRun`, `EmberWings`, `DeepDrift`,
-  `ReefRacer`, `GearworksExpress`, `WyrmsHollow`, `Chairlift` and `MineTrainCoaster` — every
-  themed ride it needed — and then mounted a stock `<Carousel>`, `<DropTower>`, `<PirateShip>`
-  and `<Teacups>` instead. Three of its five worlds reported **0 themed rides** while their
-  components sat installed and unused.
-
   `install_code_component` only puts the file in your project. A ride counts when it is
-  **mounted in the tree with `register`**, its pad **inside the world's rect**, and its cell in
-  `worldPlan({ include })`. Check your own JSX: for each world, can you point at three
-  `<ThemedRide … register={{…}} />` tags from that world's row below? If not, it does not have
-  three rides, however many you installed.
+  **mounted with `register`**, its pad **inside the world's rect**, and its cell in
+  `worldPlan({ include })`. Check your own JSX: for each world, can you point at its rides as
+  actual tags? (A park once installed all eight themed rides it needed and mounted stock
+  `<Carousel>`/`<Teacups>` instead — three worlds reported 0 themed rides.)
 
-  **⛔ AND MOUNTING A THEMED *CIRCUIT* IS CHEAP — `pieces` IS OPTIONAL.** The next park skipped
-  every themed ride that runs on track and mounted only the flat ones (`BoilerBurst`,
-  `AetherBalloons`, `Chairlift`, `Discotron`), so `fire` and `pirateBeach` — whose three rides
-  are ALL tracked — finished with **zero**. That trade is not real. Every themed circuit ships
-  a working `DEFAULT_PIECES`, and `pieces` is declared optional on all of them:
+  **⛔ AND MOUNTING A THEMED *CIRCUIT* IS CHEAP — `pieces` IS OPTIONAL.** Every themed circuit
+  ships a working `DEFAULT_PIECES`. (A park once mounted only the FLAT themed rides and left
+  `fire` and `pirateBeach`, whose rides are all tracked, with zero.)
 
   ```tsx
   <MagmaRun position={[-38, 4]} rotation={Math.PI / 2}
@@ -1132,12 +1128,10 @@ clean` is the only green line.
 
   That is a complete, boardable, rated ride — no `pieces`, no circuit design, no verifier.
 
-  **⛔ AND `register` HAS NO `kind` FIELD — DO NOT INVENT ONE.** `RideRegisterProps` takes
-  `name`, `capacity`, `rideDuration`, `loadTime`, `intensity`, `price`, `queueSurface`,
-  `exitSurface` and nothing else. An unknown key on an object literal is **silently dropped** —
-  it does not warn and it does not fail, it just quietly does nothing. This block used to show
-  `kind: 'coaster'`, which does not exist; the very next wave copied it **23 times**. The ride's
-  category comes from the COMPONENT you mounted, never from a string you pass.
+  **⛔ `register` HAS NO `kind` FIELD.** It takes `name`, `capacity`, `rideDuration`,
+  `loadTime`, `intensity`, `price`, `queueSurface`, `exitSurface` — nothing else. An unknown key
+  is silently dropped: no warning, no failure, no effect. A ride's category comes from the
+  COMPONENT you mounted, never from a string you pass.
   Authoring a custom `pieces` array is an UPGRADE you make when you want the land to feel
   bespoke (§ the spline table above), never a toll you pay to mount the component. Mount all
   three of a world's rides on defaults FIRST; customise afterwards if budget remains.
@@ -1895,11 +1889,44 @@ spawn point) + `registerRide`/`registerStall`/`registerRestroom`/`spawnGuests(n)
 ONLY that graph. Accessors: `stats()`, `guests()`, `rides()`, `accessPoints()`, `footprints()`,
 `corridorCells(name?)`, `blockers()`, `blocked(x, z)`, `edgeWalkable(a, b)`.
 
-**THE GATE STREAM.** Population is LIVE — arrival rate is dominated by the share over
-`happiness > 128`: **20/min while ≥ 83 % are happy, 2/min when none are.** Two ceilings: RCT2's
-soft `suggestedGuestMaximum` (Σ ride BonusValue — **a one-ride park throttles itself**) and a hard
-`arrivals.cap` by plot (26/52/100/132 at size 16/48/128/192). Opening population `<Park guests>`
-defaults to **~50 at 128**.
+**A PARK OPENS WITH 500 GUESTS, AND YOU DO NOT HAVE TO ASK FOR THEM.** `<Park guests>` defaults to
+`guestsForSize(size)` — **500 on the 128 default plot** (125/260/655 at 16/48/192, the measured
+cube-root-of-plot-area curve re-anchored). **Do not pass `guests` to get a crowd; that is the
+default.** Pass it only to make a park DELIBERATELY quiet, and never pass a number just because 500
+looks expensive — it is not, and the reason it is not is `GameManager/crowd.ts`. Measured on
+`parkA-99` (size 128) with `probe-frame-cost.mjs --gpu=metal`, a REAL GPU:
+
+| population | frame (gpuMs) | draws | rAF gap | validate |
+| ---------- | ------------- | ----- | ------- | -------- |
+| 99, before |     16.32     |  3176 | 18.9 ms |  1035 ms |
+| 500, before |    35.34     |  6614 | 40.0 ms |  5761 ms |
+| **500, now** | **10.06**   |  2366 | 12.4 ms |   431 ms |
+
+i.e. five times the crowd for **less than the frame a hundred guests used to cost**. Two levers, both
+about the crowd rather than about triangles: guests past a 26-u camera radius are drawn from **eight
+shared `InstancedMesh` pools** (8 draw calls at any population) with their rigs out of the scene
+graph, and `PathNetwork`'s `walkYAt` — which every guest samples every frame and which was **21 % of
+all CPU self time**, the single most expensive function in a populated park — is now a bucket grid.
+
+**THE GATE STREAM, AND THE HAPPINESS FEEDBACK LOOP.** Population is LIVE and it is a LOOP: the gate
+keeps admitting while the park is well run and **stops dead while under half the crowd is happy**
+(`arrivals.ts` `ADMIT_HAPPY_SHARE = 0.5`, on RCT2's own `happiness > 128` line). So a good park fills
+toward its ceiling and a soured one drains and cannot refill until it is fixed. Above the bar the
+rate is RCT2's own rating curve, ~26/min at the ceiling tapering down. THREE ceilings apply, in this
+order: RCT2's soft `suggestedGuestMaximum` (Σ ride BonusValue — **a thin roster throttles itself, and
+at nine rides it sits near 460, i.e. BELOW the opening crowd**), the happiness bar, and a hard
+`arrivals.cap` by plot (**150/312/600/786** at size 16/48/128/192 — 20 % over the opening figure, so
+the frame above is a promise about the worst case, not the opening one). Read all of it off
+`stats()`: `happyShare`, `admitBar`, `admitting`, `parkRating`, `guestCap`, `arrivalsPerMinute`.
+
+**WHAT A GUEST WANTS, IN ORDER.** Aimless guests resolve needs before pleasure: a full bladder
+(`toilet ≥ 200`) → **thirsty** (`thirst ≤ 60`) → **hungry** (`hunger ≤ 60`, both stored RCT2-inverted
+so LOW = wanting) → a **ride** (novelty first) → the sit/watch/balloon whims; a worn-out guest
+(`energy ≤ 110`) hunts for a bench and, with none in reach, goes for **food** instead of standing
+still. **The bladder starts EMPTY and only fills after the first mouthful of food** (`TOILET_FILL`),
+so the restroom trip is a consequence of the food stall, in that order — which means **a park with
+food stalls and no `<Restroom>` will grow a poop problem** (the capped discreet-fallback mesh, and it
+counts double in the litter-blight check).
 
 **BLOCKERS — guests do not walk through solid objects.** Rides/stalls register their pad, body and
 queue railings automatically, as do `<Fountain>`, `<Restroom>` and every `<Fence>`. Path edges

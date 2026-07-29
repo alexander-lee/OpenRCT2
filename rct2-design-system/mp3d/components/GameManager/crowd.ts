@@ -216,6 +216,13 @@ export function createCrowd(s: Sim) {
       im.castShadow = true;
       im.receiveShadow = true;
       im.name = `crowd:${PARTS[i].geo}`;
+      // NOT A RAYCAST TARGET. `InstancedMesh.raycast` tests EVERY instance, so a
+      // single click would run 8 pools x ~500 instances x 2 passes x the 7-point
+      // jitter ring — tens of thousands of sub-raycasts for a pick the guests'
+      // own click proxies already answer (spawn.ts). Picking a guest is
+      // unaffected: `Stage`'s first pass looks for a `guestRef` CARRIER, and a
+      // pool is not one, so a hit here was only ever skipped anyway.
+      im.raycast = () => {};
       // an InstancedMesh allocates its matrices ZEROED, and a zero matrix is
       // degenerate — an unallocated slot draws nothing, which is exactly the
       // "hidden instance" three.js has no flag for.

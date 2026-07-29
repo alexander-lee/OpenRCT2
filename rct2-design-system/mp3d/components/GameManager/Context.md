@@ -44,7 +44,9 @@ Steeper than RCT2's one-step-per-tile limit (0.5 / 1.2) is a LAYOUT defect, not 
 
 ## Needs — 0–255 values chasing targets (Guest.cpp:769-921, 3089)
 
-Six needs per guest: happiness (+target), hunger, thirst, energy (+target), nausea, toilet. **Spawn stats (hashed per guest index):** fresh arrivals enter at 80–100 % energy and happiness (204–255), 0–30 % hunger/thirst/toilet NEED (hunger/thirst stored INVERTED like RCT2 — 255 = sated, so stored 178–255; toilet stored 0–77) and nausea 0. Cash: RCT2's four discrete tiers (below).
+Six needs per guest: happiness (+target), hunger, thirst, energy (+target), nausea, toilet. **Spawn stats (hashed per guest index):** fresh arrivals enter at 80–100 % energy and happiness (204–255), 0–30 % hunger/thirst NEED (stored INVERTED like RCT2 — 255 = sated, so stored 178–255), **toilet 0** and nausea 0. Cash: RCT2's four discrete tiers (below).
+
+**THE BLADDER STARTS EMPTY AND FILLS ONLY AFTER EATING (2026-07-28).** RCT2 rolls a fresh arrival's `Toilet` at 0–77 and steps it +1 per 512 ticks unconditionally, so a guest can walk through the gate already needing the loo. Here it spawns at **0** and the passive climb is gated on `g.ateFood`, set on the guest's FIRST food NIBBLE (not on the purchase — an untouched burger has not been eaten; RCT2 fills the bladder off the nibble too, Guest.cpp:832). The step is then `TOILET_FILL = 6` per 512-tick cycle rather than RCT2's 1, because the whole climb now has only the POST-MEAL part of a visit to cover instead of the whole visit: `TOILET_SEEK`(200) / 6 × 3.2 s = **107 sim-s after the first bite** before the guest goes looking for a restroom, plus the meal's own +2 per nibble. The consequence for a park author is a strict ORDER — food stall, then restroom — so **a park with food and no `<Restroom>` grows a poop problem**, which is exactly the RCT2 lesson.
 
 ### The TWO cadences (RCT2's 128- and 512-tick cycles)
 
@@ -57,7 +59,7 @@ Every `T(128)` = 0.8 s (RCT2's `updateConsumptionMotives`, Guest.cpp:815-921):
 
 Every FOURTH needs tick = `T(512)` = 3.2 s (everything below RCT2's 0x1FF gate):
 
-- hunger −2, toilet +2 (`GuestUpdateHunger`, Guest.cpp:3089-3098 — RCT2's toilet step is +1; doubled here so a 0–77 bladder can still reach `TOILET_SEEK` 200 inside a guest's few-minute visit)
+- hunger −2, and toilet **+6 but ONLY once the guest has eaten** (`GuestUpdateHunger`, Guest.cpp:3089-3098 — RCT2's step is +1, unconditional, from a rolled 0–77 start; see the spawn note above for why this one is gated and larger)
 - thirst −2 (`GuestDecideWhetherToLeavePark`, :3113 — RCT2 drops thirst by 1 and only when the weather is warm; this sim has no weather model and every park in the fleet is warm, so it matches hunger's step)
 - energyTarget −2 (:3110, guests tire over the day, floor 32)
 - energy ≤ 50 → happinessTarget −2 (:779); hunger < 10 → −1 (:785); thirst < 10 → −1 (:790); toilet ≥ 195 → −1 (:795)
@@ -69,7 +71,19 @@ Every FOURTH needs tick = `T(512)` = 3.2 s (everything below RCT2's 0x1FF gate):
 
 **Meals:** a MEAL lasts 1.6–3.2 sim-minutes — 12–16 hashed bites/sips, one every 8–12 hashed s (RCT2 nibbles on a schedule via `timeToConsume`, Guest.cpp:815-854 `updateConsumptionMotives`, paused while `onRide`). Relief is PROGRESSIVE and now RCT2-exact per bite: food is hunger +7, thirst −3, toilet +2 (:829-834); each sip is thirst +7. Passive decay of the need being consumed AND the `energyTarget` day-clock decay pause during the meal (a meal would otherwise out-decay itself / outlast the guest's park stay). After the last bite the guest is left `holding = 'container'`.
 
-Thought triggers (Guest.cpp:1085-1131, on the slow cadence): energy ≤ 70 and happiness < 128 → "I'm tired"; hunger ≤ 10 with nothing in hand → thought + seek the nearest FOOD stall; thirst ≤ 25 with nothing in hand → thought + nearest DRINK stall; toilet ≥ 160 → "I need to go to the toilet"; toilet ≥ 200 → seek the nearest registered restroom (see Restrooms below — with none reachable, the need clamps at 255 until the poop fallback fires). The passing stall impulse uses RCT2's own counter thresholds (`hunger ≤ 75` / `thirst ≤ 75`, Guest.cpp:1574-1582) so a guest never walks up only to be told "I'm not hungry".
+Thought triggers (Guest.cpp:1085-1131, on the slow cadence): energy ≤ 70 and happiness < 128 → "I'm tired"; hunger ≤ 10 → "I'm hungry"; thirst ≤ 25 → "I'm thirsty"; toilet ≥ 160 → "I need to go to the toilet". The passing stall impulse uses RCT2's own counter thresholds (`hunger ≤ 75` / `thirst ≤ 75`, Guest.cpp:1574-1582) so a guest never walks up only to be told "I'm not hungry".
+
+### WHAT AN AIMLESS GUEST DECIDES, IN ORDER (2026-07-28)
+
+`navigation.ts` `arriveAtNode` resolves NEEDS before pleasure, and the thresholds are named constants rather than the old thought-trigger numbers:
+
+1. **restroom** — `toilet ≥ TOILET_SEEK` (200) routes to the nearest registered `<Restroom>`; with none reachable the need clamps at 255 until the poop fallback fires.
+2. **thirsty** — `thirst ≤ THIRST_SEEK` (60) and nothing already in hand → nearest DRINK stall.
+3. **hungry** — `hunger ≤ HUNGER_SEEK` (60) and nothing in hand → nearest FOOD stall.
+4. **a ride**, off its own draw and novelty-first (`seekRide`, `RIDE_SEEK_NEW` 0.45 / `RIDE_SEEK_REPEAT` 0.12).
+5. the whims — rest / watch / balloon / wearable, in their original probability bands. A **worn-out** guest (`energy ≤ REST_SEEK` 110) gets a wider slice of that roll for a bench, and **with no bench in reach heads for FOOD instead of standing still** — RCT2 pauses the day's energy drain for as long as a guest is working through a meal, so food is the other half of "I need a rest".
+
+**Why 60 and not 10.** The seek thresholds used to be the THOUGHT triggers (`hunger ≤ 10`, `thirst ≤ 25`) — the point at which a guest starts complaining, which is far too late to start walking, and it is why appetite barely drove navigation at all. They cannot go above RCT2's COUNTER GATE of 75 (`DecideAndBuyItem`, Guest.cpp:1574, 1580) or the trip ends in "I'm not hungry". 60 sits between the two and gives the loop a rhythm instead of a permanent errand: a finished meal leaves hunger at ~175 (75 + a 12–16-bite refill at +7), the passive drain is 2 per 3.2 s, so a guest goes looking for food roughly every three minutes and rides in between.
 
 ### Staging a cohort's starting needs — `spawnGuests(count, area?, stats?)` (round 9, ADDITIVE)
 
@@ -428,6 +442,38 @@ register{Dance,Watch}Zone({
 
 Prefer a **watch zone** for anything that is not literally a dance floor. Besides facing the thing, `'watching'` is a stationary STATE, which `validatePark`'s stuck detector and the "worn out → leave the park" roll both already understand; a `'dance'` action is taken while the guest is nominally still `'walking'`, which is what trips the 25-sim-s gate.
 
+## THE INSTANCED FAR CROWD — how 500 guests are affordable (`crowd.ts`, 2026-07-28)
+
+A `buildPeep` rig is **13 meshes with a material each**, so a guest is ~8.5 draw calls. That was fine at 50 and fatal at 500. Measured with `harness/mp3d-render/probe-frame-cost.mjs --sample=parkA-99 --gpu=metal` — a REAL GPU (ANGLE Metal, M4 Pro; never SwiftShader, which measures a different machine) — on a size-128 park with the population PINNED:
+
+| population | frame (gpuMs) | draws | meshes | rAF gap | the crowd's share |
+| --- | --- | --- | --- | --- | --- |
+| 99 (the old default's ceiling) | 16.32 | 3176 | 8005 | 18.9 ms | 3.4 ms / 839 draws |
+| 500, before this work | 35.34 | 6614 | 13269 | 40.0 ms | 20.6 ms / 4272 draws |
+| **500, after** | **10.06** | **2366** | **6718** | **12.4 ms** | **~1 ms / 8 draws** |
+
+The frame is CPU-bound in three.js's per-object walk and draw submission (`cpuMs` 35.40 against `gpuMs` 35.34 at 500 before), so **the lever is MESH COUNT, never triangles**.
+
+**What it does.** Guests within `CROWD_DETAIL_RADIUS` (26 u) of any live camera keep their full rig and the entire pose/overlay stack, unchanged. Everyone else is drawn from **eight shared `InstancedMesh` pools** — hip, torso, skull, hair, two arms, two legs — one instance per guest per pool, so the whole far crowd is **8 draw calls at any population**, and their rigs are **removed from the scene graph**. Removal rather than `visible = false`: in three r169 `Object3D.updateMatrixWorld` recurses into children unconditionally (`visible` is only read by `projectObject`), so a merely hidden rig still costs its full matrix walk — measured at +1.8 ms for 400 hidden rigs.
+
+The proxy figure is `buildPeep`'s silhouette minus what is sub-pixel at the crossover: no nose (r 0.018), no hand balls, no shoes, and `IcosahedronGeometry(r, 1)` heads (80 faces) instead of detail 3 (1280). Limbs still SWING — the walk cycle is periodic in phase, so the four limb angles' sines/cosines and the body bob are precomputed into a 64-step table and looked up, i.e. **zero trig per guest per frame**, off `buildPeep`'s own `walkTargets` curves at amplitude 1 so the gait does not change across the boundary.
+
+**A BUDGET, not just a radius.** Park the camera in a busy plaza and hundreds of guests are inside 26 u. So the radius is a CONTROLLER: it shrinks 6 %/frame while more than `CROWD_DETAIL_BUDGET` (72) rigs are inside it and relaxes back when under, which bounds the articulated population absolutely without a per-frame sort. 72 is below the 99-guest crowd this project already shipped at 3.4 ms, so the articulated half of a 500-guest park costs LESS than the whole crowd of a 100-guest one did.
+
+**DETERMINISM — the sim does not depend on where the camera is.** Everything the LOD gates is visual. `guestPass` resolves the three timed events that carry sim consequences ABOVE the gate, on every guest: the litter fling's release, the vomit's nausea/happiness relief and ground splat, and the post-ride hop's balloon-slip roll. No hashed draw is skipped and `hash01` carries no cursor, so the roll sequence is identical whatever the view does.
+
+**CLICKABILITY.** The fat invisible click proxy is now a SIBLING of the rig in the manager group, not a child of it, and carries `userData.guestRef` itself — `Stage`'s `isDrawn` rejects a hit whose ancestor is invisible, so a proxy parented to a rig that has left the scene would have made every distant guest unpickable. It is positioned from the sim's own `x/baseY/z` every frame and is never `visible` (setting it visible cost 503 draws and 507 meshes, measured); a guest hidden inside a hut has its proxy taken out of `Raycaster`'s reach with `layers.disableAll()` instead.
+
+**OPT-IN.** The LOD only exists when the manager is given `opts.cameras`. `<Park>` passes its Stage cameras (main orbit + any RideViewer/PlayerCam inset). `<ScenePreview>` deliberately passes nothing, so every component PREVIEW keeps all its guests on full rigs and screenshots stay pixel-identical.
+
+**HEADLESS.** `mgr.setVisuals(false)` switches off the pose layer and the instance writes entirely. `validatePark`'s sim smoke wraps its ~2550-step loop in it: that is a behaviour test with no frame in between, and animating an audience of nobody was 500 × 8 × 16 × 2550 = 163 million array writes.
+
+## `walkYAt` WAS THE MOST EXPENSIVE FUNCTION IN A POPULATED PARK
+
+Not part of this component, but it is the guest sim that pays for it, so it belongs in this note. Every guest samples `PathNetwork`'s `walkYAt` once per frame to set its feet (`navigation.ts` `netStep`, `locomotion.ts` `followWaypoints`), and it used to scan EVERY edge and node of the network per call — an O(guests × network) term, the only one in this sim that grows with the product of the two things a big park has more of.
+
+**A CDP CPU profile of parkA-99 at 500 guests put it at 21.0 % of all self time — 4784 ms of a 22.8 s window, more than twice three.js's own `projectObject`.** It is now an exact uniform bucket grid (`build.ts`, "THE WALK-HEIGHT SPATIAL INDEX"), and the effect on the load-time acceptance gate is the headline number: **`validatePark` went from 4117 ms to 431 ms**, i.e. a 500-guest park now validates faster than a 100-guest one used to.
+
 ## Animation — everything through the Guest POSE LAYER
 
 All guest animation now runs on `buildPeep`'s pose controller (`pose.setState` + `pose.update` — see Guest/Context.md), so every transition CROSSFADES (~0.25 s, slew-limited) and nothing snaps:
@@ -493,7 +539,13 @@ A miserable park therefore takes in ~2 guests a minute while its own leave roll 
 **Two ceilings.**
 
 - RCT2's own SOFT cap, `suggestedGuestMaximum` = Σ `BonusValue` over open rides — here, every ride that has not crashed (`Park.cpp:107-140`) — exceeding it quarters the probability. RCT2 reads `BonusValue` off the ride type descriptor; this sim has no RCT2 ride type, so the three bands are the medians of the real tables (`src/openrct2/ride/rtd/**`): intensity ≥ 7 → 90 (coasters, 50-120), ≥ 4 → 50, else 40 (gentle, 22-50). A one-ride park is throttled to a quarter rate from ~40 guests up, exactly as RCT2 would.
-- A HARD cap, `arrivals.cap` — a PERFORMANCE guard, not an RCT2 mechanic. Arrivals stop while `activeGuests >= cap` and resume the instant a `leavingPark` guest despawns, so the population breathes at the ceiling instead of ratcheting. `<Park>` wires `guestCapForSize(size)` = **2× the opening population, clamped to [24, 160]** — 26 on a 16, 52 on a 48, 100 on a 128, 132 on a 192.
+- A HARD cap, `arrivals.cap` — a PERFORMANCE guard, not an RCT2 mechanic. Arrivals stop while `activeGuests >= cap` and resume the instant a `leavingPark` guest despawns, so the population breathes at the ceiling instead of ratcheting. `<Park>` wires `guestCapForSize(size)` = **1.2× the opening population, clamped to [72, 960]** — 150 on a 16, 312 on a 48, **600 on a 128**, 786 on a 192. It used to be 2×, which was right when a park opened with 50; at an opening crowd of 500 a doubling would promise a worst case of 1000, and a ceiling is a promise the frame has to hold AT.
+
+**…and a THIRD: THE HAPPINESS BAR (`ADMIT_HAPPY_SHARE = 0.5`, 2026-07-28).** RCT2's curve never fully closes — at the rating floor it still rolls 50/0xFFFF, ~1.8 arrivals a minute — so happiness was a soft influence rather than a feedback loop, and a park that OPENS with 500 needs the difference between filling and emptying to be visible. The gate now admits **nobody at all** while under half the crowd clears RCT2's own `happiness > 128` line; above it the rate curve above is untouched. An EMPTY park always admits (with nobody inside there is no unhappiness to judge it on, and a park that emptied itself has to be able to refill).
+
+Why the happy SHARE and not the rating: the rating is the right signal for the RATE and the wrong one for an on/off bar, because two of its five terms are bookkeeping rather than park quality — a park whose author never measured ride ratings scores `rated === 0`, forfeits the +100 balance bonus AND the whole `(exc + int)/10` credit, and lands ~200 points lower for reasons a guest cannot feel. A rating bar would have held the gate shut on perfectly happy parks. The share is the same quantity the rating's guest term is built out of, with none of the coupling. RCT2 agrees a failing park should stop taking money at the gate — it starts park-rating warning days under rating 700 and closes the park 29 days later (`scenario/ScenarioObjective.cpp:107-140`) — it just does it on a calendar this sim has no room for.
+
+Read the loop off `stats()`: `happyShare`, `admitBar`, `admitting`, `parkRating`, `guestCap`, `arrivalsPerMinute`, `suggestedGuestMaximum`.
 
 **Knobs.** `createGameManager(t, { arrivals: { enabled?, cap? } })`; `enabled: false` gives the old fixed-population behaviour for a preview or probe that must hold an exact roster. Fully deterministic: each roll is `hash01(rollN·7.13 + 37.77)`, keyed on a monotonic roll counter, and the accumulator is driven by the clamped `dt`, so validatePark's 1/30 smoke loop and a variable-rate render loop admit the same guests after the same elapsed sim time.
 

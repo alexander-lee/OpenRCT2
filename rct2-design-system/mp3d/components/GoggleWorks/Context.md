@@ -6,9 +6,28 @@ specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failu
 
 **"The Goggle Works" — the BRASSWORK FOUNDRY world's steampunk optician, and the fleet's first real WEARABLE shop** (GameManager `item: 'wearable'`): customers walk away with a pair of brass aviator goggles ON THEIR HEAD, worn for the rest of the visit.
 
-The building is a riveted brass-and-copper panel kiosk on a soot-iron carcass: a verdigris-patinated copper roof over the back half, a treadle-driven **lens-grinding wheel** turning on the counter behind its flat leather belt, a patinated copper **boiler** venting steam through the roof, three live **pressure gauges** bolted to the front panel, a felt tray of lens blanks, a display **rack of finished goggles** hanging under the roof edge, a brass **gaslight** on a curved bracket, an engraved nameplate, and one heroic pair of goggles as the shop sign.
+The building is a riveted brass-and-copper panel kiosk on a soot-iron carcass: a verdigris-patinated copper roof over the back half, a treadle-driven **lens-grinding wheel** turning on the counter behind its flat leather belt, a patinated copper **boiler** venting steam through the roof, three live **pressure gauges** bolted to the front panel, a felt tray of lens blanks, a display **rack of finished goggles** hanging under the roof edge, a brass **gaslight** on a curved bracket, an engraved nameplate, and — on the roof — a **GIANT pair of goggles** as the shop sign.
 
-Serving front faces local **+z**; the GameManager attach point sits **0.72 u** out that way. Sized against a 0.5-scale park guest like the four catalog shops: counter top y 0.50, roof plate 0.98, sign topping out at 1.33.
+Serving front faces local **+z**; the GameManager attach point sits **0.72 u** out that way. Sized against a 0.5-scale park guest like the four catalog shops: counter top y 0.50, roof plate 0.98, **giant sign topping out at ~2.10**.
+
+## ⚠️ THE GIANT GOGGLES — 2.2× was not a hero prop (2026-07-28)
+
+At scale 2.2 the roof sign was ~**0.56 u wide on a 1.84 u roof** and topped out at 1.33: from a high park camera it read as **two brass buttons on a brown plate**, the same value as the copper roof they stand on, and this shop's whole identity — *you can see what you buy* — was unreadable at exactly the distance a guest picks a shop from. (The 2026-07-25 aesthetic pass passes on a 26° close-up of the SERVING FRONT; nothing in it measured the overhead read.)
+
+Goggles are the luckiest article in the catalog for the `BurgerShop` / `CottonCandyStand` treatment: **TWO BIG CIRCLES SIDE BY SIDE** is an unmistakable silhouette with zero detail resolved, and the pale grey-blue lens glass `0x86aab4` is the one COOL colour in a shop made entirely of warm brass, copper and soot — so it separates from its own building by hue as well as by size.
+
+```
+scale 2.2 → 6.4        (1.64 u wide, spanning the roof plate almost exactly; lens discs 0.55 across)
+position (0, 1.22, −0.18) → (0, 1.48, −0.55)      rotation.x 0 → −0.50
+stand posts: x ±0.16 → ±0.34,  0.12 long → 0.46 long
+```
+
+- **THE TILT IS THE WHOLE TRICK.** `gogglesMesh`'s lens faces look down local +z and a park camera looks DOWN at ~50°, so a sign left plumb shows the camera its brass rims **edge-on**. Tipped back 0.50 rad the two lens discs face it nearly square. (Verified: the 26° preview shows the cups from below, the 50° park shot shows two full lens discs — the park camera is the one that matters.)
+- **IT STILL DOES NOT COVER THE SHOP.** After the tilt the lens centres land near y 1.80 / z 0.03, the pair occupies y 1.37…2.10, and the front-most geometry stops near z 0.2 — just past the roof fascia at 0.16 and well short of the counter nosing at z 0.50. Nothing new hangs over the grinder, the gauges or the lens tray, which is this component's founding rule (*"a full-depth roof turns the whole shop into a lid"*) applied to its own sign. Footprint x ±0.82 is inside the measured ±0.95; the registered body (`hx 0.6 / hz 0.42`), the queue and the 0.72 u attach point are untouched.
+- **`castShadow = false`** — a 1.6 u prop 1.7 u up would stripe the counter, and it saves 16 shadow-pass draws.
+- **night-gated emissive, no new light.** Both PointLights here are at y ≤ 0.8 with a 2.2–2.8 range and BOTH gate fully to zero by day (this shop has no fire in it), so after dark the sign 1.8 u up gets almost nothing and the one thing that makes the shop findable would be the darkest object in frame. `mat()` never shares a material instance, so an emissive on the sign's own materials costs no light and no draw, on the same `ease` as the two lamps — **nothing here glows at noon.** **Tinted per part, not one warm hex:** a flat `0xffb050` on all 16 materials turned the sign into two plain yellow discs at night, brass/glass distinction gone. `mat()` bakes the colour into the texture and leaves `material.color` white, so a MAPPED material (all the brass) needs `emissiveMap = map` with a white emissive to glow in its own tint, while the unmapped lens glass copies its colour. Same texture object, so it costs nothing. Peak **0.22**.
+
+**MEASURED COST: +0 colour draws, −16 shadow draws, +0 triangles.** 172 → **172 meshes**, 171 → **155** shadow-casting meshes, 9 752 → **9 752** tris — the same 16-mesh `gogglesMesh` recipe as the worn pair and the three display pairs, a fourth scale, only the numbers changed, and turning the sign's shadow off makes the shop CHEAPER than before (probe: mesh/shadow/triangle census of the built group, working tree vs `3f9e83c461`, `withGuest: false`).
 
 ## Exports
 
@@ -36,7 +55,7 @@ which puts the lens centres near head-local y 0.03, z 0.10 — the skull surface
 
 Verified on real sim wearers, front/profile/body (`/tmp/mp3d-render/shots/closeup-goggles-real*.png`), including one who kept the pair through a ride. See components/GameManager/Context.md → "Wearables" and "Per-stall held items".
 
-**One recipe, three scales.** `gogglesMesh` builds the goggles once (peep-local units, origin between the lenses, `+z` = face) and is reused for the worn pair, the three hanging display pairs (~2× the worn size) and the roof sign (2.2×) — so the shop is literally displaying the article it sells.
+**One recipe, four scales.** `gogglesMesh` builds the goggles once (peep-local units, origin between the lenses, `+z` = face) and is reused for the worn pair, the three hanging display pairs (~2× the worn size) and the roof sign (**6.4×** since 2026-07-28; it was 2.2× — see below) — so the shop is literally displaying the article it sells.
 
 ## Palette
 
@@ -116,3 +135,9 @@ roof plate: the grinding wheel, the three front gauges, the lens tray and the co
 "Modelling note" above exists to keep visible — were a sliver under the eaves, and the kiosk stood on
 open grass. The preview now sets **26°** on the serving front and stages the same sooted foundry apron
 `AetherBalloons` and `GearworksExpress` use. All of it reads in one frame: `shots/aud/GW3-rig-day.png`.
+
+**…and then pulled BACK on 2026-07-28 for the hero sign** (`distance 3.5 → 4.7`, `targetY 0.55 → 0.9`,
+camera `[1.55, 2.05, 2.75] → [2.1, 2.9, 3.75]`). The 26° pose is kept — it is the only shot that gets
+under the roof line — but at 3.5 u out the giant goggles (1.64 wide, topping out at y 2.10) were cropped
+off the canvas. The camera moves straight out along the same ray, so the elevation is unchanged at ~25°
+and the grinder, the gauges, the lens tray and the counter are all still in shot.

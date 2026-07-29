@@ -243,14 +243,28 @@ export function createNavigation(s: Sim) {
     // `!g.holding` gates both: a guest already carrying a burger or a cup would
     // only earn RCT2's "I haven't finished my drink yet" at the counter
     // (Guest.cpp:1553), so the trip would be wasted.
+    //
+    // EVERY STAGE FALLS THROUGH TO THE NEXT WHEN IT FINDS NOTHING, and that is
+    // not a stylistic choice — it is a BUG FIX. These used to be one if/else-if
+    // chain, so a guest who WANTED a drink but whose nearest drink stall had no
+    // routing spur (`st.attach === null`) took the drink branch, set no goal, and
+    // skipped the ride appetite and every whim as well. MEASURED on parkA-99
+    // (size 128, 526 guests, 284 sim-s): once thirst fell under the seek
+    // threshold the park sold **0 food and 0 drink and stopped setting goals
+    // altogether** — 41 balloons had sold in the first three minutes and then
+    // nothing, while `riddenTotal` only crept up off the walk-past roll, which
+    // needs no goal. The narrow old thresholds (`hunger <= 10`) hid this because
+    // guests were rarely inside the branch at all.
     if (!g.goal) {
-      if (!g.holding && g.thirst <= THIRST_SEEK && stalls.some((st) => st.cfg.item === 'drink')) {
+      if (!g.holding && g.thirst <= THIRST_SEEK) {
         const st = s.needs.nearestStall(g, 'drink');
         if (st && st.attach) g.goal = { kind: 'stall', node: st.attach.node, stall: st };
-      } else if (!g.holding && g.hunger <= HUNGER_SEEK && stalls.some((st) => st.cfg.item === 'food')) {
+      }
+      if (!g.goal && !g.holding && g.hunger <= HUNGER_SEEK) {
         const st = s.needs.nearestStall(g, 'food');
         if (st && st.attach) g.goal = { kind: 'stall', node: st.attach.node, stall: st };
-      } else {
+      }
+      if (!g.goal) {
         // RIDES ARE SOUGHT FIRST, off their OWN draw (see seekRide) — a guest who
         // wants a ride should not be competing with the sit/watch/balloon whims
         // for the same slice of one random number.

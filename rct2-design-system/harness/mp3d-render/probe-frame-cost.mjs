@@ -395,9 +395,29 @@ const measure = (spec, N) => page.evaluate(({ v, o, N: n }) => {
     if (scene.fog) { scene.fog.near = o.far * o.nearFrac; scene.fog.far = o.far * 0.97; }
     note.far = Math.round(o.far);
   } else if (v === 'guestsHidden') {
+    // TWO POPULATIONS SINCE THE INSTANCED FAR CROWD (GameManager/crowd.ts):
+    //   * the NEAR guests still on full `buildPeep` rigs — tagged `guestRef`,
+    //     hidden the way this variant always did;
+    //   * everyone else, drawn from eight `InstancedMesh` pools named `crowd:*`.
+    // Hiding only the first found ZERO on a park whose camera sits at the orbit
+    // distance (every guest is far), which read as "the crowd is free" when what
+    // had actually happened is that the crowd moved. The click PROXIES also carry
+    // `guestRef` now and are permanently invisible, so they are skipped by the
+    // `g.visible` test and never counted.
     const gs = f.guestRoots();
     for (const g of gs) if (g.visible) { g.visible = false; hidden.push(g); }
-    note.guestsHidden = hidden.length;
+    note.guestRigs = hidden.length;
+    let pooled = 0;
+    api.scene.traverse((o) => {
+      if (o.isInstancedMesh && String(o.name).startsWith('crowd:') && o.visible) {
+        o.visible = false;
+        hidden.push(o);
+        pooled += o.count;
+      }
+    });
+    note.crowdPools = hidden.length - note.guestRigs;
+    note.crowdInstances = pooled / Math.max(1, hidden.length - note.guestRigs);
+    note.guestsHidden = note.guestRigs + note.crowdInstances;
   } else if (v === 'shadowFrozen') {
     renderer.shadowMap.autoUpdate = false;
   } else if (v === 'darkLightsRestored') {

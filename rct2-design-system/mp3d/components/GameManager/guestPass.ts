@@ -487,37 +487,31 @@ export function createGuestPass(s: Sim) {
       if (g.timer <= 0) g.state = 'walking';
     }
 
-    // ---- pose: everything goes through the Guest pose layer -------------------
-    // (mood is POSTURE, not an orb — Paint.Guest.cpp:60). Queue slots and all
-    // stationary states are 'idle' (breathing + weight shift — NO leg swing),
-    // locomotion is 'walk' with a cadence solved from the guest's ACTUAL
-    // displacement this frame (limbs match ground speed — no foot skating,
-    // and the hunger/energy walkMult automatically slows the cadence too),
-    // dancing wanderers run the pose 'dance' sequencer, and the post-ride
-    // 'wow' is a real pose-layer JUMP (crouch → arc → landing recovery).
-    const pg = g.peep.group;
-    // THE CLICK PROXY tracks the guest from OUTSIDE the rig (see spawn.ts), so a
-    // guest stays pickable at any level of detail. One assignment per guest.
+    // ---- THE CLICK PROXY ------------------------------------------------------
+    // It tracks the guest from OUTSIDE the rig (see spawn.ts for why it is a
+    // sibling rather than a child), so a guest stays pickable at any level of
+    // detail. One position assignment per guest per frame.
     //
     // IT IS NEVER `visible` — it is a raycast target, and `Stage`'s `isDrawn`
-    // lets an invisible object through precisely when it is flagged
-    // `clickProxy`. (Setting `visible` here instead cost 503 draw calls and 507
-    // meshes on parkA-99: five hundred fat cylinders, measured.) What DOES have
-    // to follow the guest is whether the proxy is PICKABLE at all: as a sibling
-    // of the rig it no longer inherits the rig's visibility, so a guest hidden
-    // inside a hut/stall/restroom would otherwise still swallow clicks aimed at
-    // the pavement. `layers.disableAll()` takes it out of `Raycaster`'s
-    // `layers.test` (mask 0 never matches) without touching the scene graph.
+    // lets an invisible object through precisely when it is flagged `clickProxy`.
+    // (Setting `visible` here instead cost 503 draw calls and 507 meshes on
+    // parkA-99: five hundred fat cylinders, measured.) What DOES have to follow
+    // the guest is whether the proxy is PICKABLE at all: as a sibling it no
+    // longer inherits the rig's visibility, so a guest hidden inside a
+    // hut/stall/restroom would otherwise still swallow clicks aimed at the
+    // pavement. `layers.disableAll()` takes it out of `Raycaster`'s `layers.test`
+    // (mask 0 never matches) without touching the scene graph.
+    const pg = g.peep.group;
     g.proxy.position.set(g.x, g.baseY + 0.95 * GUEST_SCALE, g.z);
-    if (g.hidden || g.gone) g.proxy.layers.disableAll();
-    else g.proxy.layers.enable(0);
     if (g.hidden || g.gone) {
+      g.proxy.layers.disableAll();
       pg.visible = false;
       s.crowd.clear(g);
       g.eatArm = null; // fresh arm baseline when the guest re-appears
       g.fling = null; // any half-played throw is abandoned out of sight
       return;
     }
+    g.proxy.layers.enable(0);
     const vWorld = dt > 1e-6 ? Math.hypot(g.x - px, g.z - pz) / dt : 0;
     // LEVEL OF DETAIL, decided once: is this guest close enough to any live
     // camera to be worth an articulated rig? Always true when no cameras were
@@ -607,6 +601,15 @@ export function createGuestPass(s: Sim) {
     if (!pg.parent) s.group.add(pg); // back inside the detail radius
     s.crowd.clear(g);
     pg.visible = true;
+
+    // ---- pose: everything goes through the Guest pose layer -------------------
+    // (mood is POSTURE, not an orb — Paint.Guest.cpp:60). Queue slots and all
+    // stationary states are 'idle' (breathing + weight shift — NO leg swing),
+    // locomotion is 'walk' with a cadence solved from the guest's ACTUAL
+    // displacement this frame (limbs match ground speed — no foot skating,
+    // and the hunger/energy walkMult automatically slows the cadence too),
+    // dancing wanderers run the pose 'dance' sequencer, and the post-ride
+    // 'wow' is a real pose-layer JUMP (crouch → arc → landing recovery).
     const pose = g.peep.pose;
     pose.seed = g.phase;
 

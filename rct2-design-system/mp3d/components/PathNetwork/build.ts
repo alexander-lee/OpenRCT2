@@ -1128,7 +1128,6 @@ export function buildPathNetwork(t: typeof THREE, net: PathNet, opts: PathNetwor
     }
   };
 
-  /** one edge against the running best (shared by the bucket and the tail) */
   const walkYAt = (x: number, z: number) => {
     if (wgCoreE < 0) wgBuild();
     let best = flatWalkY;
@@ -1180,74 +1179,6 @@ export function buildPathNetwork(t: typeof THREE, net: PathNet, opts: PathNetwor
     }
     const pbW = plazaBaseAt(x, z);
     if (pbW !== null) best = Math.max(best, pbW + plazaTop);
-    // TEMP SELF-CHECK
-    {
-      let b2 = flatWalkY;
-      let d2 = WALK_REACH;
-      let win = -1;
-      for (let ei = 0; ei < edges.length; ei++) {
-        const [ea, eb] = edges[ei];
-        const [ax2, az2] = nodes[ea];
-        const [bx2, bz2] = nodes[eb];
-        const ex2 = bx2 - ax2;
-        const ez2 = bz2 - az2;
-        const L2 = ex2 * ex2 + ez2 * ez2 || 1;
-        const u = Math.max(0, Math.min(1, ((x - ax2) * ex2 + (z - az2) * ez2) / L2));
-        const d = Math.hypot(x - (ax2 + ex2 * u), z - (az2 + ez2 * u));
-        if (d < d2) {
-          d2 = d;
-          win = ei;
-          b2 = yOf(ea) + (yOf(eb) - yOf(ea)) * u + H;
-        }
-      }
-      for (let ni = 0; ni < nodes.length; ni++) {
-        const d = Math.max(0, Math.hypot(x - nodes[ni][0], z - nodes[ni][1]) - sq / 2);
-        if (d < d2 - 1e-9) {
-          d2 = d;
-          b2 = yOf(ni) + H;
-        }
-      }
-      if (pbW !== null) b2 = Math.max(b2, pbW + plazaTop);
-      const w = window as unknown as { __wgBad?: number; __wgN?: number; __wgWorst?: number; __wgEx?: unknown[] };
-      w.__wgN = (w.__wgN ?? 0) + 1;
-      if (Math.abs(b2 - best) > 1e-9) {
-        w.__wgBad = (w.__wgBad ?? 0) + 1;
-        w.__wgWorst = Math.max(w.__wgWorst ?? 0, Math.abs(b2 - best));
-        w.__wgEx = w.__wgEx ?? [];
-        if (w.__wgEx.length < 6)
-          w.__wgEx.push({
-            x, z, grid: best, brute: b2, gridD: bestD, bruteD: d2,
-            cell, bE: (wgE[cell] ?? []).length, bN: (wgN[cell] ?? []).length,
-            nx: wgNx, nz: wgNz, cellSize: wgCell, x0: wgX0, z0: wgZ0,
-            nodesN: nodes.length, edgesN: edges.length, wgCoreN, wgCoreE, sq, reach: WALK_REACH,
-            win,
-            winInBucket: (wgE[cell] ?? []).indexOf(win) >= 0,
-            winA: win >= 0 ? nodes[edges[win][0]] : null,
-            winB: win >= 0 ? nodes[edges[win][1]] : null,
-            recomputedCells: win >= 0 ? (() => {
-              const ax2 = nodes[edges[win][0]][0]; const az2 = nodes[edges[win][0]][1];
-              const bx2 = nodes[edges[win][1]][0]; const bz2 = nodes[edges[win][1]][1];
-              return [wgIdx(Math.min(ax2,bx2)-WALK_REACH,wgX0,wgNx), wgIdx(Math.max(ax2,bx2)+WALK_REACH,wgX0,wgNx),
-                      wgIdx(Math.min(az2,bz2)-WALK_REACH,wgZ0,wgNz), wgIdx(Math.max(az2,bz2)+WALK_REACH,wgZ0,wgNz)];
-            })() : null,
-            queryCell: [wgIdx(x, wgX0, wgNx), wgIdx(z, wgZ0, wgNz)],
-            bucketList: (wgE[cell] ?? []).slice(),
-            expected: (() => {
-              const out: number[] = [];
-              for (let ei = 0; ei < edges.length; ei++) {
-                const a0 = nodes[edges[ei][0]]; const b0 = nodes[edges[ei][1]];
-                const i0 = wgIdx(Math.min(a0[0], b0[0]) - WALK_REACH, wgX0, wgNx);
-                const i1 = wgIdx(Math.max(a0[0], b0[0]) + WALK_REACH, wgX0, wgNx);
-                const j0 = wgIdx(Math.min(a0[1], b0[1]) - WALK_REACH, wgZ0, wgNz);
-                const j1 = wgIdx(Math.max(a0[1], b0[1]) + WALK_REACH, wgZ0, wgNz);
-                const qi = wgIdx(x, wgX0, wgNx); const qj = wgIdx(z, wgZ0, wgNz);
-                if (qi >= i0 && qi <= i1 && qj >= j0 && qj <= j1) out.push(ei);
-              }
-              return out;
-            })(),
-          });
-      }
-    }
     return best;
   };
 
