@@ -1239,7 +1239,10 @@ export function Stage({
       if (scene.fog) (scene.fog as THREE.Fog).color = bgNow;
       group.userData.nightK = nightK; // components read this via nightKOf()
       if (update) update(t);
-      darkCull.tick(dt); // after the updaters set intensity, before the render
+      // after the updaters set intensity, before the render. dtRaw, NOT dt: the
+      // cadence is a wall-clock interval, and the 0.1 s clamp made it three
+      // frames long on the very parks it exists to speed up (darkLights.ts).
+      darkCull.tick(dtRaw);
       // main view first, then registered extra viewports (scissor multi-view)
       renderer.setScissorTest(true);
       renderer.setViewport(0, 0, w, h);

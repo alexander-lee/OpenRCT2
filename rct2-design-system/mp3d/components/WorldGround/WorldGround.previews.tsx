@@ -2,6 +2,7 @@ import React from 'react';
 import { ScenePreview } from '../Park';
 import { WorldGround } from './index';
 import { WORLD_THEMES, worldPlan } from '../SetPieceKit';
+import { fountainPlazaPlan } from '../FountainPlaza';
 
 // The six GROUND DRESSES, one per theme. `<WorldGround>` needs a worldPlan, so
 // each preview builds one around the origin and lays that theme's floor across
@@ -12,13 +13,21 @@ import { WORLD_THEMES, worldPlan } from '../SetPieceKit';
 // wavelength, so a small swatch shows one flat colour and tells you nothing
 // about the thing that was actually fixed.
 
-const planFor = (themeId: string) =>
-  worldPlan({
+// ONE REAL PIECE, not `pieces: []`. An empty list is a FATAL plan lint
+// (`worldEmpty` — "a world is composed of its set-pieces"), and a fatal thrown
+// at module scope does not degrade the preview, it BLANKS it: every one of
+// these six swatches rendered nothing. A themed plaza is the cheapest legal
+// world and it is dressed by the same theme the ground is, so the swatch still
+// shows what it is here to show.
+const planFor = (themeId: string) => {
+  const theme = (WORLD_THEMES as any)[themeId];
+  return worldPlan({
     id: `pv-${themeId}`,
-    theme: (WORLD_THEMES as any)[themeId],
-    pieces: [],
+    theme,
+    pieces: [fountainPlazaPlan({ id: `pv-${themeId}-hub`, position: [0, 0], theme })],
     include: [[-12, -12], [12, 12]],
   });
+};
 
 const shot = (themeId: string, night = false) => () => (
   <ScenePreview distance={34} targetY={0.3} autoRotate={false} ground night={night} height={430}>
@@ -28,6 +37,7 @@ const shot = (themeId: string, night = false) => () => (
 
 const previews = {
   componentName: 'WorldGround',
+  importPath: 'components/WorldGround',
   previews: [
     {
       name: 'fire — cooled basalt and ash',

@@ -120,7 +120,9 @@ Placed on the station frame, so it follows the layout. **LOCAL FRAME: +z is the 
 
 Capacity **4** = the four seat pads, set evenly round the raft's ring so riders face outward, which is what a round raft does. REAL GameManager guests board **4/4 distinct** live anchors through `seatWorld` (`makeSeatWorld` over anchors parented into the raft; decorative riders default true standalone / **false when registered**). The raft, the channel water, the basin water and the splash are wrapped in `createMotionGate` (`spinDown: 1.6`): parked drift **0.0000** through `waitingForPassengers`, **4.28** units of travel on `departing`, `invalid=false`. **The SEA is NOT gated** — the lagoon, the waterfall and the shoals run off the real clock outside the gate, so a parked ride is not a frozen ocean. Un-registered previews are byte-identical: the gate starts ungated until the first `onStateChange`.
 
-**Park layout:** queue HEAD **2.4** out the local +z front at the tower's FOOT, exit hut at local **[2.0, 2.2]**, boarding at **[−1.3, 5.0, 0]** — on the LAUNCH DECK. An elevated boarding anchor is legal because GameManager *seats* guests at the boardPoint and they never walk to it (`GameManager/registry.ts:76`, `rideFsm.ts:160`); the lane, both huts and the boardPoint's own footprint pad all stay on the ground. Defaults: name "Deepwater Chute", capacity 4, rideDuration 45, intensity 6, price 5.
+**Park layout** (`ACCESS`, declared at the TOP of `index.tsx` and published on the group as `userData.access`): queue HEAD **7.0** out the local +z face, exit hut **derived** one 1.2 u tile along that face from the entrance hut (`layout.exit` is a SIDE HINT only — `[2.0, 2.2]` just means "the −x cell first"), boarding at **[−1.3, 5.0, 0]** — on the LAUNCH DECK. An elevated boarding anchor is legal because GameManager *seats* guests at the boardPoint and they never walk to it (`GameManager/registry.ts:76`, `rideFsm.ts:160`); the lane, both huts and the boardPoint's own footprint pad all stay on the ground. Defaults: name "Deepwater Chute", capacity 4, rideDuration 45, intensity 6, price 5.
+
+**`front` is 7.0 where the catalog runs 2.1–4.4, and that is not a typo — see “Fixed 5” below.** This ride brings its own sea, and <ConfigurableRide> seats the lane and both huts on the PARK's terrain, so the access has to start out past the lagoon's shoreline. It cannot go much further either: past the dry spit (`z ≤ 9.0`) the apron crest climbs to `SEA + 0.055` and would bury a hut.
 
 ## Budgets (measured headlessly)
 
@@ -140,6 +142,7 @@ The lagoon is ONE `buildWater` sheet round the footprint (`amp 0.22 × waviness 
 | clip ellipse vs the cove's plan | **1.000** — the waterline WAS the clip | **1.160** — the waterline is the sand |
 | shore band, last water → first dry plate | median 0.29 u, **11 of 24 azimuths NEGATIVE** (dry sand inside the water) | median **0.18 u**, min 0.05, every azimuth positive |
 | sheet painted over the ride's DRY land | **579 spit cells @ 0.568 deep + 187 apron cells** | 451 of 500 / 395 of 397 now **hidden under their own sand** |
+| the ride's OWN access, vs the sheet's clip | queue head plan r **0.854**, entrance hut 0.790, exit cells 0.751 / 0.834 — **all four inside the water** | **1.372 / 1.300 / 1.276 / 1.327** — worst **+1.10 u outside the clip**, +3.49 u outside the waterline (`front` 2.4 → 7.0, "Fixed 5") |
 | reef items standing PROUD of the water | **8 of 24** (kelp tops to 1.25 vs a 0.62 waterline) | **4 of 24, all kelp** — which is the one thing meant to break the surface |
 | dry apron crest | groundAt + 0.113, i.e. **0.507 UNDER the waterline** | `SEA + 0.055` — a beach that crosses the waterline |
 | meshes / triangles | 232 / 119,044 | **235 / 119,476** (+3 draws, +432 tris) |
@@ -150,11 +153,21 @@ The lagoon is ONE `buildWater` sheet round the footprint (`amp 0.22 × waviness 
 
 1. **The bed is a DISH, above the host's ground** — `bedTopAt` runs from `max(groundAt + 0.012, SEA − 0.62)` in the middle up to `SEA − 0.12` at the rim, so the pool is 0.61 deep in the channel and 0.12 on the shelf. It is pushed back down to `yBot − 0.22` within 1.8 u of the track and eased out by 3.0 u, because the dish's rim shelf (0.50) would otherwise have stood ABOVE the flume trough's own floor (0.45) where the circuit reaches plan radius ~0.86 — the raft runs in a dredged channel through the shoals now.
 2. **The bed's COLOUR carries the gradient**, because nothing else can: WaterTile's alpha is `mix(0.78, 0.9, …vH…)` — driven by **wave height, not depth** — so a single-tone bed shows through at one strength wherever it is, however carefully the floor is shelved. Three merged meshes by local depth (`SAND_DEEP` 0x62705f / `SAND_BED` / `SAND_SHOAL` 0xdccfa6), +2 draws. The class boundary is **hash-dithered ±0.09** of depth: classified on raw depth it drew clean contours across a lattice of hard rectangles and the first render came back reading as a **tiled swimming-pool floor** (shoal was 0xe6dcbc then — too near white, maximum contrast on every plate edge).
-3. **A real shore transition.** Wet band at `SEA − 0.09` (a submerged strip, 0.034 under the swell's own trough), dry apron crest at `SEA + 0.055`, dunes behind it. **This is the one cost of the fix and it cannot be avoided while `SEA` is pinned by the ride:** the flume trough bottoms out at 0.55 and its walls reach +0.18, so the run-out only reads as awash for `SEA` in ~0.55…0.73 — the waterline is 0.62 above the host's ground, so the rim of this cove stands ~0.675 above the terrain around it, two-and-a-bit RCT2 land steps where ReefRacer spent one. Only the RIM: outside `lagoonR` 1.20 the lift eases back to `groundAt + 0.07` by 1.75, a 0.07–0.15 gradient over 4–9 u, and nothing beyond 1.75 is touched. `THK` went 0.07 → **0.85** because a 0.07 tile seated 0.675 above the host's ground floats with daylight under its edges.
-4. **The waterline is the SAND, not the clip ellipse** — ReefRacer's §3b dive, baked into the plane's own vertices: wherever sand stands above the water the sheet slides 0.05 under it and is hidden. `uRadius` goes to `LB · 1.16` (past the wobble's own 1.115 maximum) and the plane grows 2.06 → 2.39 with it. **Plus one thing ReefRacer does not need:** the SPIT cannot be raised — `configurableRide.tsx:684` seats the huts and the queue lane on the PARK's terrain, and the queue head sits at plan radius **0.854** and the exit hut at **0.904**, both INSIDE the ellipse, so lifting that sand buries them and flooding it drowns them. So the dive is driven by a MASK as well as by sand height: over the spit, past 1.6 u in from its water-facing edges, the sheet is pushed below the host's ground, where the host's own opaque surface depth-rejects it. The cone dilation turns that boundary into a ~2 u ramp of thinning water instead of a cut.
+3. **A real shore transition.** Wet band at `SEA − 0.09` (a submerged strip, 0.034 under the swell's own trough), dry apron crest at `SEA + 0.055`, dunes behind it.
+
+   > **⚠️ PARK AUTHORS, READ THIS ONE — THE COVE RIM STANDS PROUD**
+   >
+   > **Anything a park places within `lagoonR` 1.75 of this cove rides UP with the rim.** The rim crest is `SEA + 0.055` ≈ **0.675 above the surrounding terrain** (two-and-a-bit RCT2 land steps), it holds that height out to `lagoonR` 1.20, and it eases back to `groundAt + 0.07` by **1.75** — which on this ellipse is a **4–9 u** run outside the waterline, i.e. a 0.07–0.15 gradient. Nothing beyond 1.75 is touched at all.
+   >
+   > So: a bench, a bin, a stall or a path laid inside that band sits on a dune face, and one laid inside 1.20 sits 0.675 up. **That trade is deliberate and it stays** (see below — `SEA` is pinned by the ride, so the beach has to climb to meet the water), but it is a fact about this component, not a surprise: place scenery outside `lagoonR` 1.75, or accept the slope. The ride's OWN access is inside the band and is handled — it stands on the SPIT, the one sand level that is pinned to the host's ground (`ACCESS`, "Fixed 5").
+
+   **This is the one cost of the fix and it cannot be avoided while `SEA` is pinned by the ride:** the flume trough bottoms out at 0.55 and its walls reach +0.18, so the run-out only reads as awash for `SEA` in ~0.55…0.73 — the waterline is 0.62 above the host's ground, so the rim of this cove stands ~0.675 above the terrain around it, two-and-a-bit RCT2 land steps where ReefRacer spent one. Only the RIM: outside `lagoonR` 1.20 the lift eases back to `groundAt + 0.07` by 1.75, a 0.07–0.15 gradient over 4–9 u, and nothing beyond 1.75 is touched. `THK` went 0.07 → **0.85** because a 0.07 tile seated 0.675 above the host's ground floats with daylight under its edges.
+4. **The waterline is the SAND, not the clip ellipse** — ReefRacer's §3b dive, baked into the plane's own vertices: wherever sand stands above the water the sheet slides 0.05 under it and is hidden. `uRadius` goes to `LB · 1.16` (past the wobble's own 1.115 maximum) and the plane grows 2.06 → 2.39 with it. **Plus one thing ReefRacer does not need:** the SPIT cannot be raised — §8 stands the launch tower, its switchback stair and its raft stack on `groundAt` and measures the deck up from there — so it can never occlude a sheet 0.62 above it. So the dive is driven by a MASK as well as by sand height: over the spit, past 1.6 u in from its water-facing edges, the sheet is pushed below the host's ground, where the host's own opaque surface depth-rejects it. The cone dilation turns that boundary into a ~2 u ramp of thinning water instead of a cut. **This mask is NOT what keeps the ride's huts dry — that was a `layout` defect, and it is fixed in `layout`. See “Fixed 5”, which also measures what deleting the mask costs.**
 5. **Contact, and surface life.** The reef, the kelp and the shoals are seated on `bedTopAt`, not on `groundAt` — rock is capped to stay entirely under (bare rock reads DRY the instant it breaks the surface), kelp is capped to the local depth plus an overshoot with one in five standing clear, and a shoal is clamped 0.16 off the bed and 0.20 under the surface (a fixed −0.24…−0.38 swam shoals through the sand out on the shelf). Ripple ridges and 150 shell/rubble chips lie on the bed in the same merged mesh — sand bars under clear water, and they lie ACROSS the plate seams, which is the other half of why they are there. Waviness 0.6 → **0.85**: in WaterTile that one knob scales the fragment stage's ripple-normal wobble, the crest foam and the twinkle as well as the swell, so it buys the surface movement without a single new mesh, and the troughs still clear the rim shelf by 0.064.
 
 **Draw cost, measured with `probe-perf-budget.mjs`** on a throwaway `<Park><Terrain/><OceanTunnelSlide/></Park>` fixture (the only sample park that mounts this ride, `w33a`, currently fails its own circuit verification for unrelated reasons and never reaches the verdict line, so the gate cannot read it): **436 draws before, 436 after**, triangles 493,456 → **490,252** (fewer — the scale-capped reef), visible mesh nodes 1400 → **1403**. All six assertions hold both sides.
+
+⚠️ **A park draw count is FIXTURE-BOUND — do not compare across throwaways.** Most of the count is the host park (terrain, dressing, guests) and it is FRUSTUM-CULLED, so the number moves with the plot size and the camera pose, not just with this ride. Rebuilt from the same one-line description ("Fixed 5", 2026-07-28) the same probe reads **371 draws / 0.48 M tris / 1445 mesh nodes**, all six assertions pass — a different fixture, not a regression. The number that IS comparable is the component's own census off its built group: **119,476 triangles**, bit-identical across both passes.
 
 ## Preview circuits
 
@@ -196,6 +209,67 @@ clearance + gate), `tw-cycletrue.tsx` (per-cycle boarding), `tw-facts.tsx`;
 `aud-ots-facts.tsx` (census, seats, gate), run through `aud-ots.mjs`.
 Shots: `shots/tw/OceanTunnelSlide-{day2,night2,a115,e50}.png`,
 `shots/ots/{BEFORE,AFTER}-{rider,approach,queue50,park50,basin50}.png`.
+
+### Fixed 5 (2026-07-28): the ride's own ACCESS stood INSIDE its own lagoon
+
+> "inside a `<Park>`, the entrance hut, queue lane and exit hut stand in a hole punched in the
+> ride's hero water."
+
+Correct, and the water rebuild had left it that way: the cove was fixed, the ride's `layout`
+was not. `front` was **2.4**, which on this ellipse is *inside the cove* — and the only thing
+keeping the huts out of the sea was the §5b spit mask, i.e. a water-side workaround for a
+layout-side defect.
+
+**`front` is the only lever, and BOTH exit cells have to clear it.** `layout.exit` has been a
+SIDE HINT since the RCT2 adjacency rework (`configurableRide.tsx:1007`): the exit hut is
+DERIVED one 1.2 u tile along the station face from the entrance hut, on whichever side the
+park's streets favour, so the binding anchor is the **−x** cell — the deeper of the two into
+the cove. (The earlier note's "exit hut at plan radius 0.904" measured the *old absolute*
+`layout.exit` offset `[2.0, 2.2]`, a cell the chassis has not placed a hut on for two versions;
+the hut was really at **0.751**. `probe-ots-water.mjs` now imports `adjacentExitCells` and
+`laneLenOf` from the chassis so it cannot make that mistake again.)
+
+**Two contours, and the difference between them is the whole point.** Measured with
+`probe-ots-water.mjs` (no browser — it reports the ACCESS ANCHORS block last), plan radii, and the margin converted to world
+units along each anchor's own azimuth:
+
+| | plan r before (`front` 2.4) | plan r after (`front` 7.0) | outside the WATERLINE | outside the CLIP |
+|---|---|---|---|---|
+| queue head | 0.854 | **1.372** | +6.32 u | **+2.03 u** |
+| entrance hut | 0.790 | **1.300** | +6.07 u | **+1.37 u** |
+| exit cell −x (hinted) | 0.751 | **1.276** | +4.67 u | **+1.10 u** |
+| exit cell +x (alt) | 0.834 | **1.327** | +7.51 u | **+1.66 u** |
+| lane tail | 1.226 | **1.769** | +7.69 u | **+5.44 u** |
+
+*WATERLINE* is the outermost radius on that azimuth where water actually stands over sand — what
+you see. On these particular azimuths that edge is the **spit's own edge** (plan r 0.57–0.90),
+because the §5b mask is what ends the sheet there, which is why those margins are 4.7–7.7 u.
+*CLIP* is the sheet's own `uRadius` (plan **1.16**), the last radius at which a fragment of water
+can be drawn **at all** — and with the mask deleted the waterline becomes exactly the clip on
+every one of these anchors, which is why the clip column is the number that matters: it means the
+huts are dry **whatever the water does next**. Every anchor lands on
+`spit` sand at **+0.016 vs the host's ground**, so nothing is buried either — and that is the
+other bound on `front`: past the spit rectangle (`z ≤ 9.0`) the apron crest climbs to
+`SEA + 0.055` and a hut seated on the park's terrain would be buried to its windows.
+
+**AND THE SPIT MASK STAYS — it was never the huts' workaround.** Tested by deleting the line
+and re-measuring the same way: **every access anchor is still dry, worst margin +1.10 u** (the
+anchor fix does not depend on the mask, which is the property it was worth moving `front` 4.6 u
+to get) — but **734 spit cells flood to a median 0.603** (0.028 with the mask), and the render
+shows what that is: the launch tower's six legs, the whole bottom flight of the switchback stair
+and the stack of spare rafts standing in the lagoon, with the waterline lapping a metre behind
+the entrance hut. The mask's real cause is **§8's tower**, which is seated on `groundAt` and
+measures its deck, legs and stair up from there, and that cause has not gone anywhere. The
+comment at the mask now says so, with these numbers, so the next person to read it is not
+looking at an unexplained workaround.
+
+Shots (`shots/ots-water/`): `fix-mask-{park,access,towerfoot}.png` — the two huts and a full
+queue lane on dry sand with the cove behind them, the tower's foot dry, the whole ride from the
+park camera — against `nomask-{park,access,towerfoot}.png`, the same three with the mask
+deleted. Fixture: a throwaway `<Park size=64>` + `<Terrain keepDry>` + `<Paths>` + `<Gate>` +
+`<OceanTunnelSlide register>` (the huts and the lane exist ONLY when the ride is registered —
+they come from <ConfigurableRide>, not from the visual builder, which is why no preview can
+show this defect and why it survived the water pass).
 
 ### Fixed 4: the tube was BURIED in the reef, not bored through it
 

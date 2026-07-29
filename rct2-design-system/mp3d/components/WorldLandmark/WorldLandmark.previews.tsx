@@ -26,6 +26,7 @@ const Row = () => (
 
 const previews = {
   componentName: 'WorldLandmark',
+  importPath: 'components/WorldLandmark',
   previews: [
     {
       name: 'All five world giants',

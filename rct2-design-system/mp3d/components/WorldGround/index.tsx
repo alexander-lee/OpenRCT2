@@ -228,14 +228,33 @@ export function buildWorldGroundScene(
       // per-tile hash is still fine for things the eye reads as grain rather
       // than as pattern — micro height and the UV shuffle
       const h2 = hash01(i * 17 + j * 251 + seedOff + 9001);
-      // Settle on the real ground and sink the tile's TOP FACE clear of it.
-      // `pos` is the box CENTRE, so subtracting the sink alone put the top back
-      // at exactly `floorAt` — coplanar with every path slab, plaza tile and
-      // ride pad, which is z-FIGHTING, not depth ordering. It read as paths
-      // flickering and clipping into the floor. Sink must clear half the
-      // thickness as well.
-      const y = (park.floorAt ? park.floorAt(x, z) : 0)
-        - TOP_CLEARANCE - THICK / 2 + (h2 - 0.5) * JITTER;
+      // Settle the tile under the LOWEST ground it covers, not under its own
+      // centre.
+      //
+      // A tile is a flat slab. Settle it at the height of its CENTRE and on any
+      // slope its uphill corners stand proud of the terrain — and therefore
+      // proud of the path slabs laid on that terrain, which sit with their base
+      // at floorAt. MEASURED on a steep test bed
+      // (`shot-world-ground.mjs --paths --steep`): the path was chopped into
+      // disconnected chunks with ground erupting through the gaps. Sinking the
+      // centre further does not fix it, because the error grows with slope and
+      // any fixed sink is eventually exceeded.
+      //
+      // Sampling the four corners and taking the MINIMUM bounds the whole tile
+      // under the terrain it spans, whatever the gradient. On steep ground the
+      // tile drops away and bare terrain shows through instead — the right
+      // trade, because terrain under a path beats a path with holes in it.
+      const fl = park.floorAt ?? (() => 0);
+      const ex = tw / 2;
+      const ez = td / 2;
+      const floorMin = Math.min(
+        fl(x, z),
+        fl(x - ex, z - ez), fl(x + ex, z - ez),
+        fl(x - ex, z + ez), fl(x + ex, z + ez),
+      );
+      // jitter is ±JITTER/2 and stays well inside TOP_CLEARANCE, so the top face
+      // is still strictly under floorMin at every tile
+      const y = floorMin - TOP_CLEARANCE - THICK / 2 + (h2 - 0.5) * JITTER;
       // every tile takes one of four quarter turns, so the texture canvas
       // does not repeat in lockstep across the rect and read as wallpaper
       const rotY = square ? Math.floor(h2 * 4) * (Math.PI / 2) : (h2 < 0.5 ? 0 : Math.PI);

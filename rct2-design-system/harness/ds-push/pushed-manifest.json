@@ -2,7 +2,7 @@
   "version": 1,
   "designSystemId": "ds-fbd20bf8-b16d-4cf1-8440-d20bc095fc4a",
   "note": "EMPTY BASELINE. No entry here means \"never pushed as far as this manifest knows\", so the first status run reports the whole tree. Bootstrap it ONCE, when no push is in flight, with:  node manifest.mjs reconcile --server-list=<get_design_system json> --assume-clean   (see ../README.md, FAST PUSH PROTOCOL / Bootstrapping). Thereafter only ever grow it via `commit`, after the final file-list check.",
-  "updatedAt": "2026-07-29T00:19:19.130Z",
+  "updatedAt": "2026-07-29T00:40:53.366Z",
   "files": {
     "components/AetherBalloons/AetherBalloons.previews.tsx": {
       "sha256": "f608fecc90623a3551d5eea95ea18e7012c780acbee614ad4e7b1eee201d7d8e",
@@ -74,9 +74,9 @@
       "pushedAt": "2026-07-28T21:24:25.847Z"
     },
     "components/BeachedGalleon/BeachedGalleon.previews.tsx": {
-      "sha256": "c7ca87f4dad063567a9a006053b131dbbe78b59a3e7b36c55fa81943b04fc1a4",
-      "bytes": 1680,
-      "pushedAt": "2026-07-28T21:47:37.258Z"
+      "sha256": "1f86e625a8dbfbb7a766f1f8e31e06c1c6181c6c79c185a1bfb2552c6baafd3c",
+      "bytes": 1723,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/BeachedGalleon/Context.md": {
       "sha256": "21edf8df9e828fe77c0a48dbab3cfabfe92ec6c043a6fd29b00a6f553bd1d841",
@@ -84,9 +84,9 @@
       "pushedAt": "2026-07-28T21:47:37.258Z"
     },
     "components/BeachedGalleon/index.tsx": {
-      "sha256": "2e58e96659d8d0db624859146530270e6c15ef65c9e6360772ff05b2f8b2f3c7",
-      "bytes": 7494,
-      "pushedAt": "2026-07-28T22:00:15.905Z"
+      "sha256": "5d3c46433b9438187d3ba73dcd403b10076580a1ad3b1e752c6fa690faf979ff",
+      "bytes": 7500,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/BigPiano/BigPiano.previews.tsx": {
       "sha256": "05862b2af1e8e02884c296d13bc9e41c906604639d090eb49dbdf8c906949424",
@@ -383,9 +383,9 @@
       "pushedAt": "2026-07-28T21:47:37.258Z"
     },
     "components/DiscoBallFloor/DiscoBallFloor.previews.tsx": {
-      "sha256": "dc233fab493fbb0f2a4235be1c66517077050fe2f8f3364f9d235df98d47793c",
-      "bytes": 1708,
-      "pushedAt": "2026-07-28T21:47:37.258Z"
+      "sha256": "131293240f92bd6f2ca808cb7671bd589873dd4d400a3aebfd09e9318d377cea",
+      "bytes": 1751,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/DiscoBallFloor/index.tsx": {
       "sha256": "21dd3125b3a4e82d81d8d7803bf196875b3929ab0bab075c9304f859893367dc",
@@ -416,9 +416,9 @@
       "pushedAt": "2026-07-28T21:47:37.258Z"
     },
     "components/DragonRoost/DragonRoost.previews.tsx": {
-      "sha256": "0c1764a69133c6315977dd3d665e2ed6ddf8883bd34919c8367f853e5e6dd632",
-      "bytes": 1688,
-      "pushedAt": "2026-07-28T21:47:37.258Z"
+      "sha256": "21ec6c75fbeea568a42e4c6d7dab4b72ff477ca1e95829f684367b8f9a787056",
+      "bytes": 1728,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/DragonRoost/index.tsx": {
       "sha256": "e6fc5cfeb1426fba1ede3534883cff193a9794bfda9ee0f4268f400671c96ddd",
@@ -611,9 +611,9 @@
       "source": "assumed"
     },
     "components/GameManager/access.ts": {
-      "sha256": "c98ec5ae57d8c7c2d0f53912acc3f4d094bef8746f774ce290621f44ff902734",
-      "bytes": 47308,
-      "pushedAt": "2026-07-28T00:40:06.631Z"
+      "sha256": "86e52ee083705be15ad4e3a6baf39d3942d5b59ddff39f712088c270374a2f23",
+      "bytes": 48161,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/GameManager/arrivals.ts": {
       "sha256": "444f96a3014c20f5eb675a02f6039eff114e21a5abb27ad71f4534794a224879",
@@ -685,9 +685,9 @@
       "pushedAt": "2026-07-27T20:38:51.550Z"
     },
     "components/GameManager/types.ts": {
-      "sha256": "900185d7b7c405be3489ca286ce527454333300d357064a7f5517795a712abc0",
-      "bytes": 59631,
-      "pushedAt": "2026-07-28T23:49:13.891Z"
+      "sha256": "ca1a5b726adebd6d05fd62d88a33299086b5f23fed8b0b4d88f8667c24891d15",
+      "bytes": 60079,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/GearworksExpress/Context.md": {
       "sha256": "3716b0d3cace9c2e5b024ababa866c1086104b80aab1fa0edb11ff80f85f51ee",
@@ -782,14 +782,14 @@
       "pushedAt": "2026-07-28T21:47:37.258Z"
     },
     "components/GreatZeppelin/GreatZeppelin.previews.tsx": {
-      "sha256": "dedca8009fe32e29fea279fe373d41fa2bab1fbbb93d3b4840e3364faa3aeec9",
-      "bytes": 1656,
-      "pushedAt": "2026-07-28T21:47:37.258Z"
+      "sha256": "632c03275db413b916d9e63d17cef2a7ffa2e63de7fcd8f1847d07f72ab333de",
+      "bytes": 1698,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/GreatZeppelin/index.tsx": {
-      "sha256": "e66483305741a271f322939111de3bf3546a0985a21e6b68276101c4027421d3",
-      "bytes": 8142,
-      "pushedAt": "2026-07-28T22:00:15.905Z"
+      "sha256": "5a70339a543c27dd322be6115a47d77b1c246fad606e1b905b5f699f0e4bf322",
+      "bytes": 8148,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/Guest/Context.md": {
       "sha256": "1b2545f6bf40a21d0b157c567b4d9bd0634a20f129bb3731d3e13add35c2bd5f",
@@ -1228,9 +1228,9 @@
       "source": "assumed"
     },
     "components/OceanTunnelSlide/Context.md": {
-      "sha256": "b3d63aa1c1b00eec465a241dc6b324614493662d1fe78369da911ccaac7a4b24",
-      "bytes": 36439,
-      "pushedAt": "2026-07-29T00:05:14.699Z"
+      "sha256": "e3db8674efce45367c209ca4e29d9ba5029046ad72ec8df3d8c66b97467d25af",
+      "bytes": 43429,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/OceanTunnelSlide/OceanTunnelSlide.previews.tsx": {
       "sha256": "13a29eb22d6b5d9e670c7be538966ea06711686740d5d220092715d179fa96b8",
@@ -1248,9 +1248,9 @@
       "pushedAt": "2026-07-27T17:58:45.236Z"
     },
     "components/OceanTunnelSlide/index.tsx": {
-      "sha256": "aea595cd321695c490c7d1a620c8651dd2b70a90d4b08b590e8a4c109b7ab971",
-      "bytes": 76498,
-      "pushedAt": "2026-07-29T00:17:51.126Z"
+      "sha256": "dda598abedd54735aac2a8d9dcfc38ff44ad6bb688324e852854d908acd527b4",
+      "bytes": 78561,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/OceanTunnelSlide/parts.ts": {
       "sha256": "c3c695c806006617af2a70185e1aa878b1f40179d1f61ee65ef21cbbfc3a739a",
@@ -1943,14 +1943,14 @@
       "source": "assumed"
     },
     "components/Stage/darkLights.ts": {
-      "sha256": "06cbd12c9baaeb2c38e68eb3ec4432dd2a77b0bcd86f9baec029380632f7923a",
-      "bytes": 9703,
-      "pushedAt": "2026-07-28T17:20:39.163Z"
+      "sha256": "bd6b0e3d75d095d8725fb2fbb1b2d96f8efcffb4dc85c44b708685037e209a64",
+      "bytes": 16108,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/Stage/index.tsx": {
-      "sha256": "665bdb8bf65531add380b4f3c8d151f3b299129c7bda33612fa8a99127fea9f7",
-      "bytes": 59070,
-      "pushedAt": "2026-07-29T00:17:51.126Z"
+      "sha256": "71a125ca39d76ad23bf478b716e2a75ca21e98ae0052b956f4c48637ad4a4aa7",
+      "bytes": 59254,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/StringLights/Context.md": {
       "sha256": "71f606fedff93ba04b208a99c9e256e8827dc576fadc10e8a03b95276cb20955",
@@ -2305,9 +2305,9 @@
       "pushedAt": "2026-07-28T23:14:42.071Z"
     },
     "components/WorldGround/index.tsx": {
-      "sha256": "f919c7d4e6db2beb21065d767d55d8a4640d8a8d5e35f64ab94c02dfb3e17a66",
-      "bytes": 12276,
-      "pushedAt": "2026-07-28T23:52:38.969Z"
+      "sha256": "ca759814b94ed4457db992d1e8da99442e683cb465eb8abe52f158eb827f536e",
+      "bytes": 13213,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/WorldLandmark/Context.md": {
       "sha256": "4144c2b43d2aa633fc5b190d5a1504f52a14a59370b35b23b743a797df305c36",
@@ -2315,9 +2315,9 @@
       "pushedAt": "2026-07-28T21:37:15.381Z"
     },
     "components/WorldLandmark/WorldLandmark.previews.tsx": {
-      "sha256": "0b1777530d61b0ce257992699188b619a42b3d86907012530ac5ffecfb8e4c6a",
-      "bytes": 2398,
-      "pushedAt": "2026-07-28T21:47:37.258Z"
+      "sha256": "80c9bdd20b490195aba729b05e4d63d2f242012280f2b01c256ce5939b55410c",
+      "bytes": 2440,
+      "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/WorldLandmark/index.tsx": {
       "sha256": "9e9f606071fa781ce9daef82cce8ac8a0ea70ce27e96d19ac63cbdc550e154b6",

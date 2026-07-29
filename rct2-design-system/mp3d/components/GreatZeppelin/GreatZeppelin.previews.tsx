@@ -8,6 +8,7 @@ import { GreatZeppelin } from './index';
 
 const previews = {
   componentName: 'GreatZeppelin',
+  importPath: 'components/GreatZeppelin',
   previews: [
     {
       name: 'GreatZeppelin — steampunk',

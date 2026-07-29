@@ -30,6 +30,8 @@ const arg = (n, d) => {
 };
 const CELL = Number(arg('cell', '420'));
 const TONE = process.argv.includes('--tone');
+const PATHS = process.argv.includes('--paths');
+const STEEP = process.argv.includes('--steep');
 const THEMES = arg('themes', 'fire,pirateBeach,steampunk,enchantedForest,neon,default').split(',');
 
 const entrySrc = `
@@ -40,10 +42,14 @@ import { WORLD_THEMES } from ${JSON.stringify(path.join(REPO, 'components/SetPie
 const THEMES = ${JSON.stringify(THEMES)};
 const CELL = ${CELL};
 const TONE = ${TONE};
+const PATHS = ${PATHS};
+const STEEP = ${STEEP};
 
 // a gently rolling floor, so the tiles settle onto relief the way they do in a
 // real park — a dead-flat test bed hides the height jitter entirely
-const park = { floorAt: (x, z) => Math.sin(x * 0.11) * 0.28 + Math.cos(z * 0.09) * 0.22 };
+const park = { floorAt: (x, z) => STEEP
+  ? Math.sin(x * 0.42) * 1.15 + Math.cos(z * 0.33) * 0.95
+  : Math.sin(x * 0.11) * 0.28 + Math.cos(z * 0.09) * 0.22 };
 
 const HX = 13, HZ = 13;
 const planFor = (tid) => ({
@@ -57,14 +63,16 @@ const planFor = (tid) => ({
 // OLD = one canvas copy per 2.4 u tile, which is what detail = tile reproduces
 // BEFORE reproduces the shipped look: coarse 2.4 u tiles, one texture copy per
 // tile. AFTER is the default the component now ships.
-const VARIANTS = [
-  { tag: 'BEFORE 2.4u tile', tile: 2.4, detail: 2.4 },
-  { tag: 'AFTER  1.2u + smooth tone field', tile: 1.2, detail: 1.2 },
-];
-const VIEWS = [
-  { tag: 'low 3/4', dir: [0.55, 0.30, 0.55], ortho: false },
-  { tag: 'TOP', dir: [0, 1, 0], up: [0, 0, 1], ortho: true },
-];
+const VARIANTS = PATHS
+  ? [{ tag: 'OLD sink (top AT floorAt)', tile: 1.2, detail: 1.2, sink: 0.0 },
+     { tag: 'NEW sink (top 32-48mm under)', tile: 1.2, detail: 1.2, sink: null }]
+  : [{ tag: 'BEFORE 2.4u tile', tile: 2.4, detail: 2.4 },
+     { tag: 'AFTER  1.2u + smooth tone field', tile: 1.2, detail: 1.2 }];
+const VIEWS = PATHS
+  ? [{ tag: 'GRAZING along the path', dir: [0.16, 0.05, 0.99], ortho: false },
+     { tag: 'TOP — speckle = z-fight', dir: [0, 1, 0], up: [0, 0, 1], ortho: true }]
+  : [{ tag: 'low 3/4', dir: [0.55, 0.30, 0.55], ortho: false },
+     { tag: 'TOP', dir: [0, 1, 0], up: [0, 0, 1], ortho: true }];
 
 const root = document.getElementById('root');
 for (const tid of THEMES) {
@@ -73,6 +81,21 @@ for (const tid of THEMES) {
   root.appendChild(row);
   for (const v of VARIANTS) for (const view of VIEWS) {
     const built = buildWorldGroundScene(THREE, planFor(tid), park, { tile: v.tile, detail: v.detail });
+    if (PATHS) {
+      // reproduce the OLD sink by lifting the whole floor back up to it
+      if (v.sink === 0.0) built.group.position.y += 0.04 + 0.025;
+      // a PATH SLAB where a real one sits: its underside AT floorAt. This is
+      // the surface the ground used to be exactly coplanar with.
+      const pg = new THREE.Group();
+      for (let z = -12; z <= 12; z += 0.6) {
+        const w = 3.0, th = 0.09;
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, th, 0.6),
+          new THREE.MeshStandardMaterial({ color: 0xb9b2a4, roughness: 0.95 }));
+        m.position.set(0, park.floorAt(0, z) + th / 2, z);
+        pg.add(m);
+      }
+      built.group.add(pg);
+    }
     let meshes = 0, tris = 0;
     built.group.traverse((o) => {
       if (o.isMesh) { meshes += 1; tris += (o.geometry.getIndex()?.count ?? 0) / 3; }
@@ -141,7 +164,7 @@ await page.addScriptTag({ content: res.outputFiles[0].text, type: 'module' }).ca
   await page.evaluate(res.outputFiles[0].text);
 });
 await page.waitForFunction('window.__ready === true', { timeout: 90_000 });
-const out = path.join(HARNESS, 'out', TONE ? 'world-ground-tone.png' : 'world-ground.png');
+const out = path.join(HARNESS, 'out', TONE ? 'world-ground-tone.png' : PATHS ? (STEEP ? 'world-ground-paths-steep.png' : 'world-ground-paths.png') : 'world-ground.png');
 await page.locator('#root').screenshot({ path: out });
 await browser.close();
 console.log('wrote', out);

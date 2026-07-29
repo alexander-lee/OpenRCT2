@@ -8,6 +8,7 @@ import { DiscoBallFloor } from './index';
 
 const previews = {
   componentName: 'DiscoBallFloor',
+  importPath: 'components/DiscoBallFloor',
   previews: [
     {
       name: 'DiscoBallFloor — neon',

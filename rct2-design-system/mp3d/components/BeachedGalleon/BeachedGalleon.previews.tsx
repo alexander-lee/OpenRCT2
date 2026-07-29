@@ -8,6 +8,7 @@ import { BeachedGalleon } from './index';
 
 const previews = {
   componentName: 'BeachedGalleon',
+  importPath: 'components/BeachedGalleon',
   previews: [
     {
       name: 'BeachedGalleon — pirateBeach',

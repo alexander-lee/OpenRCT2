@@ -8,6 +8,7 @@ import { DragonRoost } from './index';
 
 const previews = {
   componentName: 'DragonRoost',
+  importPath: 'components/DragonRoost',
   previews: [
     {
       name: 'DragonRoost — enchantedForest',

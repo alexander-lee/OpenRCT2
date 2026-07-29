@@ -334,9 +334,17 @@ export interface RideConfig {
   quietWait?: number;
   /** external vehicle handle — crashed() true puts the ride into 'crashed' */
   vehicleHandle?: { crashed?(): boolean };
-  /** ADDITIVE: mean seconds between deterministic breakdowns (default: hashed
-   *  per-ride reliability, ~40–95 s). Each breakdown lasts ~18 s
-   *  (brokenDown then beingRepaired), then the ride reopens. */
+  /** ADDITIVE: mean seconds between deterministic breakdowns.
+   *
+   *  **Omit it and the ride NEVER breaks down — that is the default.** It used
+   *  to default to a hashed 40–95 s, which held every ride out of service
+   *  16–31% of the time and cost 8–23% of all boarded riders (a breakdown
+   *  drains the vehicle as `notSafe` and credits nobody). These parks are
+   *  looked at, not managed, and nothing dispatches a mechanic.
+   *
+   *  Set it to opt a ride back in; the value is then the exact mean, ±25%
+   *  jitter. Each breakdown lasts ~18 s (`brokenDown` then `beingRepaired`),
+   *  then the ride reopens. See `breakIntervalOf`. */
   breakdownEvery?: number;
   /** ADDITIVE (round-2): explicit queue-lane length in world units (min 1.2).
    *  Default: the capacity formula `max(2.2, 0.6 + capacity·2·0.28 + 0.5)`.

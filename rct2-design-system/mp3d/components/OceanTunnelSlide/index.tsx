@@ -115,7 +115,7 @@ const FALL = 4.4;
  * `userData.lagoon`). This ride's access has to be checked AGAINST ITS OWN
  * WATER, and a probe that re-types these three numbers is a probe that measures
  * a ride nobody shipped the day one of them moves
- * (`harness/mp3d-render/probe-ots-water.mjs --access` reads this).
+ * (`harness/mp3d-render/probe-ots-water.mjs` reads this — its ACCESS ANCHORS block).
  *
  * ⚠️⚠️ WHY `front` IS 7.0 WHERE THE CATALOG RUNS 2.1–4.4. Because this ride
  * BRINGS ITS OWN SEA, and <ConfigurableRide> seats the queue lane and both huts
@@ -407,12 +407,24 @@ export function buildOceanTunnelSlideScene(three: typeof THREE, opts: OceanTunne
         const LA = (x1 - x0) / 2 + 4.2;
         const LB = (z1 - z0) / 2 + 4.6;
         const SEA = groundAt(LX, LZ) + 0.62; // the raft floats with the rails just awash
-        /** the DRY SAND SPIT the tower foot, the stair, the queue lane and both
-         *  huts stand on. It is tested FIRST, before any water class, because
-         *  <ConfigurableRide> seats the huts and the lane on the PARK's terrain
-         *  (`configurableRide.tsx:684` — `max(groundAt, WATER_LEVEL + 0.3)`),
-         *  NOT on this component's sand: anything this file lifts under them
-         *  buries them, and anything it floods drowns them. */
+        /** the DRY SAND SPIT — the ride's own SERVICE GROUND: the tower's six
+         *  legs, the switchback stair, the stack of spare rafts, and (out at its
+         *  +z end) the queue lane and both huts.
+         *
+         *  It is tested FIRST, before any water class, and it is the ONE level in
+         *  this file that stays at the host's own ground, for two different
+         *  reasons that are easy to confuse:
+         *
+         *   1. THE HUTS. <ConfigurableRide> seats the queue lane and both huts on
+         *      the PARK's terrain (`configurableRide.tsx:684` — `max(groundAt,
+         *      WATER_LEVEL + 0.3)`), never on this component's sand, so sand
+         *      lifted under them BURIES them. That is why `ACCESS.front` cannot
+         *      grow past this rectangle's +z edge: outside it the apron crest
+         *      climbs to `SEA + 0.055` (§5's LIP).
+         *   2. THE TOWER. §8 seats the tower group at `groundAt` and measures its
+         *      deck, legs, stair and raft stack UP from there, so this rectangle
+         *      is also the ground that structure stands on. THIS is what the §5b
+         *      mask is for — see the note there. */
         const inSpit = (x: number, z: number) => x > -5.2 && x < 8.0 && z > -2.2 && z < 9.0;
         const lagoonR = (x: number, z: number) => {
           const dx = (x - LX) / LA;
@@ -570,9 +582,11 @@ export function buildOceanTunnelSlideScene(three: typeof THREE, opts: OceanTunne
                 }
               const r = lagoonR(x, z);
               if (inSpit(x, z)) {
-                // THE SPIT, and it is the one level that does not move: the huts
-                // and the queue lane are seated on the PARK's terrain, so lifting
-                // this buries them and flooding it drowns them (§4). Its outer
+                // THE SPIT, and it is the one level that does not move: §8's
+                // launch tower, stair and raft stack are measured up from
+                // `groundAt`, and the huts and the queue lane are seated on the
+                // PARK's terrain — so lifting this buries all of it and flooding
+                // it drowns the tower (§4, §5b). Its outer
                 // 1.6 u — the strip that faces the water and is inside the
                 // lagoon at all — is toned as WET sand, because after §5b that
                 // strip is exactly where the sheet thins out to nothing over it.
@@ -784,15 +798,28 @@ export function buildOceanTunnelSlideScene(three: typeof THREE, opts: OceanTunne
         // still falls inside the plane's own rim.
         //
         // ⚠️ THE DIVE ALSO CARRIES THE SPIT, and that part is NOT in ReefRacer.
-        // The spit cannot be raised (the huts and the queue lane are seated on
-        // the park's terrain, §4) so it can never occlude a sheet 0.6 above it —
-        // yet 579 cells of it were being painted teal. So the dive is driven by a
-        // MASK, not by sand height alone: over the spit, past 1.6 u in from its
-        // water-facing edges, the sheet is pushed below the host's ground, where
-        // the host's own opaque surface depth-rejects it. The cone dilation then
-        // makes that boundary a 2 u ramp of thinning water rather than a cut —
-        // shallow water running out over flat sand, which is what the top of a
-        // beach actually looks like.
+        // The spit cannot be raised — §8 stands the launch tower, its stair and
+        // its raft stack on `groundAt` — so it can never occlude a sheet 0.6
+        // above it, yet 579 cells of it were being painted teal. So the dive is
+        // driven by a MASK, not by sand height alone: over the spit, past 1.6 u
+        // in from its water-facing edges, the sheet is pushed below the host's
+        // ground, where the host's own opaque surface depth-rejects it. The cone
+        // dilation then makes that boundary a 2 u ramp of thinning water rather
+        // than a cut — shallow water running out over flat sand, which is what
+        // the top of a beach actually looks like.
+        //
+        // ⚠️ WHAT THIS MASK IS *NOT* FOR — READ THIS BEFORE DELETING IT. It is
+        // NOT what keeps the ride's ACCESS out of the water: that was a `layout`
+        // defect and it is fixed in `layout` (ACCESS at the top of this file —
+        // `front` 2.4 → 7.0 puts the queue head, the entrance hut, BOTH candidate
+        // exit cells and the whole lane 1.10–5.44 u OUTSIDE the sheet's own clip
+        // ellipse, i.e. past the last radius at which any water can be drawn).
+        // MEASURED WITH THE MASK DELETED (probe-ots-water.mjs --src, and shot):
+        // every access anchor stays dry, worst margin +1.10 u — and the tower's
+        // six legs, the whole bottom flight of the switchback stair and the spare
+        // rafts stand in 0.60 of lagoon (734 spit cells, median depth 0.603,
+        // against 0.028 with the mask). The launch tower wading out of the sea is
+        // the defect this line prevents, and it is the only one.
         const lagoon = buildWater(t, LB * 2.39, 128, LB * 1.16, false, 0.22, 0.85);
         lagoon.mesh.position.set(LX, SEA, LZ);
         lagoon.mesh.scale.set(LA / LB, 1, 1); // local circle -> world ellipse
@@ -1414,8 +1441,10 @@ const OceanTunnelSlideBase = composableRide<OceanTunnelSlideOpts & { register?: 
 /** <OceanTunnelSlide> — Tidewater Hollow's raft slide as a composable ride
  *  (components/Park/Context.md): mounts at `position`/`rotation`; inside a
  *  <Park>, `register` wires the full GameManager ride via <ConfigurableRide> —
- *  queue HEAD 2.4 out the local +z front at the tower's foot, exit hut at local
- *  [2.0, 2.2], boarding on the LAUNCH DECK 5.0 up.
+ *  queue HEAD **7.0** out the local +z face, i.e. OUT PAST THE SHORELINE of the
+ *  ride's own lagoon and onto the dry spit (see ACCESS at the top of this file
+ *  for the radii that set that number), the exit hut one tile along the same face
+ *  from the entrance hut, and boarding on the LAUNCH DECK 5.0 up.
  *
  *  SAME SPLINE LOGIC as every other tracked ride: a `pieces` array or piece
  *  children (`<Station/><Drop/><TurnR/><Lift/>…` — children win) are compiled by

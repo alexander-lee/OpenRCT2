@@ -575,15 +575,29 @@ export const rectsOverlap = (a: FootRect, b: FootRect): boolean => {
 export const hutRect = (x: number, z: number, yaw: number, label: string): FootRect =>
   ({ cx: x, cz: z, hx: 0.55, hz: 0.5, yaw, label }); // base slab 1.09×0.94 + margin
 
-// ---- additive breakdown model: deterministic, hashed per-ride reliability -
-// Each ride carries a hashed reliability that fixes its mean time between
-// failures; breakdowns fire on a schedule (no randomness at run time), last
-// BREAK_DOWN_SECS ('brokenDown') + REPAIR_SECS ('beingRepaired') and then
-// the ride reopens. While broken the FSM is paused (no admissions) and the
-// queue drains through the existing crash-ish path (guests walk off).
+// ---- breakdowns: OFF BY DEFAULT ------------------------------------------
+// Rides used to break down on a hashed per-ride schedule — a mean time between
+// failures of 40–95 s against 18 s of downtime (BREAK_DOWN_SECS 12 +
+// REPAIR_SECS 6), which put every ride OUT OF SERVICE 16–31% of the time. That
+// is faithful to RCT2 and it is not what this design system is for: these parks
+// are looked at, not managed, and there is no mechanic to dispatch. Measured on
+// a 1800 sim-s run it also cost 8–23% of all boarded riders — `breakDown` calls
+// `drainRide`, which unloads everyone aboard as `notSafe` and credits nobody —
+// and it froze the monorail fleet for 14% of the clock.
+//
+// TURNED OFF AT THE SCHEDULE, not by deleting the machinery. `Infinity` here
+// means `s.simTime >= r.nextBreak` is never true, so no ride ever breaks and
+// every downstream consumer keeps working unchanged rather than being ripped
+// out and half-restored later: `handle.status()` still answers (always
+// open/closed), `RideStatus` still types the mechanic states, the FSM's repair
+// path is still there, and `<Monorail>`'s breakdown brake still exists for a
+// ride that opts back in.
+//
+// A ride CAN opt back in with `breakdownEvery` — that is now the only way to
+// get one, and it is exact rather than hashed.
 export const breakIntervalOf = (r: RideRec): number => {
-  const rel = hash01(r.idx * 47.9 + 11.3); // 0 fragile .. 1 reliable
-  const base = r.cfg.breakdownEvery ?? 40 + rel * 55;
+  if (r.cfg.breakdownEvery === undefined) return Infinity; // never
+  const base = r.cfg.breakdownEvery;
   return base + hash01(r.idx * 13.1 + r.breakN * 29.7) * base * 0.25;
 };
 

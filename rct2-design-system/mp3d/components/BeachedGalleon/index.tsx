@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import * as THREE from 'three';
-import { box, cyl } from '../Stage';
+import { ball, box, cyl } from '../Stage';
 import { composable } from '../Park';
 
 /** what each landmark builder returns */

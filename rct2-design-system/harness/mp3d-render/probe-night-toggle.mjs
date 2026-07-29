@@ -250,9 +250,15 @@ const clickToggle = async (phase, want, baselineMs) => {
     if (!b) throw new Error('no UIDayNight button found');
     b.click();
   }, phase);
-  // RECOVERED = nightK landed, the light count stopped moving for 3 polls, and
-  // the frame time is back inside 2x the pre-click baseline. All three, because
-  // any one alone can be true while the park is still unusable.
+  // RECOVERED = nightK landed + the light count stopped moving for 3 polls, and
+  // — going to DAY — the frame time is back inside 2x the pre-click baseline.
+  //
+  // The frame-time clause is deliberately NOT applied to the night direction: a
+  // park with 168 visible point lights runs at ~1.3 s/frame no matter what, so
+  // "is the frame fast again" is unsatisfiable at night and an earlier revision
+  // of this probe declared night-on "recovered" at 850 ms while the lamps were
+  // still shed — then billed their arrival to the NEXT phase. A minimum dwell
+  // covers the cull's coalescing window instead.
   let quiet = 0; let last = -1; let landed = false; let recoveredMs = null;
   for (;;) {
     const s = await page.evaluate(() => {
@@ -268,7 +274,9 @@ const clickToggle = async (phase, want, baselineMs) => {
     landed = want === 1 ? s.nk >= 1 : s.nk <= 0;
     quiet = s.lights === last ? quiet + 1 : 0;
     last = s.lights;
-    const fast = s.frameMs !== null && s.frameMs <= Math.max(2 * baselineMs, baselineMs + 8);
+    const fast = want === 1
+      ? Date.now() - t0 > 2500 // minimum dwell: let the coalesced restore land
+      : s.frameMs !== null && s.frameMs <= Math.max(2 * baselineMs, baselineMs + 8);
     if (landed && quiet >= 3 && fast) { recoveredMs = Date.now() - t0; break; }
     if (Date.now() - t0 > CAP_S * 1000) break;
     await page.waitForTimeout(120);
@@ -296,6 +304,43 @@ for (let c = 1; c <= CYCLES; c += 1) {
 }
 await page.evaluate(() => { window.__nt.phase = 'after'; });
 await page.waitForTimeout(1500);
+
+// ---- WHAT DOES ONE NOVEL LIGHT COUNT COST? ---------------------------------
+// The toggle's residual cost is a single frame in which the visible light count
+// lands somewhere the park has never drawn. This prices that directly, at
+// settled day, WITHOUT a synthetic render loop: raise one shed lamp to a
+// negligible-but-non-zero intensity (0.01 — the cull leaves it alone above ON,
+// and it contributes nothing a screenshot can see), let the app render it, and
+// read the rAF gap plus the program counter. Then put it back and do it AGAIN:
+// the second time the count is no longer novel, so the difference is the price
+// of the compile.
+const countProbe = async () => {
+  const pick = await page.evaluate(() => {
+    const api = document.querySelector('canvas').__stageApi;
+    const dark = [];
+    api.scene.traverse((o) => { if (o.isPointLight && !o.visible) dark.push(o); });
+    if (!dark.length) return false;
+    window.__probeLamp = dark[0];
+    window.__probeLampI = dark[0].intensity;
+    return true;
+  });
+  if (!pick) return null;
+  const step = async (label) => {
+    const before = await page.evaluate(() => ({ create: window.__gl.create, n: window.__nt.gaps.length }));
+    await page.evaluate(() => { window.__probeLamp.intensity = 0.01; window.__probeLamp.visible = true; });
+    await page.waitForTimeout(700);
+    const on = await page.evaluate((b) => {
+      const g = window.__nt.gaps.slice(b.n);
+      return { worstGap: Math.max(...g.map((x) => x[1])), programs: window.__gl.create - b.create, lights: g[g.length - 1][2] };
+    }, before);
+    await page.evaluate(() => { window.__probeLamp.intensity = 0; });
+    await page.waitForTimeout(700); // let the cull shed it again
+    return { label, ...on };
+  };
+  return [await step('novel count'), await step('same count again')];
+};
+const counts = await countProbe();
+if (counts) for (const c of counts) say(`[toggle] +1 light (${c.label}): worst frame ${c.worstGap} ms · ${c.programs} programs compiled · ${c.lights} lights`);
 const rec = await page.evaluate(() => ({ gaps: window.__nt.gaps, marks: window.__nt.marks, gl: window.__gl }));
 
 if (SHOT) {
@@ -324,7 +369,7 @@ const phases = [...new Set(rec.gaps.map((x) => x[6]))].map(report);
 const out = {
   park: path.basename(parkFile), gpu: GPU, dpr: DPR, throttle: THROTTLE, renderer: env.renderer,
   legacyFade: LEGACY, settled: settledAt, toggles: results, phases,
-  totalPrograms: rec.gl.create, programsDeleted: rec.gl.del,
+  totalPrograms: rec.gl.create, programsDeleted: rec.gl.del, novelCountCost: counts,
   warnings: lines.filter((l) => /warn|error|Stage:/i.test(l)).slice(0, 6),
   gaps: rec.gaps,
 };
