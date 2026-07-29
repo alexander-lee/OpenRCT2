@@ -110,8 +110,8 @@ function fairEnv(t: typeof THREE): THREE.Texture | null {
   x.fillStyle = sky;
   x.fillRect(0, 0, 256, 66);
   const gnd = x.createLinearGradient(0, 66, 0, 128);
-  gnd.addColorStop(0, '#6b7a4a');
-  gnd.addColorStop(1, '#3a3a30');
+  gnd.addColorStop(0, '#a08c62');   // the ride's own lit deck, not a dark lawn:
+  gnd.addColorStop(1, '#5a5240');   // a dark band made every mirror read as paint
   x.fillStyle = gnd;
   x.fillRect(0, 66, 256, 62);
   x.fillStyle = '#cfd8d2';
@@ -121,7 +121,8 @@ function fairEnv(t: typeof THREE): THREE.Texture | null {
     [72, 26, 16, 16, '#fffcee'],
     [200, 44, 7, 7, '#ffe6b0'],
   ];
-  for (let i = 0; i < 22; i += 1) spots.push([6 + i * 11.6, 58, 3.2, 3.2, '#ffdd9a']);
+  for (let i = 0; i < 22; i += 1) spots.push([6 + i * 11.6, 58, 4.2, 4.2, '#ffe6ad']);
+  for (let i = 0; i < 11; i += 1) spots.push([12 + i * 23, 74, 5, 5, '#f6e2c0']);
   for (const [cx, cy, rx, ry, col] of spots) {
     const gr = x.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
     gr.addColorStop(0, col);
@@ -171,7 +172,9 @@ export function buildCarouselScene(
                                      // 0xf0ece4 read mid-GREY in the canopy's
                                      // ambient — a carousel horse is WHITE)
   const DARK = 0x413830;  // manes, tails, hooves, straps, seams
-  const TACK = [0xd6338c, 0x2f6fb5, 0x3f8f4e]; // pink / blue / green saddles
+  const TACK = [0xc23a80, 0x33689e, 0x487f4c]; // pink / blue / green saddles (the
+                                              // first pass' full-chroma versions
+                                              // read as plastic at eye level)
 
   // ---- the dimension table (every number below is derived from these, so the
   //      stack cannot drift apart into coplanar seams) --------------------
@@ -181,7 +184,7 @@ export function buildCarouselScene(
   const R_DECK = 1.62;   // rotating platform
   const R_KERB = 1.66;   // platform rim kerb (overhangs the skirt by 0.12)
   const R_DRUM = 0.42;   // centre barrel
-  const R_HORSE = 1.15;  // the horse/pole ring
+  const R_HORSE = 1.26;  // the horse/pole ring (0.99 of arc per station)
   const R_BOARD = 1.79;  // rounding boards
   // THE EAVE LANDS ON THE BOARD LINE, it does not overhang it. The first render
   // of this rebuild put R_CAP at 1.82, outboard of the 1.79 boards, so the top
@@ -447,7 +450,12 @@ export function buildCarouselScene(
     }
     ride.add(mergedParts(t, studs, shiny(GOLD, 0.7, 0.3), false));
   }
-  ride.add(gilt(cyl(t, R_DRUM + 0.18, R_DRUM + 0.22, 0.05, GOLD, [0, Y_DECK + 0.02, 0], { metal: 0.55, rough: 0.35, seg: 24 })));
+  {
+    const collar: PartSpec[] = [];
+    ringWall(R_DRUM + 0.18, R_DRUM + 0.22, 0.06, Y_DECK + 0.015, collar, 28);
+    ringTop(R_DRUM + 0.1, R_DRUM + 0.18, Y_DECK + 0.045, collar, 28);
+    ride.add(mergedParts(t, collar, shiny(GOLD, 0.6, 0.32)));
+  }
 
   // ---- the CENTRE DRUM (mirror barrel) ------------------------------------
   // Was: one 0.34-radius brown cylinder with eight 0.1 x 0.5 gold strips. A
@@ -482,10 +490,10 @@ export function buildCarouselScene(
     // MIRROR GLASS — metalness 1 / roughness 0.05 + envMap. Never `emissive`:
     // an emissive panel is a glowing rectangle, not a reflection.
     ride.add(mergedParts(t, mirror.map((p) => ({ geo: G_BOX, matrix: mtx(t, p.pos as [number, number, number], [0, p.rotY as number, 0], p.dims) })), shiny(0xdfe6ea, 1, 0.05), false));
-    ride.add(mergedBoxes(t, painted, CREAM, { rough: 0.7 }));
+    ride.add(mergedBoxes(t, painted, RED, { tex: 'plastic', rough: 0.7 }));
     ride.add(mergedBoxes(t, dado, GREEN, { rough: 0.75 }));
     ride.add(gilt(mergedBoxes(t, mould, GOLD, { metal: 0.55, rough: 0.35 })));
-    ride.add(mergedParts(t, medal, mat(t, ORANGE, { rough: 0.6 }), false));
+    ride.add(mergedParts(t, medal, mat(t, 0xf0e4c6, { rough: 0.6 }), false));
   }
   ride.add(gilt(cyl(t, R_DRUM + 0.09, R_DRUM + 0.04, 0.07, GOLD, [0, Y_B0 - 0.035, 0], { metal: 0.55, rough: 0.35, seg: 24 }))); // top cornice
   ride.add(gilt(cyl(t, R_DRUM + 0.04, R_DRUM + 0.09, 0.08, GOLD, [0, Y_DECK + 0.04, 0], { metal: 0.55, rough: 0.35, seg: 24 }))); // plinth
@@ -529,13 +537,13 @@ export function buildCarouselScene(
     // and gated on night: a carousel's ceiling is lit by its own bulb rows, and
     // without it the eye-level view looks up into a black canvas underside.
     const crows: THREE.Vector3[][] = [];
-    const NAZ = 48;
-    for (let ri = 0; ri <= 7; ri += 1) {
-      const u = 0.1 + (ri / 7) * 0.9;
+    const NAZ = 64;
+    for (let ri = 0; ri <= 8; ri += 1) {
+      const u = 0.03 + (ri / 8) * 0.985;   // past the eave, so it tucks behind the boards
       const row: THREE.Vector3[] = [];
       for (let j = 0; j <= NAZ; j += 1) {
         const f = (j / NAZ) * SEGS;
-        row.push(capPt(u, f - Math.floor(f), Math.floor(f) * STEP, -0.04));
+        row.push(capPt(u, f - Math.floor(f), Math.floor(f) * STEP, -0.06));
       }
       crows.push(row);
     }
@@ -557,8 +565,8 @@ export function buildCarouselScene(
     for (let i = 0; i < SEGS; i += 1) {
       const a0 = i * STEP;
       for (let k = 0; k < 5; k += 1) {
-        const p0 = capPt(0.08 + (k / 5) * 0.92, 0, a0, 0.022);
-        const p1 = capPt(0.08 + ((k + 1) / 5) * 0.92, 0, a0, 0.022);
+        const p0 = capPt(0.08 + (k / 5) * 0.92, 0, a0, 0.045);
+        const p1 = capPt(0.08 + ((k + 1) / 5) * 0.92, 0, a0, 0.045);
         seg(G_CYL, [p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], 0.034, sw);
       }
     }
@@ -710,8 +718,10 @@ export function buildCarouselScene(
       const a = (i / 8) * Math.PI * 2;
       const c = Math.cos(a) * R_HORSE;
       const s = Math.sin(a) * R_HORSE;
-      seg(G_CYLR, [c, Y_DECK - 0.06, s], [c, 2.16, s], 0.046, poles);
-      collar.push({ geo: G_CYLR, matrix: mtx(t, [c, 2.11, s], [0, 0, 0], [0.085, 0.05, 0.085]) });
+      // 2.10 is under the ceiling at this radius (2.137 at its deepest sag) — the
+      // pole must stop below the CEILING, not below the canvas 0.06 above it
+      seg(G_CYLR, [c, Y_DECK - 0.06, s], [c, 2.1, s], 0.046, poles);
+      collar.push({ geo: G_CYLR, matrix: mtx(t, [c, 2.05, s], [0, 0, 0], [0.085, 0.05, 0.085]) });
       collar.push({ geo: G_CYLR, matrix: mtx(t, [c, Y_DECK + 0.03, s], [0, 0, 0], [0.09, 0.06, 0.09]) });
     });
     ride.add(mergedParts(t, poles, shiny(BRASS, 0.85, 0.18), false));
@@ -755,28 +765,41 @@ export function buildCarouselScene(
     seg(G_TAP, [poll[0] + 0.03, poll[1] - 0.01, 0], muz, 0.115, hide, 0.1); // muzzle
     blob([muz[0], muz[1], 0], [0.1, 0.09, 0.095], hide);                    // nose
     [-1, 1].forEach((sd) =>
-      hide.push({ geo: G_CONE, matrix: mtx(t, [poll[0] - 0.03, poll[1] + 0.075, sd * 0.05], [0, 0, sd * 0.18], [0.05, 0.11, 0.045]) }),
+      hide.push({ geo: G_CONE, matrix: mtx(t, [poll[0] - 0.025, poll[1] + 0.055, sd * 0.045], [0, 0, sd * 0.2], [0.042, 0.065, 0.036]) }),
     );                                                                       // ears
     // ---- mane: overlapping plates down the crest (this is the single detail
     //      that makes the silhouette read "horse" from 6 u away) ----
-    for (let k = 0; k <= 8; k += 1) {
-      const f = k / 8;
-      const a: [number, number, number] = [0.26 + (poll[0] - 0.24) * f, 0.16 + (poll[1] + 0.02 - 0.16) * f, 0];
-      const b: [number, number, number] = [a[0] - 0.035, a[1] + 0.075 + h01(idx * 7 + k) * 0.03, 0];
-      seg(G_BOX, a, b, 0.055, dark, 0.035);
-    }
-    seg(G_BOX, [poll[0] + 0.02, poll[1] + 0.06, 0], [poll[0] + 0.11, poll[1] - 0.02, 0], 0.05, dark, 0.03); // forelock
+    // Two passes have proved the point: 9 loose plates standing off the crest read
+    // as a dorsal fin, and shortening them just made a row of teeth. A mane is a
+    // CONTINUOUS SHEET falling to one side, so it is lofted — two ribbons, one per
+    // side, each a 2-row surface from the crest line out to a ragged hair edge.
+    const maneGeo: THREE.BufferGeometry[] = [];
+    [-1, 1].forEach((sd) => {
+      const root: THREE.Vector3[] = [];
+      const tip: THREE.Vector3[] = [];
+      for (let k = 0; k <= 9; k += 1) {
+        const f = k / 9;
+        const cx = 0.25 + (poll[0] - 0.23) * f;
+        const cy = 0.15 + (poll[1] + 0.03 - 0.15) * f;
+        root.push(new t.Vector3(cx, cy, sd * 0.012));
+        tip.push(new t.Vector3(cx - 0.055 - h01(idx * 7 + k) * 0.02, cy + 0.02, sd * (0.055 + 0.02 * Math.sin(f * 3.1))));
+      }
+      const g = loft([root, tip], [2, 1]);
+      maneGeo.push(g);
+      dark.push({ geo: g, matrix: I4() });
+    });
+    seg(G_BOX, [poll[0] + 0.01, poll[1] + 0.055, 0], [poll[0] + 0.09, poll[1] - 0.01, 0], 0.045, dark, 0.028); // forelock
     // ---- tail: an arc of tapering strands, swept back and down ----
     for (let sd = -1; sd <= 1; sd += 1) {
       let px = -0.29;
-      let py = 0.13;
+      let py = 0.13 - Math.abs(sd) * 0.02;
       for (let k = 0; k < 5; k += 1) {
         // measured fix: the first pass compounded −0.012/−0.055 per step and put
         // the tip at (−0.69, −0.52), i.e. 0.17 BELOW the hooves — six black
         // wedges dragging on the deck. This lands it at (−0.47, −0.24).
-        const nx = px - 0.04 + k * 0.004;
+        const nx = px - 0.04 + k * 0.004 - Math.abs(sd) * 0.004;
         const ny = py - 0.03 - k * 0.021;
-        seg(G_BOX, [px, py, sd * 0.03], [nx, ny, sd * 0.04], 0.07 - k * 0.008, dark, 0.045);
+        seg(G_CYL, [px, py, sd * 0.045], [nx, ny, sd * 0.06], 0.058 - k * 0.008, dark);
         px = nx;
         py = ny;
       }
@@ -809,36 +832,43 @@ export function buildCarouselScene(
     // ---- saddle, blanket, girth, stirrups: the tack sits at x = −0.10 so the
     //      pole (local x = 0) passes just in FRONT of the rider ----
     const SX = -0.1;
-    slab([SX, 0.155, 0], [0.3, 0.03, 0.3], tack);                        // saddle cloth over the back
-    // side flaps: 0.30 x 0.19 read as a coloured BOX bolted to the flank in the
-    // first render — a saddle cloth is a shaped pad, so this is smaller, canted
-    // with the barrel and pulled in off its widest point
-    [-1, 1].forEach((sd) => slab([SX - 0.01, 0.09, sd * 0.135], [0.24, 0.12, 0.022], tack, [0, 0, 0.06]));
-    slab([SX, 0.185, 0], [0.22, 0.05, 0.23], tack);                      // seat
-    blob([SX + 0.11, 0.215, 0], [0.09, 0.08, 0.14], tack);               // pommel
-    blob([SX - 0.12, 0.215, 0], [0.09, 0.09, 0.16], tack);               // cantle
+    // The cloth is a shaped pad that WRAPS the barrel (an ellipsoid a touch wider
+    // than it), not a flat plate laid across it — and the separate flat side flaps
+    // are gone: at 0.30 x 0.19 they read as coloured boards bolted to the flanks.
+    blob([SX, 0.125, 0], [0.34, 0.17, 0.295], tack);
+    const fringe: PartSpec[] = [];
+    [-1, 1].forEach((sd) => {
+      for (let k = 0; k < 6; k += 1)
+        seg(G_BOX, [SX - 0.11 + k * 0.045, 0.075, sd * 0.14], [SX - 0.11 + k * 0.045, 0.02 - h01(idx + k) * 0.02, sd * 0.145], 0.028, fringe, 0.016);
+    });
+    fringe.forEach((f) => tack.push(f));
+    blob([SX, 0.175, 0], [0.25, 0.11, 0.23], tack);                      // seat, dished not slabbed
+    blob([SX + 0.115, 0.2, 0], [0.07, 0.06, 0.13], tack);                // pommel
+    blob([SX - 0.125, 0.205, 0], [0.07, 0.07, 0.15], tack);              // cantle
     [-1, 1].forEach((sd) => {
       seg(G_BOX, [SX, 0.15, sd * 0.13], [SX + 0.01, -0.02, sd * 0.16], 0.03, dark, 0.02);  // stirrup leather
       gold.push({ geo: G_CYLR, matrix: mtx(t, [SX + 0.01, -0.05, sd * 0.165], [0, Math.PI / 2, 0], [0.075, 0.022, 0.075]) }); // iron
       seg(G_BOX, [0.06, 0.12, sd * 0.12], [0.06, -0.13, sd * 0.13], 0.035, dark, 0.025);   // girth
-      gold.push({ geo: G_CYLR, matrix: mtx(t, [0.2, 0.1, sd * 0.14], [Math.PI / 2, 0, 0], [0.075, 0.014, 0.075]) }); // shoulder rosette
+      gold.push({ geo: G_CYLR, matrix: mtx(t, [0.19, 0.13, sd * 0.135], [Math.PI / 2, 0, 0], [0.055, 0.014, 0.055]) }); // shoulder rosette
     });
     // ---- bridle and reins ----
     slab([poll[0] + 0.02, poll[1] + 0.02, 0], [0.03, 0.035, 0.13], dark);              // browband
     slab([muz[0] - 0.03, muz[1] + 0.02, 0], [0.035, 0.09, 0.115], dark);               // noseband
     [-1, 1].forEach((sd) => {
-      seg(G_BOX, [poll[0] + 0.02, poll[1] + 0.02, sd * 0.055], [muz[0] - 0.03, muz[1] + 0.03, sd * 0.05], 0.028, dark, 0.02); // cheek strap
-      seg(G_BOX, [muz[0] - 0.04, muz[1] + 0.01, sd * 0.05], [SX + 0.12, 0.22, sd * 0.06], 0.022, dark, 0.016);                // rein
+      seg(G_BOX, [poll[0] + 0.02, poll[1] + 0.02, sd * 0.055], [muz[0] - 0.03, muz[1] + 0.03, sd * 0.05], 0.02, dark, 0.014); // cheek strap
+      // over the crest in two runs, so it drapes instead of spanning straight
+      seg(G_BOX, [muz[0] - 0.04, muz[1] + 0.01, sd * 0.05], [poll[0] - 0.02, poll[1] + 0.02, sd * 0.07], 0.013, dark, 0.011);
+      seg(G_BOX, [poll[0] - 0.02, poll[1] + 0.02, sd * 0.07], [SX + 0.13, 0.235, sd * 0.075], 0.013, dark, 0.011);
     });
     // ---- the pole bosses where the brass passes through the withers ----
-    [0.185, -0.16].forEach((y) =>
-      gold.push({ geo: G_CYLR, matrix: mtx(t, [0, y, 0], [0, 0, 0], [0.105, 0.045, 0.105]) }),
-    );
+    gold.push({ geo: G_CYLR, matrix: mtx(t, [0, 0.185, 0], [0, 0, 0], [0.105, 0.045, 0.105]) });
+    gold.push({ geo: G_CYLR, matrix: mtx(t, [0, -0.185, 0], [0, 0, 0], [0.085, 0.035, 0.085]) });
 
     hg.add(mergedParts(t, hide, mat(t, HIDE[idx % HIDE.length], { rough: 0.5 }), false));
     hg.add(mergedParts(t, dark, mat(t, DARK, { rough: 0.55 }), false));
     hg.add(mergedParts(t, tack, mat(t, TACK[idx % TACK.length], { tex: 'fabric', repeat: [2, 2], rough: 0.65 }), false));
     hg.add(mergedParts(t, gold, shiny(GOLD, 0.75, 0.28), false));
+    maneGeo.forEach((g) => g.dispose()); // per-horse temporaries; the batch copied them
     // the saddle anchor — rides the bobbing horse; REAL GameManager guests land
     // here via seatWorld. 0.19 below the seat top because buildPeep's origin is
     // at the peep's FEET and its hips sit 0.46·scale above that.

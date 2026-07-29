@@ -2,7 +2,7 @@
   "version": 1,
   "designSystemId": "ds-fbd20bf8-b16d-4cf1-8440-d20bc095fc4a",
   "note": "EMPTY BASELINE. No entry here means \"never pushed as far as this manifest knows\", so the first status run reports the whole tree. Bootstrap it ONCE, when no push is in flight, with:  node manifest.mjs reconcile --server-list=<get_design_system json> --assume-clean   (see ../README.md, FAST PUSH PROTOCOL / Bootstrapping). Thereafter only ever grow it via `commit`, after the final file-list check.",
-  "updatedAt": "2026-07-29T02:41:31.797Z",
+  "updatedAt": "2026-07-29T02:55:07.277Z",
   "files": {
     "components/AetherBalloons/AetherBalloons.previews.tsx": {
       "sha256": "f608fecc90623a3551d5eea95ea18e7012c780acbee614ad4e7b1eee201d7d8e",
@@ -2292,19 +2292,19 @@
       "source": "assumed"
     },
     "components/WorldGround/Context.md": {
-      "sha256": "53da41552293bd3dc9ec7f3fdd4bc27b5caf7b126907bacded2961e11ad025f8",
-      "bytes": 4928,
-      "pushedAt": "2026-07-28T23:14:42.071Z"
+      "sha256": "306e4dc65fa51c43b78449a5a752fc8f356157f0222d673a81f5fb6d0afbb32e",
+      "bytes": 6251,
+      "pushedAt": "2026-07-29T02:55:07.276Z"
     },
     "components/WorldGround/WorldGround.previews.tsx": {
-      "sha256": "796ec9fffa27bdf3d7ee109b0bc05b402a4102aa6ce968a343acc4e4ac421e92",
-      "bytes": 4818,
-      "pushedAt": "2026-07-29T02:05:09.609Z"
+      "sha256": "1372a85de07a121d696ce2b85b96a82d30eb8496ed94a5879598c7f5672eecf0",
+      "bytes": 4941,
+      "pushedAt": "2026-07-29T02:55:07.276Z"
     },
     "components/WorldGround/index.tsx": {
-      "sha256": "647ae3db4acc3b65e15f7bcae717ed68c4a020bdd1226ec17a65a6918854cbac",
-      "bytes": 14727,
-      "pushedAt": "2026-07-29T02:12:57.248Z"
+      "sha256": "ddfd61636c0b48acc11ea5235e4a8e685ceca8454e5d9ac5d04334f5cca27791",
+      "bytes": 21364,
+      "pushedAt": "2026-07-29T02:55:07.276Z"
     },
     "components/WorldLandmark/Context.md": {
       "sha256": "87003b66b7cd86081b44b565a699d8a8dcae37011ad5fba4a9597961f578421b",

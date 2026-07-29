@@ -16,6 +16,10 @@ import type { StageApi } from '../Stage';
 // via api.setCameraPose to a vantage offset from the ride's boardPoint.
 // ---------------------------------------------------------------------------
 
+// A LIVE GameManager only ever reports the first two: no ride here can break
+// down (see `GameManager/Context.md`), so `manager.rides()[].status` is 'open'
+// or, for a crashed ride, 'closed'. The other two remain because this is a
+// STRUCTURAL interface and their dots still render if a caller supplies them.
 export type ParkInfoStatus = 'open' | 'closed' | 'brokenDown' | 'beingRepaired';
 
 export interface ParkInfoRideRow {

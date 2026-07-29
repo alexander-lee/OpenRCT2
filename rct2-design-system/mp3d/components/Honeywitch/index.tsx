@@ -729,6 +729,11 @@ export function buildHoneywitch(three: typeof THREE, opts: HoneywitchOpts = {}):
       geos.push(m.geometry);
       const mm = m.material as THREE.MeshStandardMaterial;
       mats.push(mm);
+      // the STICK is the one mapped material in the recipe (tex 'wood'), and
+      // `mat()` bakes the colour INTO the texture and leaves `material.color`
+      // white — so a plain emissive on it glows WHITE. It is buried in the
+      // thatch anyway, so it simply opts out.
+      if (mm.map) return;
       // A LIT SIGN AFTER DARK. The apple's centre is 2.0 u up — far outside the
       // eave lantern's 3.2-u falloff at any useful intensity — so at night the
       // one thing that makes this stall findable would be the darkest surface in

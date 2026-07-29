@@ -469,7 +469,19 @@ export function buildGoggleWorks(three: typeof THREE, opts: GoggleWorksOpts = {}
     // shares a material instance, so a night-gated emissive on the sign's OWN
     // materials costs no light and no draw — the same gaslight amber the shop's
     // two lamps use, so it reads as gas-lit signage rather than as neon.
-    mm.emissive.setHex(0xffb050);
+    //
+    // ⚠️ TINTED WITH EACH PART'S OWN COLOUR, NOT ONE WARM HEX. A flat 0xffb050
+    // on all 16 materials turned the sign into TWO PLAIN YELLOW DISCS at night —
+    // the brass/glass distinction and the machined rims all gone, i.e. bright but
+    // no longer readable. `mat()` bakes the colour INTO the texture and leaves
+    // `material.color` white, so a MAPPED material (all the brass here) needs
+    // `emissiveMap = map` with a white emissive to glow in its own tint, while an
+    // unmapped one (the lens glass) can just copy its colour. Same texture
+    // object, so this costs nothing.
+    if (mm.map) {
+      mm.emissiveMap = mm.map;
+      mm.emissive.setHex(0xffffff);
+    } else mm.emissive.copy(mm.color);
     signMats.push(mm);
   });
   g.add(sign);
@@ -557,7 +569,7 @@ export function buildGoggleWorks(three: typeof THREE, opts: GoggleWorksOpts = {}
     // 1b. the GIANT GOGGLES sign: gas-lit signage after dark, plain brass by day.
     //     Kept LOW (0.3) and on the same `ease` as the two lamps — this shop has
     //     nothing molten in it, so NOTHING here glows at noon.
-    for (const sm of signMats) sm.emissiveIntensity = 0.3 * ease;
+    for (const sm of signMats) sm.emissiveIntensity = 0.22 * ease;
     // 2. the grinding wheel and its flywheel: geared 3.2 : 1 off one clock, with
     //    a slow hashed duty cycle (the optician stops to check the lens)
     const duty = 0.55 + 0.45 * Math.sin(time * 0.31); // eases to a near-stop

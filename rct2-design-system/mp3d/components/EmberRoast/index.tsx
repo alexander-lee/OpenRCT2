@@ -438,8 +438,20 @@ export function buildEmberRoast(three: typeof THREE, opts: EmberRoastOpts = {}):
     // either, so after dark the one thing that makes this stall findable would be
     // the darkest object in the frame. `mat()` never shares a material instance,
     // so a night-gated emissive on the sign's OWN materials costs no light and no
-    // draw. Ember-orange, because in this world a warm sign is a lit sign.
-    mm.emissive.setHex(0xff8a3c);
+    // draw.
+    //
+    // ⚠️ TINTED WITH EACH CHUNK'S OWN COLOUR, NOT ONE EMBER-ORANGE HEX. Almost
+    // every material on this skewer is TEXTURED (stick 'wood', meat 'asphalt',
+    // peppers 'leaf') and `mat()` bakes the colour INTO the texture, leaving
+    // `material.color` white — so a flat warm emissive would glow the whole bar
+    // grey-white and throw away the green/red pepper contrast that is the entire
+    // reason this sign reads. `emissiveMap = map` with a white emissive glows each
+    // part in its own tint off the SAME texture object, so it costs nothing;
+    // unmapped parts (the charcoal caps) just copy their colour.
+    if (mm.map) {
+      mm.emissiveMap = mm.map;
+      mm.emissive.setHex(0xffffff);
+    } else mm.emissive.copy(mm.color);
     signMats.push(mm);
   });
   g.add(sign);
@@ -590,7 +602,7 @@ export function buildEmberRoast(three: typeof THREE, opts: EmberRoastOpts = {}):
     //     roast meat by day. Kept LOW (0.3) and gated on `ease`, NOT on the
     //     coals' `glow` — the sign is not hot, it is lit, and this file's whole
     //     discipline is that those two are different (lava lerps, lamps gate).
-    for (const sm of signMats) sm.emissiveIntensity = 0.3 * ease;
+    for (const sm of signMats) sm.emissiveIntensity = 0.25 * ease;
     // 3. skewers turning on the grate — a slow deterministic roll each
     cooking.forEach((s, i) => {
       s.rotation.x = Math.sin(time * (0.5 + i * 0.11) + i * 2.1) * 0.5;

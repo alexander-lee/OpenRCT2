@@ -4,7 +4,7 @@
 *(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
 specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
 
-**"Ember Roast" — the EMBERFALL CALDERA world's food stall: a volcanic-stone SKEWER GRILL.** Rough basalt block counter under a slate top, an iron grate over a bed of glowing coals sunk into it, three skewers turning on the fire, a soot-blackened chimney breast and banded stack, an iron rack of spare skewers, a scorched-sailcloth valance in the world's own canopy colours, a slate chalk menu board on a basalt post, and — RCT2-style, the building says what it sells — one heroic charred skewer as the sign on the front gantry.
+**"Ember Roast" — the EMBERFALL CALDERA world's food stall: a volcanic-stone SKEWER GRILL.** Rough basalt block counter under a slate top, an iron grate over a bed of glowing coals sunk into it, three skewers turning on the fire, a soot-blackened chimney breast and banded stack, an iron rack of spare skewers, a scorched-sailcloth valance in the world's own canopy colours, a slate chalk menu board on a basalt post, and — RCT2-style, the building says what it sells — a **GIANT charred skewer** as the sign, lifted clear above the stack so it silhouettes against sky rather than against basalt.
 
 Serving front faces local **+z**; the GameManager attach point sits **0.72 u** out that way. Sized against a 0.5-scale park guest like the four catalog shops: counter top y 0.46, grate 0.58, stack top 1.66.
 

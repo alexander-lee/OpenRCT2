@@ -25,12 +25,6 @@ const previews = {
           <Carousel />
         </ScenePreview>
       ) },
-    // TEMP-INSPECT (removed before the change is finished)
-    { name: 'zz-inspect', description: 'scratch', render: () => (
-        <ScenePreview distance={2.6} targetY={1.15} height={640} autoRotate={false}>
-          <Carousel />
-        </ScenePreview>
-      ) },
   ],
 };
 

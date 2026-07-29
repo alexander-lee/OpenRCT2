@@ -6,8 +6,11 @@ import { createGameManager } from '../GameManager';
 
 // Live demo: a spinning placeholder flat ride run by the GameManager, with
 // the RideViewer window polling its handle and an orbiting camera inset
-// bottom-left. breakdownEvery keeps the deterministic breakdown cycle short
-// so the status line visits Open -> Broken down -> Being repaired -> Open.
+// bottom-left. NOTE: the status line now only ever reads OPEN. It used to
+// cycle Open -> Broken down -> Being repaired on a short `breakdownEvery`, but
+// NO RIDE CAN BREAK DOWN any more (GameManager/Context.md) — the knob is
+// deprecated, ignored, and warns once. The mechanic colours are kept in the
+// window because a park can still drive them by hand through the motion gate.
 function RideViewerDemo() {
   const [live, setLive] = useState<{ api: StageApi; ride: RideViewerRide; vehicle: THREE.Object3D } | null>(null);
   return (
@@ -42,7 +45,6 @@ function RideViewerDemo() {
             intensity: 4,
             minWait: 2,
             maxWait: 6,
-            breakdownEvery: 26, // short deterministic cycle for the demo
             queueAnchor: [2.0, 0, 1.5], // entrance hut clears the 1.15-radius podium base
             queueDir: [0.6, 0.8],
             boardPoint: [0, padTop + 0.1, 0.6],
@@ -82,7 +84,7 @@ const previews = {
     {
       name: 'Ride window with live camera inset',
       description:
-        'The RCT2 Ride window on UIWindow chrome over a live GameManager scene: colour-coded status line (green Open, red Broken down, amber Being repaired — the ride runs a short deterministic breakdown cycle), queue length, riders/capacity and total customers, plus the viewport-tab camera reborn as a bottom-left inset slowly orbiting the ride’s boardPoint via api.addViewport. Guests queue, board the spinning rotor and file out while the window polls the handle live.',
+        'The RCT2 Ride window on UIWindow chrome over a live GameManager scene: colour-coded status line (green Open; the red Broken down and amber Being repaired arms are still wired but NO RIDE CAN BREAK DOWN any more, so a live ride reads Open), queue length, riders/capacity and total customers, plus the viewport-tab camera reborn as a bottom-left inset slowly orbiting the ride’s boardPoint via api.addViewport. Guests queue, board the spinning rotor and file out while the window polls the handle live.',
       render: () => <RideViewerDemo />,
     },
   ],

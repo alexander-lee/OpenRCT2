@@ -64,8 +64,8 @@ const planFor = (tid) => ({
 // BEFORE reproduces the shipped look: coarse 2.4 u tiles, one texture copy per
 // tile. AFTER is the default the component now ships.
 const VARIANTS = PATHS
-  ? [{ tag: 'OLD sink (top AT floorAt)', tile: 1.2, detail: 1.2, sink: 0.0 },
-     { tag: 'NEW sink (top 32-48mm under)', tile: 1.2, detail: 1.2, sink: null }]
+  ? [{ tag: 'OLD: floor SUNK 0.04 under the ground', tile: 1.2, detail: 1.2, dy: -0.09 },
+     { tag: 'NEW: floor LIFTED 0.05 over it', tile: 1.2, detail: 1.2, dy: 0 }]
   : [{ tag: 'BEFORE 2.4u tile', tile: 2.4, detail: 2.4 },
      { tag: 'AFTER  1.2u + smooth tone field', tile: 1.2, detail: 1.2 }];
 const VIEWS = PATHS
@@ -82,16 +82,32 @@ for (const tid of THEMES) {
   for (const v of VARIANTS) for (const view of VIEWS) {
     const built = buildWorldGroundScene(THREE, planFor(tid), park, { tile: v.tile, detail: v.detail });
     if (PATHS) {
-      // reproduce the OLD sink by lifting the whole floor back up to it
-      if (v.sink === 0.0) built.group.position.y += 0.04 + 0.025;
-      // a PATH SLAB where a real one sits: its underside AT floorAt. This is
-      // the surface the ground used to be exactly coplanar with.
+      // move the FLOOR to the variant's datum
+      built.group.position.y += v.dy ?? 0;
       const pg = new THREE.Group();
+      // ⛔ THE SLAB MUST NOT RIDE WITH THE FLOOR. pg is parented to built.group
+      // for convenience, so cancel the variant's offset back out here. Without
+      // this line the slab inherits position.y from the floor, BOTH variants
+      // render the identical relative geometry, and the comparison cannot fail no
+      // matter how wrong the floor's datum is — which is exactly why this probe
+      // reported "a continuous unbroken strip" while every generated park was
+      // still burying its streets.
+      pg.position.y = -(v.dy ?? 0);
+      // THE REAL PATH CROSS-SECTION, not a hand-made slab. PathNetwork settles a
+      // node at corridorGroundMax + 0.03 — the max over the corridor WIDTH, which
+      // is what stops a level slab burying its uphill kerb — and renders the
+      // pavement PATH_SLAB (0.11) thick with its top a further PATH_H + 0.006
+      // (0.096) above that. So the surface a real street presents is +0.126 over
+      // the highest ground in its own corridor and its UNDERSIDE is +0.016; a slab
+      // sitting with its underside AT floorAt, which is what this used to build,
+      // is a surface no path in the kit ever has.
+      const W = 1.2, TH = 0.11, CL = 0.03, LIP = 0.096;
       for (let z = -12; z <= 12; z += 0.6) {
-        const w = 3.0, th = 0.09;
-        const m = new THREE.Mesh(new THREE.BoxGeometry(w, th, 0.6),
+        let g = -Infinity;
+        for (let o = -W / 2; o <= W / 2 + 1e-9; o += W / 4) g = Math.max(g, park.floorAt(o, z));
+        const m = new THREE.Mesh(new THREE.BoxGeometry(W, TH, 0.6),
           new THREE.MeshStandardMaterial({ color: 0xb9b2a4, roughness: 0.95 }));
-        m.position.set(0, park.floorAt(0, z) + th / 2, z);
+        m.position.set(0, g + CL + LIP - TH / 2, z);
         pg.add(m);
       }
       built.group.add(pg);

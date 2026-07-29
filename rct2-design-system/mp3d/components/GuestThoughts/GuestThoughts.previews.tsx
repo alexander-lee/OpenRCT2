@@ -53,7 +53,6 @@ function GuestThoughtsDemo() {
               price: 6, // some guests refuse ("I can't afford that" thoughts)
               minWait: 2,
               maxWait: 6,
-              breakdownEvery: p.every, // breakdowns feed "not safe" thoughts
               queueAnchor: [p.x + dir[0] * 2.0, 0, p.z + dir[1] * 2.0],
               queueDir: dir,
               boardPoint: [p.x, padTop + 0.1, p.z],

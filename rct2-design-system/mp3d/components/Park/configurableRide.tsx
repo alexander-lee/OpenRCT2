@@ -957,8 +957,12 @@ export type ComposableRideBuilt = ComposableBuilt & {
   seatWorld?: (seat: number) => [number, number, number, number];
   /** a vehicle/gondola for the RideViewer onboard cam */
   vehicle?: THREE.Object3D;
-  /** FSM visual hook — wired to the manager's ride state machine so the
-   *  visual reacts (spin down while brokenDown/beingRepaired, restart after) */
+  /** FSM visual hook — wired to the manager's ride state machine so the visual
+   *  reacts (park in the station, spin up on `departing`, brake into `arriving`).
+   *  The manager only ever sends `RideState` values: NO RIDE CAN BREAK DOWN, so
+   *  a `'brokenDown'`/`'beingRepaired'` arm in a ride's handler never fires from
+   *  here (see GameManager/Context.md). A CRASH does still arrive, via
+   *  `crashed()` below. */
   onStateChange?: (state: string, occupancy?: unknown) => void;
   /** crash wiring for tracked rides (registerRide vehicleHandle) */
   crashed?: () => boolean;

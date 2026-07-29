@@ -994,10 +994,154 @@ export function buildPathNetwork(t: typeof THREE, net: PathNet, opts: PathNetwor
   // Live view: routing.attach() pushes logical spur nodes/edges into the SAME
   // arrays, so attached stall fronts and queue tails sample correctly too.
   const flatWalkY = y + H;
+  const WALK_REACH = width / 2 + 0.45; // corridor half-width + shoulder slack
+
+  // ---- THE WALK-HEIGHT SPATIAL INDEX ----------------------------------------
+  //
+  // `walkYAt` is the HOTTEST FUNCTION IN A POPULATED PARK. Every guest samples it
+  // once per frame to set its feet (`navigation.ts` netStep, `locomotion.ts`
+  // followWaypoints) and `validatePark`'s smoke run samples it ~2550 times per
+  // guest. It used to scan EVERY edge and EVERY node of the network per call, so
+  // its cost was O(guests · network) per frame — the one term in this sim that
+  // grows with the product of the two things a big park has more of.
+  //
+  // MEASURED (CDP CPU profile, `parkA-99` size 128, 500 guests, real GPU):
+  // `walkYAt` was **21.0 % of all self time — 4784 ms of a 22.8 s window**, more
+  // than twice the next entry (three.js's own `projectObject` at 7.9 %). It was
+  // the single biggest cost in the park, ahead of every renderer function.
+  //
+  // The fix is a uniform bucket grid, and it is EXACT rather than approximate.
+  // The trick that makes one bucket lookup sufficient: each edge/node is inserted
+  // at build time into every cell its AABB **expanded by the query reach**
+  // touches. If item I is within reach of point P then P lies inside I's expanded
+  // AABB, so the cell containing P was one of I's cells — a single bucket read is
+  // therefore a guaranteed SUPERSET of every candidate that could win. Nothing is
+  // approximated away and no result changes.
+  //
+  // Exact-distance TIES keep the old semantics (lowest index wins) explicitly,
+  // because bucket order is not index order: the original loop's `d < bestD`
+  // meant the first-scanned of two equidistant edges won, and on a symmetric
+  // lattice that is reachable rather than hypothetical.
+  //
+  // THE CORE / TAIL SPLIT, and why it is not just "rebuild when the arrays grow".
+  // `routing.attach()` keeps pushing logical spur nodes/edges (queue tails, stall
+  // fronts, hut doorways) onto these same live arrays as rides register, AND the
+  // round-5 settle pass MOVES some of them afterwards (`access.ts` moveRide /
+  // moveRideExit / moveStall, `resolveCorridorConflicts`). A length-triggered
+  // rebuild therefore is NOT enough: a spur that moves without the array growing
+  // leaves a stale bucket. MEASURED — a first version did exactly that and the
+  // brute-force self-check below caught it: `cinder-peak`, 2600 of 139 483 samples
+  // wrong (worst 0.104 u), every one of them an appended spur edge that had been
+  // relocated after its bucket was written.
+  //
+  // So only the network AS RENDERED is indexed — those nodes never move inside one
+  // `buildPathNetwork` closure (a `<Paths>` re-settle builds a NEW one) — and
+  // everything appended past that point is the LIVE TAIL, scanned directly in
+  // index order. The tail is tens of entries against the core's hundreds, so the
+  // asymptotics are the core's, and correctness does not depend on anybody
+  // remembering to invalidate anything.
+  const WALK_CELL = 4; // u — ~2-4 candidate edges per bucket on this corpus's lattices
+  const WALK_MARGIN = 64; // u of slack around the node AABB so attached spurs land inside
+  const WALK_MAX_CELLS = 40000; // allocation guard: past this the cell grows instead
+  let wgCell = WALK_CELL;
+  let wgNx = 0;
+  let wgNz = 0;
+  let wgX0 = 0;
+  let wgZ0 = 0;
+  let wgE: number[][] = [];
+  let wgN: number[][] = [];
+  /** how many edges / nodes the grid COVERS — everything past this is the tail */
+  let wgCoreE = -1;
+  let wgCoreN = -1;
+  const wgIdx = (v: number, o: number, n: number) => {
+    const i = Math.floor((v - o) / wgCell);
+    return i < 0 ? 0 : i >= n ? n - 1 : i;
+  };
+  /** stamp every cell an AABB (already expanded by the reach) touches */
+  const wgPut = (bins: number[][], lo0: number, hi0: number, lo1: number, hi1: number, item: number) => {
+    const i0 = wgIdx(lo0, wgX0, wgNx);
+    const i1 = wgIdx(hi0, wgX0, wgNx);
+    const j0 = wgIdx(lo1, wgZ0, wgNz);
+    const j1 = wgIdx(hi1, wgZ0, wgNz);
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const k = j * wgNx + i;
+        (bins[k] ??= []).push(item);
+      }
+    }
+  };
+  const wgBuild = () => {
+    wgCoreE = edges.length;
+    wgCoreN = nodes.length;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let ni = 0; ni < nodes.length; ni++) {
+      const nx = nodes[ni][0];
+      const nz = nodes[ni][1];
+      if (nx < minX) minX = nx;
+      if (nx > maxX) maxX = nx;
+      if (nz < minZ) minZ = nz;
+      if (nz > maxZ) maxZ = nz;
+    }
+    if (!Number.isFinite(minX)) {
+      minX = 0;
+      maxX = 0;
+      minZ = 0;
+      maxZ = 0;
+    }
+    wgX0 = minX - WALK_MARGIN;
+    wgZ0 = minZ - WALK_MARGIN;
+    const spanX = maxX - minX + WALK_MARGIN * 2;
+    const spanZ = maxZ - minZ + WALK_MARGIN * 2;
+    wgCell = WALK_CELL;
+    for (;;) {
+      wgNx = Math.max(1, Math.ceil(spanX / wgCell));
+      wgNz = Math.max(1, Math.ceil(spanZ / wgCell));
+      if (wgNx * wgNz <= WALK_MAX_CELLS) break;
+      wgCell *= 2; // a freak plot coarsens the grid rather than allocating for ever
+    }
+    wgE = new Array(wgNx * wgNz);
+    wgN = new Array(wgNx * wgNz);
+    for (let ei = 0; ei < wgCoreE; ei++) {
+      const [ea, eb] = edges[ei];
+      const ax2 = nodes[ea][0];
+      const az2 = nodes[ea][1];
+      const bx2 = nodes[eb][0];
+      const bz2 = nodes[eb][1];
+      wgPut(
+        wgE,
+        Math.min(ax2, bx2) - WALK_REACH,
+        Math.max(ax2, bx2) + WALK_REACH,
+        Math.min(az2, bz2) - WALK_REACH,
+        Math.max(az2, bz2) + WALK_REACH,
+        ei,
+      );
+    }
+    // a node's test is `max(0, dist − sq/2) < reach`, i.e. dist < reach + sq/2
+    const nodeReach = WALK_REACH + sq / 2;
+    for (let ni = 0; ni < wgCoreN; ni++) {
+      const nx = nodes[ni][0];
+      const nz = nodes[ni][1];
+      wgPut(wgN, nx - nodeReach, nx + nodeReach, nz - nodeReach, nz + nodeReach, ni);
+    }
+  };
+
+  /** one edge against the running best (shared by the bucket and the tail) */
   const walkYAt = (x: number, z: number) => {
+    if (wgCoreE < 0) wgBuild();
     let best = flatWalkY;
-    let bestD = width / 2 + 0.45; // corridor half-width + shoulder slack
-    for (let ei = 0; ei < edges.length; ei++) {
+    let bestD = WALK_REACH;
+    let bestI = Infinity; // index of whatever set bestD — the tie-break
+    const cell = wgIdx(z, wgZ0, wgNz) * wgNx + wgIdx(x, wgX0, wgNx);
+    const bE = wgE[cell];
+    const nE = bE === undefined ? 0 : bE.length;
+    const tailE = edges.length - wgCoreE;
+    for (let k = 0; k < nE + tailE; k++) {
+      // the indexed bucket first, then the live tail in index order — which is
+      // what makes the tie rule below reproduce a plain ascending scan
+      const ei = k < nE ? bE![k] : wgCoreE + (k - nE);
       const [ea, eb] = edges[ei];
       const [ax2, az2] = nodes[ea];
       const [bx2, bz2] = nodes[eb];
@@ -1006,23 +1150,104 @@ export function buildPathNetwork(t: typeof THREE, net: PathNet, opts: PathNetwor
       const L2 = ex2 * ex2 + ez2 * ez2 || 1;
       const u = Math.max(0, Math.min(1, ((x - ax2) * ex2 + (z - az2) * ez2) / L2));
       const d = Math.hypot(x - (ax2 + ex2 * u), z - (az2 + ez2 * u));
-      if (d < bestD) {
+      // TIE = lowest index, exactly as the old index-order scan resolved it.
+      // `bestI !== Infinity` keeps the FIRST comparison strict: an edge exactly
+      // `WALK_REACH` away was out of reach before and still is.
+      if (d < bestD || (bestI !== Infinity && d === bestD && ei < bestI)) {
         bestD = d;
+        bestI = ei;
         best = yOf(ea) + (yOf(eb) - yOf(ea)) * u + H;
       }
     }
     // node pads (covers elevated pads + stall fronts standing just beside
     // one) — an on-corridor edge sample always wins over a nearby pad, so
     // mid-ramp heights never snap to the knuckle's level early
-    for (let ni = 0; ni < nodes.length; ni++) {
+    const bN = wgN[cell];
+    const nN = bN === undefined ? 0 : bN.length;
+    const tailN = nodes.length - wgCoreN;
+    let bestNi = Infinity;
+    for (let k = 0; k < nN + tailN; k++) {
+      const ni = k < nN ? bN![k] : wgCoreN + (k - nN);
       const d = Math.max(0, Math.hypot(x - nodes[ni][0], z - nodes[ni][1]) - sq / 2);
-      if (d < bestD - 1e-9) {
+      // …and a node may only tie-break against another NODE that already won:
+      // the 1e-9 margin against an EDGE's distance is load-bearing (a
+      // mid-ramp sample must not snap to the knuckle's level early).
+      if (d < bestD - 1e-9 || (bestNi !== Infinity && d === bestD && ni < bestNi)) {
         bestD = d;
+        bestNi = ni;
         best = yOf(ni) + H;
       }
     }
     const pbW = plazaBaseAt(x, z);
     if (pbW !== null) best = Math.max(best, pbW + plazaTop);
+    // TEMP SELF-CHECK
+    {
+      let b2 = flatWalkY;
+      let d2 = WALK_REACH;
+      let win = -1;
+      for (let ei = 0; ei < edges.length; ei++) {
+        const [ea, eb] = edges[ei];
+        const [ax2, az2] = nodes[ea];
+        const [bx2, bz2] = nodes[eb];
+        const ex2 = bx2 - ax2;
+        const ez2 = bz2 - az2;
+        const L2 = ex2 * ex2 + ez2 * ez2 || 1;
+        const u = Math.max(0, Math.min(1, ((x - ax2) * ex2 + (z - az2) * ez2) / L2));
+        const d = Math.hypot(x - (ax2 + ex2 * u), z - (az2 + ez2 * u));
+        if (d < d2) {
+          d2 = d;
+          win = ei;
+          b2 = yOf(ea) + (yOf(eb) - yOf(ea)) * u + H;
+        }
+      }
+      for (let ni = 0; ni < nodes.length; ni++) {
+        const d = Math.max(0, Math.hypot(x - nodes[ni][0], z - nodes[ni][1]) - sq / 2);
+        if (d < d2 - 1e-9) {
+          d2 = d;
+          b2 = yOf(ni) + H;
+        }
+      }
+      if (pbW !== null) b2 = Math.max(b2, pbW + plazaTop);
+      const w = window as unknown as { __wgBad?: number; __wgN?: number; __wgWorst?: number; __wgEx?: unknown[] };
+      w.__wgN = (w.__wgN ?? 0) + 1;
+      if (Math.abs(b2 - best) > 1e-9) {
+        w.__wgBad = (w.__wgBad ?? 0) + 1;
+        w.__wgWorst = Math.max(w.__wgWorst ?? 0, Math.abs(b2 - best));
+        w.__wgEx = w.__wgEx ?? [];
+        if (w.__wgEx.length < 6)
+          w.__wgEx.push({
+            x, z, grid: best, brute: b2, gridD: bestD, bruteD: d2,
+            cell, bE: (wgE[cell] ?? []).length, bN: (wgN[cell] ?? []).length,
+            nx: wgNx, nz: wgNz, cellSize: wgCell, x0: wgX0, z0: wgZ0,
+            nodesN: nodes.length, edgesN: edges.length, wgCoreN, wgCoreE, sq, reach: WALK_REACH,
+            win,
+            winInBucket: (wgE[cell] ?? []).indexOf(win) >= 0,
+            winA: win >= 0 ? nodes[edges[win][0]] : null,
+            winB: win >= 0 ? nodes[edges[win][1]] : null,
+            recomputedCells: win >= 0 ? (() => {
+              const ax2 = nodes[edges[win][0]][0]; const az2 = nodes[edges[win][0]][1];
+              const bx2 = nodes[edges[win][1]][0]; const bz2 = nodes[edges[win][1]][1];
+              return [wgIdx(Math.min(ax2,bx2)-WALK_REACH,wgX0,wgNx), wgIdx(Math.max(ax2,bx2)+WALK_REACH,wgX0,wgNx),
+                      wgIdx(Math.min(az2,bz2)-WALK_REACH,wgZ0,wgNz), wgIdx(Math.max(az2,bz2)+WALK_REACH,wgZ0,wgNz)];
+            })() : null,
+            queryCell: [wgIdx(x, wgX0, wgNx), wgIdx(z, wgZ0, wgNz)],
+            bucketList: (wgE[cell] ?? []).slice(),
+            expected: (() => {
+              const out: number[] = [];
+              for (let ei = 0; ei < edges.length; ei++) {
+                const a0 = nodes[edges[ei][0]]; const b0 = nodes[edges[ei][1]];
+                const i0 = wgIdx(Math.min(a0[0], b0[0]) - WALK_REACH, wgX0, wgNx);
+                const i1 = wgIdx(Math.max(a0[0], b0[0]) + WALK_REACH, wgX0, wgNx);
+                const j0 = wgIdx(Math.min(a0[1], b0[1]) - WALK_REACH, wgZ0, wgNz);
+                const j1 = wgIdx(Math.max(a0[1], b0[1]) + WALK_REACH, wgZ0, wgNz);
+                const qi = wgIdx(x, wgX0, wgNx); const qj = wgIdx(z, wgZ0, wgNz);
+                if (qi >= i0 && qi <= i1 && qj >= j0 && qj <= j1) out.push(ei);
+              }
+              return out;
+            })(),
+          });
+      }
+    }
     return best;
   };
 

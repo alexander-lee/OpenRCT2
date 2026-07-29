@@ -4,7 +4,7 @@
 *(never from `'./Park'`: only the `<Park>` wrappers + track-piece JSX live there. A wrong
 specifier makes esbuild refuse the WHOLE bundle — the round-8 black-page failure.)*
 
-**Tidewater Hollow's food stall: a weathered DOCKSIDE SUSHI COUNTER** — driftwood-grey plank cladding rope-lashed to two gantry posts, a cold slate top, an OPEN ice case (a fishmonger's chilled tray, not a sealed glass cabinet — this is a shipwreck cove, not a mall) holding a row of nigiri and a few stood maki rolls, a short brine-teal noren strip, a swag of cork/glass fishing floats, a slate chalk menu on its own post, and one paper lantern. Salt-weathered and maritime, not neon-Tokyo — the brief was "stall should just be sushi" for a world that already has `<TidewaterScenery>` (the wreck, the reef, the anchor, the tide pool, the pilings) and `<ReefRacer>` (the flagship water coaster) beside it, so this sits on the same shelf as those, not on its own.
+**Tidewater Hollow's food stall: a weathered DOCKSIDE SUSHI COUNTER** — driftwood-grey plank cladding rope-lashed to two gantry posts, a cold slate top, an OPEN ice case (a fishmonger's chilled tray, not a sealed glass cabinet — this is a shipwreck cove, not a mall) holding a row of nigiri and a few stood maki rolls, a short brine-teal noren strip, a swag of cork/glass fishing floats, a slate chalk menu on its own post, one paper lantern, and — standing on a driftwood trestle behind the counter — a **GIANT NIGIRI** (1.8 u wide, ~15× the case pieces: a salmon slice with a nori band over a cream rice pillow) so the stall says what it sells from the park camera and not only from the counter. Salt-weathered and maritime, not neon-Tokyo — the brief was "stall should just be sushi" for a world that already has `<TidewaterScenery>` (the wreck, the reef, the anchor, the tide pool, the pilings) and `<ReefRacer>` (the flagship water coaster) beside it, so this sits on the same shelf as those, not on its own.
 
 Serving front faces local **+z**; the GameManager attach point sits **0.72 u** out that way. Sized against a 0.5-scale park guest like the four catalog shops and EmberRoast: counter top y 0.39–0.42, ice-case roof ~0.63, gantry lintel 1.05, overall envelope 1.09 tall (measured bbox) — the same order of magnitude as HotDogStand's ridge (1.42) and EmberRoast's stack (1.66), not a doubled-up building.
 
@@ -22,7 +22,7 @@ Every timber/rope/rust/barnacle hex is `TIDEWATER`, imported straight from `comp
 
 ## The sushi props — one recipe, two scales
 
-`nigiriPiece(t, s, topping, seed, { nori? })` (an oval rice pillow + a draped, hashed-jittered topping slice) and `makiRoll(t, r, h, fill, seed)` (a nori-wrapped cylinder stood on its cut face, with a pale rice ring and a coloured filling dot) serve BOTH the case display (7 nigiri across 4 toppings + 3 stood maki, the sign of what this stall sells) and the held tray — the same "one recipe, several scales" convention as EmberRoast's `skewerProp`.
+`nigiriPiece(t, s, topping, seed, { nori? })` (an oval rice pillow + a draped, hashed-jittered topping slice) and `makiRoll(t, r, h, fill, seed)` (a nori-wrapped cylinder stood on its cut face, with a pale rice ring and a coloured filling dot) serve BOTH the case display (7 nigiri across 4 toppings + 3 stood maki, the sign of what this stall sells) and the held tray — the same "one recipe, several scales" convention as EmberRoast's `skewerProp`. Since 2026-07-28 `nigiriPiece` also serves a **third** scale: the GIANT hero piece at `s = 1.55` (see below).
 
 ## The held sushi tray (`buildHeldSushiTray`)
 
@@ -40,12 +40,12 @@ Override per placement with `register={{ heldItem }}`. See `components/GameManag
 
 ## Budgets
 
-**1 real PointLight** — the paper lantern, gated FULLY TO ZERO by day (`nightKOf`, no floor): a paper lantern with nothing burning inside is just a paper ball in daylight, the opposite of EmberRoast's lava rule ("lava is not a lamp, it never gates to zero") — a lantern IS a lamp, and lamps go dark. **0 particles** (budget 300): a still dockside counter, matching TidewaterScenery's own "no smoke, no spray" discipline for the cove. 107 meshes / ~10.2k tris for the whole rig (probe, `withGuest: true`); static repeats (plank cladding front+sides, chalk menu lines, barnacle fleck) batched through `mergedBoxes`; fine detail (barnacle fleck, chalk lines) tagged `userData.lodDetail`. Deterministic — hashed sines only, never `Math.random`/`Date.now`; the updater takes ABSOLUTE time.
+**1 real PointLight** — the paper lantern, gated FULLY TO ZERO by day (`nightKOf`, no floor): a paper lantern with nothing burning inside is just a paper ball in daylight, the opposite of EmberRoast's lava rule ("lava is not a lamp, it never gates to zero") — a lantern IS a lamp, and lamps go dark. **0 particles** (budget 300): a still dockside counter, matching TidewaterScenery's own "no smoke, no spray" discipline for the cove. 111 meshes / ~10.4k tris for the whole rig (probe, `withGuest: true`; it was 107 / ~10.2k before the giant nigiri — meshes-only, no guest: **98 / 7 936**, up from 94 / 7 728); static repeats (plank cladding front+sides, chalk menu lines, barnacle fleck, **and the hero's whole trestle — two posts plus a cross-rail in one mesh**) batched through `mergedBoxes`; fine detail (barnacle fleck, chalk lines) tagged `userData.lodDetail`. Deterministic — hashed sines only, never `Math.random`/`Date.now`; the updater takes ABSOLUTE time.
 
 ## Previews
 
 1. **Selling sushi (live sim)** — a miniature `createGameManager` on a path loop with the stall registered at the counter front (anchor `[0, 0, 0.28]`, front z 1.0), pre-warmed 32 sim-s so the crowd is already hungry, then 2× time: guests walk up, buy, and stroll off carrying the tray until only a container is left to bin.
-2. **3D rig** — `<SushiStall withGuest>` in `<ScenePreview distance={4.8} targetY={0.75} autoRotate={false}>`.
+2. **3D rig** — `<SushiStall withGuest>` in `<ScenePreview distance={6.2} targetY={1.15} autoRotate={false}>` (reframed 2026-07-28 to get the giant nigiri in shot; it was 4.8 / 0.75).
 
 ## Verification
 
@@ -105,3 +105,27 @@ retried:
 * **A hero sign prop** (a giant nigiri, the HotDogStand move). The stall is 1.5 u wide on a
   frontage row between two lanterns and a bin; a prop big enough to read from the park camera
   would have been out of scale with its own row and with the cove's understated dressing.
+  **⚠️ THIS CALL WAS REVERSED ON 2026-07-28 — see the section below. It was wrong.**
+
+---
+
+## ⚠️ THE GIANT NIGIRI — the rejected hero prop, built (2026-07-28)
+
+**The audit above rejected a hero sign prop and the overhead shot says that was wrong on the thing that matters most.** From a high park camera this stall was a **GREY SLAB with a line of coloured confetti on it**: the ice case — the entire read — is 0.1 u pieces on a 1.6 u slate top, and slate is the same value as tarmac, asphalt paths and wet rock. Nothing about it said *food*, let alone *sushi*. The "out of scale with its own row" reasoning was about how the stall sits next to a lantern and a bin; the actual question is whether a guest can tell what the shop sells from where they choose a shop, and the answer was no. `CottonCandyStand` and `BurgerShop` are legible from any distance for one reason: **THE SHOP IS THE ITEM** at ~2 u across, so the silhouette carries the message with no detail needing to resolve.
+
+So: **ONE nigiri at `s = 1.55`** — a 1.69 × 1.00 rice pillow under a 1.83-wide salmon slice, ~15× the case pieces — **stood on two driftwood posts BEHIND the counter**, plus one nori band. Same `nigiriPiece` recipe as the case and the held tray, a third scale, no new vocabulary. The salmon orange `0xe8916a` against slate, driftwood grey and grass is the highest-chroma thing for 20 u in any direction.
+
+### What it must not do, and how that was solved
+
+| decision | why |
+|---|---|
+| **BEHIND the counter (`SZ = −0.62`), not on the gantry** | on the lintel (z 0.38) a 1.33-deep nigiri spans z −0.29…1.05 and sits directly over the **OPEN ICE CASE**, which is this stall's whole reason to exist — the same "no roof, no awning" rule this component already lives by (*"an awning plate here reads as a lid from above"*). Behind the counter it grows only the **BACK** of the envelope (to z ≈ −1.3), the safe direction: guests approach from +z, the registered body is a fixed `hx 0.6 / hz 0.42` on the anchor, and the 0.72 u attach point and the counter lip at z 0.470 are untouched. The serving side stays completely open |
+| **tipped forward 0.60 rad** | left plumb, a ~50° park camera looks almost straight down onto the salmon slice: the topping hides the rice and the prop reads as an **orange TABLETOP on two legs**. A nigiri's identity is its SIDE profile. **0.30 was tried first and was not enough** (still a tabletop). At 0.60 the topping's lower front corner is at y 1.02 / z −0.18 — which is why `SZ` moved back from −0.45 to −0.62: from ~50° above and in +z an object there occludes ground only past z ≈ 0.68, so the ice case at z 0.02 (±0.22) stays clear |
+| **no `nori: true`** | that option belts ONE hashed side of the pillow — right for a 0.1 u case piece where it is a dark accent, but at s 1.55 it is a 0.22 × 0.62 × 1.18 **black box** hanging off one end with no visible pillow behind it. It read as an unexplained crate |
+| **ONE nori band across the middle instead** | a big orange oval on two posts still read as a **parasol**. One black strap over the crown and down both flanks (the unagi/tamago wrap, a single box, 1.36 deep against the topping's 1.33 so it stands a hair proud at both edges and reads as *wrapped* rather than painted) makes it a shape nobody misreads: orange slice, black belt, cream pillow. One draw |
+| **`castShadow = false` on the hero** | it is 1.55 u up and behind, so a cast shadow would only fall across the counter goods. The trestle still casts (it is structure) |
+| **night-gated emissive, no new light, TINTED PER PART** | the paper lantern is the stall's ONE light, gates fully to zero and reaches 1.8 u — the hero is 1.55 u up and 0.9 u behind it, so after dark the thing that makes the stall findable would be the darkest surface in frame. `mat()` never shares a material instance, so an emissive on the hero's own materials costs no light and no draw. **The first night render used a single warm `0xffb07a` at 0.28 and the sign washed out to a FLAT CREAM BLOB** — the nori band glowed as brightly as the rice and vanished, the salmon lost its hue: bright but no longer *readable*, which is the opposite of the point. It is `emissive.copy(material.color)` at **0.20** now, so the pillow glows cream, the slice salmon, the band black. All three parts are untextured, so `material.color` is the real colour; a mapped material would need `emissiveMap` because `mat()` bakes the colour into the texture and leaves `color` white. **The lantern still gates to zero** — this is a painted sign catching the lantern, not a second lamp |
+
+**MEASURED COST: +4 colour draws, +1 shadow draw, +208 triangles.** 94 → **98 meshes**, 92 → **93** shadow-casting meshes, 7 728 → **7 936** tris (probe: mesh/shadow/triangle census of the built group, working tree vs `3f9e83c461`, `withGuest: false`). The one extra shadow-caster is the merged trestle; the hero itself casts nothing.
+
+The 3D-rig preview was reframed **distance 4.8 → 6.2 / targetY 0.75 → 1.15**: at the old pose the hero's crown (y ≈ 2.3) was cropped off the canvas, which is the one thing that preview now exists to judge.

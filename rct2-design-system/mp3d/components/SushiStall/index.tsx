@@ -461,7 +461,18 @@ export function buildSushiStall(t: typeof THREE, opts: SushiStallOpts = {}): Sus
       // a material instance, so a night-gated emissive on the hero's OWN
       // materials costs no light and no draw call. (The lantern still gates to
       // zero: this is a painted sign catching the lantern, not a second lamp.)
-      mm.emissive.setHex(0xffb07a);
+      //
+      // ⚠️ THE GLOW IS TINTED WITH EACH PART'S OWN COLOUR, NOT WITH ONE WARM
+      // HEX. The first night shot used a single 0xffb07a on all three materials
+      // at 0.28 and the sign washed out to a FLAT CREAM BLOB: the nori band
+      // glowed as brightly as the rice and vanished, and the salmon lost its
+      // hue — i.e. the prop was BRIGHT at night and no longer READABLE, which
+      // is the opposite of the point. `emissive.copy(color)` keeps the pillow
+      // cream, the slice salmon and the band black, at 0.2 instead of 0.28.
+      // (All three parts here are untextured, so `material.color` is the real
+      // colour — a mapped material would need `emissiveMap`, because `mat()`
+      // bakes the colour into the texture and leaves `color` white.)
+      mm.emissive.copy(mm.color);
       signMats.push(mm);
     });
     g.add(hero);
@@ -532,8 +543,8 @@ export function buildSushiStall(t: typeof THREE, opts: SushiStallOpts = {}): Sus
     lanternLight.intensity = ease * 0.85 * flicker;
     // the GIANT NIGIRI reads as a lit sign after dark and as plain food by day —
     // a self-lit rice pillow at noon would look like a paper lamp. Kept LOW
-    // (0.28): "still findable in the dark", not a second light source.
-    for (const sm of signMats) sm.emissiveIntensity = 0.28 * ease;
+    // (0.20): "still findable in the dark", not a second light source.
+    for (const sm of signMats) sm.emissiveIntensity = 0.2 * ease;
     if (peep) peep.group.position.y = Math.abs(Math.sin(time * 2)) * 0.01; // idle shuffle
   };
 

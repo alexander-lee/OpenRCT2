@@ -57,9 +57,25 @@ The catslide solved the SHAPE. The 50° audit shot said the roof was still wrong
 - **THE HONEY CROCK** with a dipper leaning in it, a run of honey down the crock and a smear on the counter. A crock with nothing coming out of it is a jar.
 - **A CUT HONEYCOMB FRAME** propped in the hatch reveal: a shallow wooden frame filled with a merged grid of hexagon cells.
 - **THE SIGN** — a painted board on a wrought-iron scroll bracket off the +x gable eave, carrying ONE HEROIC CANDIED APPLE (the same `candyApple` recipe, at 0.088 R) over a painted honeycomb roundel. Same move as EmberRoast's giant skewer.
+- **THE GIANT CANDIED APPLE ON THE RIDGE** — 0.60 R, 1.20 × 1.32, the fifth scale of the same recipe. See the section below; it is what makes this stall findable from a park camera.
 - **THE TOFFEE CAULDRON** is doing a job — it is where the apples get dipped: an iron pot (belly, rolled rim, two lug handles) on a three-leg tripod over three cold logs and a bed of embers, half full of molten toffee with a stirred **swirl** across it, and **two freshly-dipped apples hung upside-down on a setting rack** over it.
 
-`candyApple(r, stickLen, seed, { simple })` is one recipe at four scales — the counter stand, the cauldron rack, the sign, and the held item. `simple` drops the highlight shell and the toffee drip for the nine small instances: two extra meshes each is 18 draw calls for a highlight nobody can resolve at 0.034 R.
+`candyApple(r, stickLen, seed, { simple })` is one recipe at FIVE scales — the counter stand (0.036 R), the cauldron rack (0.034 R), the hanging sign (0.088 R), the held item (0.062 R) and the GIANT on the ridge (0.60 R). `simple` drops the highlight shell and the toffee drip for the nine small instances: two extra meshes each is 18 draw calls for a highlight nobody can resolve at 0.034 R.
+
+## ⚠️ THE GIANT CANDIED APPLE — the building says what it sells AT PARK SCALE (2026-07-28)
+
+**The 0.088 R sign apple is ONE RED PIXEL from a park camera.** It is correctly sized for a guest standing at the counter, and at ride distance this cottage read as a brown thatch rectangle among rides ten times its size — the brief was, in the user's words, that the stall is "just not noticeable". `CottonCandyStand` and `BurgerShop` never have that problem for one reason: **THE SHOP IS THE ITEM** (a 2.1 u sesame bun, a 1.7 u floss cloud), so the SILHOUETTE carries the whole message from any distance with no detail needing to resolve.
+
+This cottage cannot *be* an apple without throwing away the catslide, the half-timbering and the recessed hatch, so it takes the exemplars' move one step down: **ONE candied apple at 0.60 R — 1.20 wide × 1.32 tall, 6.8× the sign apple — planted through the roof ridge on its own 1.5 u stick.** The apple, not the thatch, is now the largest single shape in the piece, and the stall's top goes from **1.62 to 2.58**.
+
+| decision | why |
+|---|---|
+| **the RIDGE, not the +x gable** | hung beside the existing board a 1.2-wide apple pushes the footprint from x 1.39 to ~1.6, into the cauldron and the approach. Over the ridge it lives inside **x ±0.60 / z −0.69…0.49** — entirely inside the measured 2.71 × 1.84 footprint. The registered body (`hx 0.6, hz 0.42` on the anchor), the queue and the 0.72 u attach point are untouched |
+| **y 1.90, not 2.00** | at 2.00 the two-box iron socket collar the first pass added was **entirely inside the fruit** (collar top 1.44 against an apple underside at 1.34) — a draw call for geometry no camera can see. The collar is gone and the apple sits at 1.90: underside **1.24** against a sagging ridge line `ridgeY(0)` = **1.185** and a ridge-cap crown at **1.255**, i.e. SEATED IN THE THATCH with its stick spearing down to y 0.73. Nothing floats |
+| **`castShadow = false`** | a 1.3 u ball 1.9 u up drops a disc of shade across the counter — the catslide lesson in a third shape ("nothing sits over the thing you are selling") — and it saves 5 shadow-pass draws |
+| **night-gated emissive, no new light** | the apple's centre is 1.9 u up, outside the eave lantern's useful reach, so after dark the one thing that makes this stall findable would be the DARKEST surface in the piece. `mat()` never shares a material instance, so `emissive = CANDY_HI` on the apple's OWN materials, lerped `0 → 0.32` on the smoothstepped `nightKOf(g)`, costs **no light and no draw**. Zero by day — a self-lit apple at noon is a bauble. The STICK opts out: it is the one MAPPED material in the recipe and `mat()` bakes the colour into the texture leaving `material.color` white, so a plain emissive would glow it white (and it is buried in the thatch anyway) |
+
+**MEASURED COST: +5 colour draws, +0 shadow draws, +1 032 triangles.** 146 → **151 meshes**, 131 → **131** shadow-casting meshes, 23 311 → **24 343** tris (probe: mesh/shadow/triangle census of the built group, working tree vs `3f9e83c461`, `withGuest: false`).
 
 ## Dressing
 
@@ -97,7 +113,7 @@ Previews **2** and **3** build a peep at the *exact* GameManager transform and s
 
 ## Budgets (measured headlessly)
 
-**146 meshes / 23 251 triangles** (164 meshes with the decorative guest), **2 real PointLights** (the day-floored toffee bounce + the night-gated eave lantern), **1 emitter / 30 particles** (the chimney's wisp of baking smoke — non-additive, because smoke has to occlude; that wisp is the cue that sells a cake shop), **12 objects tagged `userData.lodDetail`**. Every static repeat batched through `mergedBoxes` / `mergedParts`: the plinth, the timber framing, the cob panels, seven thatch courses, the ridge run, the hazel pegs, the roof moss, the chimney courses, the awning scallops, the sign bracket and roundel, the crate slats, the log ends, the besom twigs, the herb stems, the honeycomb cells, the drill holes, the tripod legs, the setting rack. Deterministic — hashed sines only, never `Math.random` / `Date.now`; the updater takes ABSOLUTE time. Verified: two independent builds of one seed have identical bounds.
+**151 meshes / 24 343 triangles** (169 meshes with the decorative guest) since the giant ridge apple landed — it was 146 / 23 251 before it. **2 real PointLights** (the day-floored toffee bounce + the night-gated eave lantern), **1 emitter / 30 particles** (the chimney's wisp of baking smoke — non-additive, because smoke has to occlude; that wisp is the cue that sells a cake shop), **12 objects tagged `userData.lodDetail`**. Every static repeat batched through `mergedBoxes` / `mergedParts`: the plinth, the timber framing, the cob panels, seven thatch courses, the ridge run, the hazel pegs, the roof moss, the chimney courses, the awning scallops, the sign bracket and roundel, the crate slats, the log ends, the besom twigs, the herb stems, the honeycomb cells, the drill holes, the tripod legs, the setting rack. Deterministic — hashed sines only, never `Math.random` / `Date.now`; the updater takes ABSOLUTE time. Verified: two independent builds of one seed have identical bounds.
 
 The held apple is **5 meshes / 1 032 triangles**, built ONCE per stall and `clone()`d per purchase (geometries and materials shared with the prototype — which is also why nothing is disposed when an item leaves a hand).
 
@@ -139,6 +155,8 @@ stall's own previews were already shot at the park camera — nothing below rest
 | Guest location | 15/15 | a selling stall, so the contract is the pad and the attach point, and the land measures them: pad centre **1.320000** u off the street (over `lintPadOffLattice`'s 1.20 threshold, and 1.2 exactly is not representable in binary), attach **0.60** u out on the walked slab. Live sim: guests hunger-seek it, buy, walk off eating a real apple and bin the container |
 | Aesthetic | 20/20 | at a real **50°** the thatch reads as lapped courses with damp streaks rather than brickwork, the roof is no longer the brightest thing in the piece, and every good on the counter is legible in daylight. Night is the eave lantern pooling on the goods with the toffee still visibly hot |
 | **Total** | **100/100** | |
+
+**Note (2026-07-28):** the audit's `Cohesion` footprint (2.712 × 1.835, top **1.623**) predates the giant ridge apple. The x/z figures still hold to the millimetre — the apple is inside x ±0.60 — but the **top is now 2.58**. Nothing else in the table moves: no new lights, no new particles, the held item and the attach point are untouched, and the shadow-pass count is unchanged because the apple does not cast.
 
 **Probes:** `hw-hand.mjs` (the arm-local held-item fit), `hw-facts.mjs`,
 `/tmp/mp3d-render/aud-tw-facts.tsx` (census + footprint).

@@ -116,33 +116,39 @@ const out = await page.evaluate(() => {
     const cz = wrap.position.z;
     const ex = (box.max.x - box.min.x) / 2;
     const ez = (box.max.z - box.min.z) / 2;
-    const deltas = [];
-    const N = 19; // 361 samples per rect — enough to see the tail, not the mean
+    // INTERIOR and EDGE reported apart. The rect's outer rings are FEATHERED on
+    // purpose — the lift tapers through zero to −EDGE_SINK so the floor's boundary
+    // is a terrain-following contour instead of a hard rectangular step — so
+    // "buried" samples out there are the feature working, and pooling them with
+    // the interior hides the only number that matters: whether the floor clears
+    // the terrain everywhere it is meant to be seen.
+    const inner = [];
+    const edge = [];
+    const N = 25; // 625 samples per rect — enough to see the tail, not the mean
     for (let i = 0; i < N; i += 1)
       for (let j = 0; j < N; j += 1) {
-        const x = cx + ((i / (N - 1)) * 2 - 1) * ex * 0.98;
-        const z = cz + ((j / (N - 1)) * 2 - 1) * ez * 0.98;
+        const fx = (i / (N - 1)) * 2 - 1;
+        const fz = (j / (N - 1)) * 2 - 1;
+        const x = cx + fx * ex * 0.99;
+        const z = cz + fz * ez * 0.99;
         const from = new THREE.Vector3(x, 200, z);
         ray.set(from, down);
         const wgHit = ray.intersectObject(g, true)[0];
         ray.set(from, down);
         const tHit = terrain ? ray.intersectObject(terrain, true)[0] : null;
         if (!wgHit || !tHit) continue;
-        deltas.push(wgHit.point.y - tHit.point.y);
+        const d = wgHit.point.y - tHit.point.y;
+        // the feather is EDGE_RINGS (3) grid rings of `tile` (1.2 u) per side
+        const band = 3 * 1.2;
+        (Math.min(ex - Math.abs(fx * ex), ez - Math.abs(fz * ez)) > band ? inner : edge).push(d);
       }
-    deltas.sort((a, b) => a - b);
-    const at = (q) => (deltas.length ? +deltas[Math.min(deltas.length - 1, Math.round(q * (deltas.length - 1)))].toFixed(4) : null);
-    return {
-      key: r.key.slice(2, 24),
-      samples: deltas.length,
-      // floor MINUS terrain, so positive = the floor shows, negative = buried
-      dMin: at(0),
-      dP05: at(0.05),
-      dMedian: at(0.5),
-      dP95: at(0.95),
-      dMax: at(1),
-      buried: deltas.filter((d) => d <= 0).length,
+    const stat = (a) => {
+      a.sort((p, q) => p - q);
+      const at = (qq) => (a.length ? +a[Math.min(a.length - 1, Math.round(qq * (a.length - 1)))].toFixed(4) : null);
+      return { n: a.length, min: at(0), p05: at(0.05), median: at(0.5), p95: at(0.95), max: at(1), buried: a.filter((d) => d <= 0).length };
     };
+    // floor MINUS terrain, so positive = the floor shows, negative = buried
+    return { key: r.key.slice(2, 24), interior: stat(inner), feather: stat(edge) };
   });
 
   const rep = window.__parkReport ?? null;

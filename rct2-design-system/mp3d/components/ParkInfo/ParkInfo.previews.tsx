@@ -53,7 +53,6 @@ function ParkInfoDemo() {
               intensity: 3 + i,
               minWait: 2,
               maxWait: 6,
-              breakdownEvery: p.every, // staggered so dots differ over time
               queueAnchor: [p.x + dir[0] * 2.0, 0, p.z + dir[1] * 2.0],
               queueDir: dir,
               boardPoint: [p.x, padTop + 0.1, p.z],
@@ -95,7 +94,7 @@ const previews = {
     {
       name: 'Park roster with click-to-view teleport',
       description:
-        'The Park Information window (bottom-right anchored, collapsible — both mandatory per rules/ui.md) listing three live GameManager rides: each row shows an RCT2-coded status dot (green Open, red Broken down, amber Being repaired — the rides run staggered deterministic breakdown cycles), the ride name and queue count. Clicking a row teleports the main orbit camera to a vantage of that ride via api.setCameraPose; drag to orbit from there.',
+        'The Park Information window (bottom-right anchored, collapsible — both mandatory per rules/ui.md) listing three live GameManager rides: each row shows an RCT2-coded status dot (green Open; the red Broken down and amber Being repaired arms remain wired, but NO RIDE CAN BREAK DOWN any more, so every live row reads Open), the ride name and queue count. Clicking a row teleports the main orbit camera to a vantage of that ride via api.setCameraPose; drag to orbit from there.',
       render: () => <ParkInfoDemo />,
     },
   ],

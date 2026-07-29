@@ -917,13 +917,20 @@ export function buildMonorailScene(
     }
     const dt = lastRaw < 0 ? 0 : Math.max(0, Math.min(0.25, time - lastRaw));
     lastRaw = time;
-    // A BREAKDOWN is the one thing that stops the fleet, and the FSM never says
-    // so out loud: `breakDown()` parks the ride in 'movingToEndOfStation' and
-    // then returns early for BREAK_DOWN_SECS + REPAIR_SECS (18 s) without
-    // emitting another state, while 'brokenDown'/'beingRepaired' exist only on
-    // `handle.status()`. A NORMAL 'movingToEndOfStation' lasts exactly 1.0 s
-    // (GameManager/rideFsm.ts), so one that outlives 2.5 s is a breakdown —
-    // that dwell time IS the signal, and it is the only one there is.
+    // A STALL BRAKE, and as of the breakdown removal it is DEAD CODE — kept
+    // deliberately, so read this before deleting or "fixing" it.
+    //
+    // It exists because a stopped ride never announced itself: the FSM parked a
+    // broken ride in 'movingToEndOfStation' and then held there without
+    // emitting another state, so the only signal was the DWELL — a normal
+    // 'movingToEndOfStation' lasts exactly 1.0 s (GameManager/rideFsm.ts), and
+    // one outliving 2.5 s meant the ride was out of service.
+    //
+    // NO RIDE CAN BREAK DOWN ANY MORE (GameManager/Context.md, "NO RIDE CAN
+    // BREAK DOWN"), so nothing reaches 2.5 s and this never fires. It stays
+    // because it is the fleet's only brake for a ride held stopped by ANY
+    // future cause, and because it costs one comparison per frame. If
+    // breakdowns ever come back it works unchanged.
     if (stateNow === 'movingToEndOfStation' && time - stateAt > 2.5) loopCtl.haltTarget = 0;
     const k = loopCtl.haltTarget;
     loopCtl.haltK = k > loopCtl.haltK ? Math.min(k, loopCtl.haltK + dt / 0.9) : Math.max(k, loopCtl.haltK - dt / 0.9);
