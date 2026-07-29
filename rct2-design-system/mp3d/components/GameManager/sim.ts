@@ -41,6 +41,7 @@ import type { createGuestFx } from './guestFx';
 import type { createAccess } from './access';
 import type { createRegistry, DanceZoneRec } from './registry';
 import type { createSpawn } from './spawn';
+import type { createCrowd } from './crowd';
 import type { createArrivals } from './arrivals';
 import type { createLocomotion } from './locomotion';
 import type { createNeeds } from './needs';
@@ -133,6 +134,10 @@ export interface Sim {
   access: ReturnType<typeof createAccess>;
   registry: ReturnType<typeof createRegistry>;
   spawn: ReturnType<typeof createSpawn>;
+  /** THE INSTANCED FAR CROWD (crowd.ts) — the visual LOD that makes a
+   *  500-guest park affordable. Installed BEFORE `spawn`, which registers each
+   *  new guest's palette with it. A no-op unless `opts.cameras` was wired. */
+  crowd: ReturnType<typeof createCrowd>;
   /** the GATE STREAM: RCT2's guest generation, rolled per RCT2 tick off the
    *  park rating (arrivals.ts). Installed after `spawn` — it calls it. */
   arrivals: ReturnType<typeof createArrivals>;

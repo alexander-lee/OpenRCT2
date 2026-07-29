@@ -362,6 +362,112 @@ export function buildSushiStall(t: typeof THREE, opts: SushiStallOpts = {}): Sus
   }
 
   // =========================================================================
+  // 3b. THE GIANT NIGIRI — the building says what it sells AT PARK SCALE
+  //
+  //     ⚠️ THIS IS A REVERSAL OF A RECORDED DECISION. This component's audit
+  //     (Context.md, 2026-07-25) explicitly CONSIDERED AND REJECTED a hero sign
+  //     prop: "a prop big enough to read from the park camera would have been
+  //     out of scale with its own row and with the cove's understated dressing."
+  //     The overhead audit shot says that call was wrong on the thing that
+  //     matters most. From a high park camera this stall is a GREY SLAB with a
+  //     line of coloured confetti on it: the ice case — the entire read — is
+  //     0.1-u pieces on a 1.6-u slate top, and slate is the same value as tarmac,
+  //     asphalt paths and wet rock. Nothing about it says food, let alone sushi.
+  //     Compare CottonCandyStand and BurgerShop, which are legible from any
+  //     distance for one reason: THE SHOP IS THE ITEM, at ~2 u across, so the
+  //     silhouette carries the whole message with no detail needing to resolve.
+  //
+  //     So: ONE nigiri at s 1.55 — a 1.69 × 1.00 rice pillow under a 1.83-wide
+  //     salmon slice, ~15× the case pieces — stood on two driftwood posts BEHIND
+  //     the counter. The salmon orange (0xe8916a) against slate, driftwood grey
+  //     and grass is the highest-chroma thing for 20 u in any direction. Same
+  //     `nigiriPiece` recipe as the case and the held tray — a third scale, no
+  //     new vocabulary.
+  //
+  //     ⚠️ THREE THINGS THE RENDERS FIXED, none of them visible on paper.
+  //     (a) NO `nori: true`. That option belts ONE hashed side of the pillow —
+  //         right for a 0.1-u case piece where it is a dark accent, but at s 1.55
+  //         it is a 0.22 × 0.62 × 1.18 BLACK BOX hanging off one end of the sign
+  //         with no visible pillow behind it. It read as an unexplained crate.
+  //     (b) IT IS TIPPED FORWARD 0.60 rad. Left plumb, a park camera at ~50°
+  //         looks almost straight down onto the salmon slice: the topping hides
+  //         the rice completely and the prop reads as an ORANGE TABLETOP on two
+  //         legs. A nigiri's identity is its SIDE profile — a pale pillow with a
+  //         slice draped over it — so the piece is rolled toward the approach
+  //         until the camera sees the slice square-on with the cream pillow's
+  //         front face still under it. 0.30 was tried first and was not enough
+  //         (still a tabletop). 0.60 puts the topping's lower front corner at
+  //         y 1.02 / z −0.18, which is why `SZ` moved back to −0.62: from ~50°
+  //         above and in +z an object there occludes ground only past z ≈ 0.68,
+  //         so the OPEN ICE CASE at z 0.02 (±0.22) stays clear — the one thing
+  //         this stall may never cover.
+  //     (c) IT WEARS ONE NORI BAND, ACROSS THE MIDDLE. A big orange oval on two
+  //         posts still read as a parasol. One black strap over the crown and
+  //         down both flanks (the unagi/tamago wrap, a single box) turns it into
+  //         a shape nobody misreads: orange slice, black belt, cream pillow. It
+  //         is the same `NORI` the case pieces use and it costs ONE draw.
+  //
+  //     WHY BEHIND, NOT ON THE GANTRY. On the lintel (z 0.38) a 1.33-deep nigiri
+  //     spans z −0.29…1.05 and sits directly over the OPEN ICE CASE, which is
+  //     this stall's whole reason to exist — the "no roof, no awning" rule this
+  //     component already lives by ("an awning plate here reads as a lid from
+  //     above"). Behind the counter it grows only the BACK of the envelope
+  //     (z −1.11), which is the safe direction: guests approach from +z, the
+  //     registered body is a fixed hx 0.6 / hz 0.42 on the anchor, the 0.72-u
+  //     attach point and the counter lip at z 0.470 are untouched, and the
+  //     serving side stays completely open.
+  //
+  //     NO SHADOW, and it needs none: it is 1.4 u up and behind, so a cast
+  //     shadow would fall across the counter goods for no gain, and skipping it
+  //     saves the shadow-pass draws. Cost: 4 draws (rice pillow + salmon slice +
+  //     nori band + ONE merged mesh for both posts and their cross-rail).
+  // =========================================================================
+  const signMats: THREE.MeshStandardMaterial[] = [];
+  {
+    const SZ = -0.62; // behind the counter core's back face at z −0.39 (see (b))
+    // the trestle: two lashed driftwood posts and a cross-rail, all in ONE merged
+    // mesh (three boxes that never move and never change material)
+    g.add(
+      mergedBoxes(
+        t,
+        [
+          { dims: [0.075, 1.3, 0.075], pos: [-0.55, 0.65, SZ], repeat: [1, 6] },
+          { dims: [0.075, 1.3, 0.075], pos: [0.55, 0.65, SZ], repeat: [1, 6] },
+          { dims: [1.26, 0.07, 0.09], pos: [0, 1.26, SZ], repeat: [5, 1] },
+        ],
+        WOOD,
+        { tex: 'wood', repeat: [1, 1], rough: 0.86, bump: 0.03 },
+      ),
+    );
+    // THE HERO PIECE — no `nori` option, rolled toward the approach (see (a)/(b))
+    const hero = nigiriPiece(t, 1.55, SALMON, 17.3);
+    hero.position.set(0, 1.55, SZ);
+    hero.rotation.x = 0.6;
+    hero.rotation.y = 0.06; // a hair off square: nothing else in the cove is plumb
+    // (c) THE NORI BAND: one strap over the crown and down both flanks. Spans
+    //     z 1.36 against the topping's own 1.33, so it stands a hair proud at
+    //     both edges — that overhang is what makes it read as WRAPPED rather
+    //     than as a painted stripe.
+    hero.add(box(t, [0.26, 0.62, 1.36], NORI, [0, 0.55, 0], { rough: 0.62 }));
+    hero.traverse((n) => {
+      const m = n as THREE.Mesh;
+      if (!(m as unknown as { isMesh?: boolean }).isMesh) return;
+      m.castShadow = false;
+      const mm = m.material as THREE.MeshStandardMaterial;
+      // A LIT SIGN AFTER DARK. The paper lantern is the stall's ONE light and it
+      // gates fully to zero and reaches 1.8 u — the hero piece is 1.3 u up and
+      // 0.8 u behind it, so after dark the only thing that makes this stall
+      // findable would be the darkest surface in the frame. `mat()` never shares
+      // a material instance, so a night-gated emissive on the hero's OWN
+      // materials costs no light and no draw call. (The lantern still gates to
+      // zero: this is a painted sign catching the lantern, not a second lamp.)
+      mm.emissive.setHex(0xffb07a);
+      signMats.push(mm);
+    });
+    g.add(hero);
+  }
+
+  // =========================================================================
   // 4. THE MENU — a slate chalk board on a driftwood post beside the queue
   // =========================================================================
   const menu = new t.Group();
@@ -424,6 +530,10 @@ export function buildSushiStall(t: typeof THREE, opts: SushiStallOpts = {}): Sus
     const flicker = 1 + 0.06 * Math.sin(time * 5.1) + 0.04 * Math.sin(time * 8.7 + 1.3);
     lanternMat.emissiveIntensity = 0.05 + (1.1 * flicker - 0.05) * ease;
     lanternLight.intensity = ease * 0.85 * flicker;
+    // the GIANT NIGIRI reads as a lit sign after dark and as plain food by day —
+    // a self-lit rice pillow at noon would look like a paper lamp. Kept LOW
+    // (0.28): "still findable in the dark", not a second light source.
+    for (const sm of signMats) sm.emissiveIntensity = 0.28 * ease;
     if (peep) peep.group.position.y = Math.abs(Math.sin(time * 2)) * 0.01; // idle shuffle
   };
 
@@ -433,6 +543,9 @@ export function buildSushiStall(t: typeof THREE, opts: SushiStallOpts = {}): Sus
     dispose() {
       lanternMat.dispose();
       lanternLight.dispose();
+      // the hero piece's materials are per-mesh instances this builder mutated,
+      // so they are OURS to drop (the geometries are `getGeo`-shared and are not)
+      signMats.forEach((m) => m.dispose());
     },
   };
 }

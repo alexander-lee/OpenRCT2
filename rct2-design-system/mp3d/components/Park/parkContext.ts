@@ -707,37 +707,81 @@ export function usePark(consumer = 'park child'): ParkContextValue {
  *  | open | 13 | 17 | 20 | 26 | 32 | 41 |  50 |  58 |  66 |  79 |
  *
  *  Expressed against `size`, so it stays correct through the 192 → 128 default
- *  change: 50 on a 128 plot, 66 on a 192, and the pinned reference sizes get
- *  13 / 26 — at or below the counts their own authors already validated, so a
- *  compact park is never swamped. The 192-plot corpus counts (18-20) are
- *  DELIBERATELY excluded from the fit: those are the empty-looking parks this
- *  default exists to fix.
+ *  change, and the 192-plot corpus counts (18-20) are DELIBERATELY excluded from
+ *  the fit: those are the empty-looking parks this default exists to fix.
  *
- *  Cost: ~0.9 µs of sim per guest per frame (measured, `harness/park-eval/
- *  probe-gate-stream.mjs perf`) — 50 guests are 0.05 ms/frame, 0.3 % of a
- *  60 fps budget. The expensive half is DRAWING them; see `guestCapForSize`. */
-export const guestsForSize = (size: number) => { void size; return 500; }; // MEASUREMENT PATCH — restore before shipping
+ *  ---- RE-ANCHORED ON 500 AT THE DEFAULT PLOT (2026-07-28) -------------------
+ *
+ *  A park now OPENS WITH A REAL CROWD: 500 guests on the 128 default, ten times
+ *  the old 50. The SHAPE of the curve above is unchanged — it is still the
+ *  measured cube-root-of-plot-area fit, because that is how this corpus's street
+ *  networks actually grow — only the anchor moved:
+ *
+ *      guests(size) = clamp(round(500 · (size / 128)^(2/3)), 60, 800)
+ *
+ *  | size |  16 |  32 |  48 |  64 |  96 | 128 | 160 | 192 | 256 |
+ *  | ---- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+ *  | open | 125 | 198 | 260 | 315 | 413 | 500 | 580 | 655 | 794 |
+ *
+ *  WHY THIS IS AFFORDABLE, AND WHAT IT COST TO MAKE IT SO. Ten times the crowd
+ *  is not ten times the frame, because the guests are no longer ten times the
+ *  MESHES. Measured on `parkA-99` (size 128) with
+ *  `harness/mp3d-render/probe-frame-cost.mjs --gpu=metal` — a REAL GPU (ANGLE
+ *  Metal, M4 Pro), never SwiftShader:
+ *
+ *    | population | frame (gpuMs) | draws | the crowd's share |
+ *    | ---------- | ------------- | ----- | ----------------- |
+ *    |  99 (old)  |     16.32     |  3176 | 3.4 ms /  839     |
+ *    | 500 before |     35.34     |  6614 | 20.6 ms / 4272    |
+ *    | 500 after  |  see crowd.ts |       | ~8 draws          |
+ *
+ *  The lever was MESH COUNT, not triangles: `GameManager/crowd.ts` draws every
+ *  guest outside the camera's detail radius from eight shared `InstancedMesh`
+ *  pools and takes their rigs out of the scene graph, so the far crowd is eight
+ *  draw calls at ANY population and only the ~72 guests you can actually see
+ *  carry a 13-mesh articulated rig. Read that file before changing this number:
+ *  the reason 500 works is entirely in there.
+ *
+ *  A park that wants a different opening crowd still passes `<Park guests={n}>`,
+ *  and every reference preview does. */
+export const guestsForSize = (size: number) => Math.max(60, Math.min(800, Math.round(500 * Math.cbrt((size / 128) ** 2))));
 
 /** HARD POPULATION CEILING for a plot — the gate stream (GameManager
  *  `arrivals.ts`) stops admitting while `activeGuests >= cap` and resumes the
  *  moment a `leavingPark` guest despawns, so a happy park BREATHES at the
  *  ceiling instead of growing without bound.
  *
- *  Twice the opening population, clamped to [24, 160]: enough headroom that a
- *  well-run park visibly fills up over a few minutes, low enough that the
- *  crowd stays affordable to draw.
+ *  ---- +20 %, NOT +100 % (2026-07-28) ---------------------------------------
  *
- *  | size | 16 | 32 | 48 | 64 | 96 | 128 | 160 | 192 | 256 |
- *  | ---- | -- | -- | -- | -- | -- | --- | --- | --- | --- |
- *  | cap  | 26 | 40 | 52 | 64 | 82 | 100 | 116 | 132 | 158 |
+ *  This used to be TWICE the opening population, which made sense when the park
+ *  opened with 50: the gate stream had somewhere to grow into and the extra 50
+ *  cost 2 ms. At an opening crowd of 500 the same doubling would put the ceiling
+ *  at 1000, and a ceiling is a PROMISE ABOUT THE WORST CASE — the frame has to
+ *  hold AT it, not at the opening figure. So the headroom is 20 %:
  *
- *  This is a PERFORMANCE guard, not an RCT2 mechanic. RCT2's own soft cap
- *  (`suggestedGuestMaximum`, Park.cpp:107-140 — Σ ride BonusValue, which
- *  quarters the generation probability once exceeded) is ported faithfully in
- *  `arrivals.ts` and still applies underneath; at this fleet's ride counts it
- *  sits in the hundreds, so on a small park it is the RIDES that throttle the
- *  stream and on a big one this ceiling. */
-export const guestCapForSize = (size: number) => guestsForSize(size); // MEASUREMENT PATCH — restore before shipping
+ *      cap(size) = clamp(round(1.2 * guests(size)), 72, 960)
+ *
+ *  | size |  16 |  32 |  48 |  64 |  96 | 128 | 160 | 192 | 256 |
+ *  | ---- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+ *  | cap  | 150 | 238 | 312 | 378 | 496 | 600 | 696 | 786 | 953 |
+ *
+ *  600 at the default plot: enough that a well-run park visibly fills over a few
+ *  minutes and that the departures a badly-run one suffers can be made good,
+ *  bounded enough that "how slow can this park get" has an answer somebody
+ *  measured. The marginal guest past the detail radius costs a SHARE of the
+ *  crowd's eight draw calls rather than 8.5 of its own
+ *  (`GameManager/crowd.ts`), which is what makes the headroom nearly free.
+ *
+ *  THE OTHER TWO GATES STILL APPLY UNDERNEATH, and neither of them is this one:
+ *   * RCT2's soft cap `suggestedGuestMaximum` (Park.cpp:107-140 - the sum of
+ *     ride BonusValue, which quarters the generation probability once exceeded),
+ *     so on a thin roster it is the RIDES that throttle the stream, not this;
+ *   * the HAPPINESS BAR (`arrivals.ts` `ADMIT_HAPPY_SHARE`): the gate admits
+ *     nobody at all while under half the crowd is happy. That is the feedback
+ *     loop the population figures sit inside - a well-run park climbs to this
+ *     ceiling, a badly-run one drains toward empty and cannot refill until it
+ *     fixes itself. */
+export const guestCapForSize = (size: number) => Math.max(72, Math.min(960, Math.round(1.2 * guestsForSize(size))));
 
 interface QueuedBuild {
   fn: () => void;
@@ -997,6 +1041,16 @@ export function makeStore(three: typeof THREE, root: THREE.Group, api: StageApi,
         // while the park is well run (GameManager/arrivals.ts), up to the
         // PLOT-SCALED hard ceiling
         arrivals: { cap: guestCapForSize(store.size) },
+        // THE INSTANCED FAR CROWD (GameManager/crowd.ts). Handing the sim the
+        // LIVE camera list is what switches the guest LOD on, and it is the
+        // reason a 500-guest opening crowd costs ~2 ms of frame instead of 22:
+        // guests outside the detail radius are drawn from eight shared
+        // InstancedMesh pools and their rigs leave the scene graph. The SAME list
+        // the ride-runtime scheduler classifies against (main orbit cam + any
+        // RideViewer / PlayerCam inset), so detail follows every view, not just
+        // the main one. `<ScenePreview>` deliberately passes nothing — component
+        // previews keep every guest on a full rig so screenshots stay identical.
+        cameras: () => (api.cameras ? api.cameras() : [api.camera]),
       });
       // a runtime entry (never cleaned up — the sim lives for the park's
       // lifetime) so its hut lamps count against the global light budget;

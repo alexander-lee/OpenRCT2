@@ -889,6 +889,103 @@ clean` is the only green line.
   Keep each rect around `hx/hz ≈ 9–11` so the five never touch, run the gate street north into
   the hub, and spur off it to each land.
 
+  **⛔ WHICH SLOT GETS WHICH THEME IS NOT FREE — `pirateBeach` TAKES THE ONE ON THE WATER.**
+  Its giant is **`<BeachedGalleon>`**, a hull heeled over in the sand with a snapped topmast. A
+  beached ship in dry inland grass with the lake on the far side of the park is the one siting
+  mistake that reads as a mistake from the gate, and it is a coin flip today: MEASURED over the
+  six shipped five-world parks, four put `pirateBeach` on the nearest of their OWN five centres
+  and two did not — one missed by 8.7 u, and one sat the cove **61.9 u from the waterline while
+  its `neon` district sat 18.2 u away**, on a 128 plot. Over the fan above the spread between
+  its best and worst slot is a MEDIAN **67.6 u** (max 77.9), so this is the biggest single
+  siting decision in the park — and it is free, because you SWAP TWO IDS, you do not move a rect.
+
+  **THE WATER IS KNOWN BEFORE ANY WORLD IS PLACED.** `parkComposition(THREE, SEED, SIZE,
+  CLIMATE)` is PURE, MEMOISED and depends on nothing but those four values, and it is the same
+  composition `<Terrain>` builds — so the UNGUARDED row (`BARE`) can be read at the TOP of the
+  file, above the first set-piece `position`. Hoist it there; the reference parks call it late
+  only because their guard list is an argument to the second call. Guards cannot invalidate the
+  answer: the published `waterRePicked` assertion already fails the park if a guard list moves
+  a body more than **6 u**, and the `0.74 · radius` waterline is the same constant
+  `ParkBuilder/dressing.ts` sieves with.
+
+  ```tsx
+  const BARE = parkComposition(THREE, SEED, SIZE, CLIMATE);          // ← hoisted, no guards
+  /** the DOMINANT (largest) body's bowls — `basinsSecond` is the TAIL SLICE of `basins` */
+  const DOM = BARE.basins.slice(0, BARE.basins.length - BARE.basinsSecond.length);
+  const dWaterline = ([x, z]: XZ) =>
+    Math.min(...DOM.map((b) => Math.hypot(x - b.x, z - b.z) - 0.74 * b.radius));
+  const bumpAt = ([x, z]: XZ) =>            // the peak bump validatePark fails a pad on at > 0.75
+    Math.max(0, ...BARE.peaks.map((p) => {
+      const k = Math.max(0, 1 - Math.hypot(x - p.x, z - p.z) / p.radius);
+      return k * k * (3 - 2 * k) * p.height;
+    }));
+  const snap = (v: number) => +(Math.round(v / 1.2) * 1.2).toFixed(2);   // the 1.2 lattice
+
+  /* THE FIVE CENTRES YOU AUTHORED — the fan above, or your own. */
+  const SLOTS: Record<string, XZ> = { n: [0, 38], w: [-40, 6], e: [40, 6], sw: [-26, -42], se: [26, -42] };
+  const COVE_SLOT = 'sw';            // the slot pirateBeach holds in the plan you already wrote
+  /** THE SHORE SLOT: nearest the waterline, never ON a range, never IN the lake. Both `??`s
+   *  below are LOAD-BEARING — an empty list dereferenced at MODULE SCOPE blanks the whole park
+   *  (§0-P.5), and a plot with no water it can stand beside must fall back SILENTLY. */
+  const SHORE = Object.entries(SLOTS)
+    .map(([k, at]) => ({ k, at, d: dWaterline(at), b: bumpAt(at) }))
+    .filter((s) => Number.isFinite(s.d) && s.d >= -4)   // > 4 u INSIDE the waterline is a lake, not a cove
+    .sort((a, b) => (a.d + 20 * Math.max(0, a.b - 0.75)) - (b.d + 20 * Math.max(0, b.b - 0.75)))[0]
+    ?? { k: COVE_SLOT, at: SLOTS[COVE_SLOT], d: Infinity, b: 0 };   // ← no water: nothing moves
+
+  /* only if the rect would be WET: slide the cove's centre STRAIGHT AWAY from the water,
+     8 u at most (the cap the arithmetic below is proved for), then re-snap to the lattice */
+  const NEAR = DOM.slice().sort((p, q) =>
+    (Math.hypot(SHORE.at[0] - p.x, SHORE.at[1] - p.z) - 0.74 * p.radius)
+    - (Math.hypot(SHORE.at[0] - q.x, SHORE.at[1] - q.z) - 0.74 * q.radius))[0] ?? null;
+  const mN = NEAR ? Math.hypot(NEAR.x - SHORE.at[0], NEAR.z - SHORE.at[1]) || 1 : 1;
+  const TOW: XZ = NEAR ? [(NEAR.x - SHORE.at[0]) / mN, (NEAR.z - SHORE.at[1]) / mN] : [0, 0];
+  const PUSH = Math.min(Math.max(0, 11 - SHORE.d), 8);      // 11 = the rect's own hz; 0 when d is Infinity
+  const COVE_AT: XZ = [snap(SHORE.at[0] - TOW[0] * PUSH), snap(SHORE.at[1] - TOW[1] * PUSH)];
+
+  /* AND PUT THE HULL AT THE TIDE LINE, NOT IN THE MIDDLE OF THE DISTRICT: walk from the cove
+     centre toward the water in 1.2 u steps and keep the LAST DRY cell. */
+  let GALLEON: XZ = COVE_AT;
+  for (let s = 1.2; NEAR && s <= 9.6; s += 1.2) {
+    const c: XZ = [snap(COVE_AT[0] + TOW[0] * s), snap(COVE_AT[1] + TOW[1] * s)];
+    if (dWaterline(c) < 0.6) break;
+    GALLEON = c;
+  }
+  // …the cove's bazaar/rides/scenery are authored around COVE_AT, and then:
+  // <WorldLandmark plan={COVE} position={GALLEON} />
+  ```
+
+  Then build `pirateBeach` at `COVE_AT`, and give whichever theme held `SHORE.k` the slot
+  `COVE_SLOT` — a straight SWAP of two ids. **The other three worlds do not move at all**, and
+  the two that do keep their rect size, which is what makes this safe.
+
+  **IT CANNOT BREAK THE FLOOR, AND HERE IS THE ARITHMETIC.** Only ONE centre moves, by
+  `PUSH ≤ 8` plus at most `0.6·√2 = 0.85` u of lattice snap = **8.85 u**, so the closest pair of
+  the fan falls from 50.00 to **≥ 41.15 u**, or **≥ 40.30 u** if its neighbour is snapped too —
+  against the 32.66 floor (MEASURED worst case over 20 compositions: **44.00 u**, and the
+  five-world park still has 7.6 u of slack). Bounds at `hx/hz = 11`: the binding slot is south-west/south-east
+  at `|z| 42 + 8.85 + 11 =` **61.85 ≤ 64.3** ✓ (east/west `|x| 40 + 8.85 + 11 = 59.85` ✓, north
+  `z 38 + 8.85 + 11 = 57.85` ✓, and 57.85 also clears the flat entrance forecourt, which starts
+  at `z 59.4`, by 1.55 u). Measured max rect edge over those 20 compositions: **60.2**. The rect
+  keeps its size, so its room for 3 rides + stall + 25 scenery is unchanged — but AUTHOR THE
+  NUDGE BEFORE the flagship corridor and the spur, and take the spur from
+  `COVE.gateway(HUB.port(…))` rather than a hard-coded lane, or `circuitOffWorld` will catch you.
+
+  **WHAT IT BUYS, MEASURED over 20 `(seed, climate)` compositions at 128:** the cove centre
+  lands a median **14.2 u** from the dominant waterline (range 4.0–39.8), and the galleon itself
+  lands within **6 u of the water in 13 of 20** — the hull heels over AT the tide line. Its cell
+  reads `BARE.zoneAt(...) === 'sand'` in 9 of 20; the rest is a rocky or wooded shore (`sandBand`
+  is only **1.15 u** on `alpine` against 4.21 temperate/desert and 5.40 coastal) and that is
+  still a shore — do not fight it, and never move a world onto a range to find sand: the score
+  above charges 20 u per unit of bump over 0.75 for exactly that reason. On the pinned
+  `1 / temperate` row that charge is what sends the cove to `east` (24.4 u from the water, bump
+  0.74) instead of `south-east` (0.8 u INSIDE the waterline, bump **2.07** — that slot sits on
+  the five-peak ridge at `z ≈ −43` published in §0-P.6, whose skirt is continuous from `x −23` to
+  `x +38.6`). `pirateBeach`'s own `<WorldGround>` lays wet tide sand across the whole rect
+  regardless, so the beach READS from the ground; the terrain zone is a bonus.
+  State the number you got in your §0 `WORLDS` row: `pirateBeach @(x,z) — <d> u from the
+  dominant waterline, the nearest of the five`.
+
   **⛔ THE FLOOR FOR EVERY THEMED WORLD — ALL FOUR, NOT A CHOICE OF ONE:**
 
 | | requirement | why it is not optional |
@@ -906,8 +1003,10 @@ clean` is the only green line.
   makes five worlds read as five places, and **the last full park mounted it ZERO times** on
   five declared worlds. Each theme carries a `ground` dress (basalt + ash · wet tide sand ·
   soot yard · deep moss · black glass · park lawn) and `<WorldGround>` tiles it across the
-  world's rect, settled on the terrain and sunk 0.025 u so paths, plaza tiles and ride pads
-  always sit proud of it. It registers no footprint and blocks nothing:
+  world's rect as a heightfield draped over the terrain — 0.05 u of soil laid ON the ground,
+  following every gradient, with paths, plaza tiles and ride pads still standing proud of it and
+  its rect edge feathered so it reads as ground rather than as a plate. It registers no
+  footprint and blocks nothing:
 
   ```tsx
   import { WorldGround } from './components/WorldGround';   // ← its OWN folder now
@@ -921,24 +1020,61 @@ clean` is the only green line.
   <Bazaar plan={COVE_ROW} />      {/* …then everything that stands on it */}
   ```
 
+  **⛔ A GIANT IS SOLID — KEEP IT OFF THE STREET.** As of 2026-07-28 all five giants register a
+  BLOCKER, so guests route around them instead of walking through them. They always claimed to
+  (every header said "it registers a footprint so guests and the OBB sweep route around it") and
+  only `<Volcano>` actually did; the other four declared nothing and guests walked straight
+  through the galleon's hull and the zeppelin's mooring mast.
+
+  Now that they are solid, **a giant parked on a path is a `blockers` FAIL** — measured on the
+  landmark test park the moment the blockers went in: **11 failures**, street edges running
+  through `<BeachedGalleon>` and `<DragonRoost>` that had been silently passing through the mass
+  for six waves. Their blocking radii are large: galleon **3.4**, disco floor **3.3**, zeppelin
+  and roost **2.7** — that is a 6.8 u circle for the ship.
+
+  So place the giant at the world's centre of MASS, not on its wire: take a cell that is clear of
+  every street node and edge by more than its radius (`offPathCell(net, at, { clear })` answers
+  this), and put the path spur AROUND it rather than through it. If the world's rect cannot hold
+  the giant clear of its own streets, the rect is too small or the streets are laid wrong — do
+  not shrink the giant.
+
   **⛔ AND GIVE EVERY WORLD ITS GIANT — `<WorldLandmark plan={W} />`.** `fire` always had
   `<Volcano>`: radius 2.75 (5.5 tiles across), height 2.55, a cone visible from the gate. No
   other world had anything like it — their biggest pieces are PROPS (`<WreckedHull>` 1.8 ×
   0.78, `<GiantGear>` r 0.64, `<GiantToadstools>` r 0.94, and neon's pylons are tall but
   THIN). So the caldera read as a place and the rest read as a lawn with ornaments.
 
-  Each theme now has a `<Volcano>`-class anchor, picked automatically off the world's theme:
+  Each theme now has a `<Volcano>`-class anchor, and **all five are REAL COMPONENTS with their own
+  folders — install and mount them BY NAME, exactly like `<Volcano>`.** `<WorldLandmark>` is only
+  the convenience over the five (one tag per world, so you never have to remember which giant
+  belongs to which theme); either form works and both mount the same object.
 
-  | world | its giant | reads as |
-  |---|---|---|
-  | `fire` | `<Volcano>` | the cone, crater and lava flows |
-  | `pirateBeach` | **Beached Galleon** | a whole hull heeled over in the sand, broken mast, snapped topmast |
-  | `steampunk` | **Blast Furnace** | riveted stack on a brick base, catwalk, tap spout, live smoke plume |
-  | `enchantedForest` | **Dragon Roost** | a claw-raked crag under a great stick nest, a clutch of five eggs that pulse after dark (one cracked open), a shed scale in the moss below |
-  | `neon` | **Mirrorball Tower** | a truss tower under a giant rotating faceted ball |
+  MEASURED, waves 31-33: five parks in a row mounted `<WorldLandmark>` on all five worlds and
+  `<Volcano>` was the only giant that ever appeared in the scene. The reason is this page: until
+  now `<Volcano>` was the only one of the five SPELLED OUT as a component here, and two of the
+  other four were named wrong — "Blast Furnace" and "Mirrorball Tower" are not components, and
+  `MirrorBallPylon` (which is) is a footprint-r-0.44 scenery prop, not a giant.
+
+  ```tsx
+  import { WorldLandmark }  from './components/WorldLandmark';    // the dispatcher — one tag per world
+  import { Volcano }        from './components/Volcano';          // …or the giant itself, by name
+  import { BeachedGalleon } from './components/BeachedGalleon';
+  import { GreatZeppelin }  from './components/GreatZeppelin';
+  import { DragonRoost }    from './components/DragonRoost';
+  import { DiscoBallFloor } from './components/DiscoBallFloor';
+  ```
+
+  | world (canonical / legacy) | its GIANT — the component to install | measured | reads as |
+  |---|---|---|---|
+  | `fire` / `emberfall` | **`<Volcano>`** | r 2.75, h 2.55 | the cone, crater and lava flows |
+  | `pirateBeach` / `tidewater` | **`<BeachedGalleon>`** | hull 6.4 long, footprint r 3.4 | a whole hull heeled 0.20 rad over to port in the sand — snapped mainmast with a torn sail still bent to the yard, a stove-in side with the frames standing in the gap, the topmast and the anchor half buried |
+  | `steampunk` / `brasswork` | **`<GreatZeppelin>`** | envelope 12.0 long, mast h 4.6, footprint r 2.7 | a rigid airship riding at her mooring mast, ANIMATED — she yaws, rolls and rises on the tether and the engine props turn |
+  | `enchantedForest` / `thornwick` | **`<DragonRoost>`** | footprint r 2.7 | a claw-raked crag under a great woven stick nest, a clutch of eggs that pulse after dark (one cracked open) |
+  | `neon` / `pulse` | **`<DiscoBallFloor>`** | ball r 2.05 on 4.4 u legs, floor 5.6 u across, footprint r 3.3 | an Epcot-scale mirror ball over a CHASING 7×7 dance floor. **⛔ The dance floor is PART of this landmark — do not add a separate `<DanceFloor>` under it.** |
 
   It defaults to the world's centre; pass `position` to move it off a ride pad, and `scale` to
-  size it to the land. **Put its cell in `worldPlan({ include })`** or it dresses nothing.
+  size it to the land. **Put its cell in `worldPlan({ include })`** or it dresses nothing —
+  a giant outside the rect is `themedPieceOutsideWorlds`, and it earns the world nothing.
   Mount it AFTER `<WorldGround>` and BEFORE the props.
 
 
@@ -991,23 +1127,30 @@ clean` is the only green line.
 
   ```tsx
   <MagmaRun position={[-38, 4]} rotation={Math.PI / 2}
-            register={{ name: 'Cinder Run', kind: 'coaster' }} />
+            register={{ name: 'Cinder Run', capacity: 4, rideDuration: 12, intensity: 6 }} />
   ```
 
   That is a complete, boardable, rated ride — no `pieces`, no circuit design, no verifier.
+
+  **⛔ AND `register` HAS NO `kind` FIELD — DO NOT INVENT ONE.** `RideRegisterProps` takes
+  `name`, `capacity`, `rideDuration`, `loadTime`, `intensity`, `price`, `queueSurface`,
+  `exitSurface` and nothing else. An unknown key on an object literal is **silently dropped** —
+  it does not warn and it does not fail, it just quietly does nothing. This block used to show
+  `kind: 'coaster'`, which does not exist; the very next wave copied it **23 times**. The ride's
+  category comes from the COMPONENT you mounted, never from a string you pass.
   Authoring a custom `pieces` array is an UPGRADE you make when you want the land to feel
   bespoke (§ the spline table above), never a toll you pay to mount the component. Mount all
   three of a world's rides on defaults FIRST; customise afterwards if budget remains.
 
   **THE PER-WORLD INVENTORY — take ALL 3 rides, its stall, 25 scenery placements, its floor and its giant:**
 
-  | world (canonical / legacy) | its GROUND | its stall | its RIDES — MOUNT ALL THREE | its SCENERY (repeat to 25) |
-  |---|---|---|---|---|
-  | `fire` / `emberfall` | cooled basalt + ash | `'emberRoast'` | **`EmberWings` + `MagmaRun` (the lava flume) — BOTH, and that is the whole quota.** `LavaTubeRun` is OPTIONAL | `Volcano`, `Fumarole`, `ObsidianShards`, `BasaltColumns`, `LavaFissure`, `CharredSnag`, `EmberWingsHanger` |
-  | `pirateBeach` / `tidewater` | wet tide sand | `'sushi'` | `ReefRacer`, `DeepDrift`, `OceanTunnelSlide` | `WreckedHull`, `CoralCluster`, `AnchorPile`, `TidePool`, `DockPilings` |
-  | `steampunk` / `brasswork` | soot-stained yard | `'goggles'` | `GearworksExpress`, `AetherBalloons`, `BoilerBurst` | `GiantGear`, `SteamPipes`, `ClockTower`, `BoilerTank`, `CoalCart` |
-  | `enchantedForest` / `thornwick` | deep moss | `'honeywitch'` | **`WyrmsHollow` — REQUIRED**, `MoonlitBarge`, `Chairlift` | `GiantToadstools`, `StandingStones`, `LanternTree`, `RuinedArch`, `FlowerPodBed`, **`MagicMirror` — REQUIRED, exactly one** |
-  | `neon` / `pulse` | black glass | `'neonSlush'` | `Bassline`, `Discotron`, `MagneticRide` | `NeonArch`, `SpeakerStack`, `MirrorBallPylon`, `LaserTruss`, `LightTiles`, **`BigPiano` — REQUIRED, exactly one** |
+  | world (canonical / legacy) | its GROUND | its GIANT | its stall | its RIDES — MOUNT ALL THREE | its SCENERY (repeat to 25) |
+  |---|---|---|---|---|---|
+  | `fire` / `emberfall` | cooled basalt + ash | `Volcano` | `'emberRoast'` | **`EmberWings` + `MagmaRun` (the lava flume) — BOTH, and that is the whole quota.** `LavaTubeRun` is OPTIONAL | `Volcano`, `Fumarole`, `ObsidianShards`, `BasaltColumns`, `LavaFissure`, `CharredSnag`, `EmberWingsHanger` |
+  | `pirateBeach` / `tidewater` | wet tide sand | `BeachedGalleon` | `'sushi'` | `ReefRacer`, `DeepDrift`, `OceanTunnelSlide` | `WreckedHull`, `CoralCluster`, `AnchorPile`, `TidePool`, `DockPilings` |
+  | `steampunk` / `brasswork` | soot-stained yard | `GreatZeppelin` | `'goggles'` | `GearworksExpress`, `AetherBalloons`, `BoilerBurst` | `GiantGear`, `SteamPipes`, `ClockTower`, `BoilerTank`, `CoalCart` |
+  | `enchantedForest` / `thornwick` | deep moss | `DragonRoost` | `'honeywitch'` | **`WyrmsHollow` — REQUIRED**, `MoonlitBarge`, `Chairlift` | `GiantToadstools`, `StandingStones`, `LanternTree`, `RuinedArch`, `FlowerPodBed`, **`MagicMirror` — REQUIRED, exactly one** |
+  | `neon` / `pulse` | black glass | `DiscoBallFloor` | `'neonSlush'` | `Bassline`, `Discotron`, `MagneticRide` | `NeonArch`, `SpeakerStack`, `MirrorBallPylon`, `LaserTruss`, `LightTiles`, **`BigPiano` — REQUIRED, exactly one** |
 
   Stock the stall FIRST in that world's `bazaarPlan({ stalls })`, neutrals after
   (`burger`/`hotDog`/`soda`/`cottonCandy`/`balloon` are legal anywhere). **Stock only YOUR
@@ -1587,7 +1730,7 @@ catalog, use the component** — a hand-rolled carousel/teacups/tree out of raw 
 defect, not creativity; trees/rocks from Kit (`tree`/`rock`), scenery from SceneryPack, colours
 from ColorKit (`rideColourPreset` is in ColorKit, **not** SplineRideKit), `compileTrackPieces`
 from SplineRideKit. Once `<GameManager/>` is declared ALL the game logic comes free — guest
-spawning/needs, every ride's FSM + breakdowns, queue flow, purchases, clickability, the whole
+spawning/needs, every ride's FSM, queue flow, purchases, clickability, the whole
 UI-window suite — and `validatePark` runs once the children settle (§0-P.0):
 
 ```tsx
@@ -1676,7 +1819,7 @@ touch is the two chassis every catalog ride/shop delegates to:
 
 - **`<ConfigurableRide build layout register name capacity rideDuration loadTime intensity price
   queue position rotation scale>`** — with `register` set inside a real `<Park>` it wires the whole
-  GameManager life: the RCT2 ride FSM + breakdowns, the queue lane + entrance/exit huts derived
+  GameManager life: the RCT2 ride FSM, the queue lane + entrance/exit huts derived
   from position+rotation (queue HEAD `front` out the local **+z** face, default **1.8**;
   `<Discotron>` 4.0, `<BumperCars>` 2.6; the EXIT hut one tile along that face facing the same way
   out, with its own footpath), `groundRideAccess` berms, real riders via `seatWorld`, crash wiring,
@@ -1741,8 +1884,11 @@ POST-clamp. `<Park fullscreen>` is the default.
 
 ## 6. GameManager — declare it and the sim is free
 
-`<GameManager/>` inside a `<Park>` is all a park needs: guest spawning/needs, every ride's FSM +
-breakdowns, queue flow, purchases, clickability, the UI suite. Underneath it is
+`<GameManager/>` inside a `<Park>` is all a park needs: guest spawning/needs, every ride's FSM,
+queue flow, purchases, clickability, the UI suite. **NO RIDE EVER BREAKS DOWN** — a deliberate
+divergence from RCT2 (there is no mechanic to dispatch in a park that is looked at rather than
+managed); `breakdownEvery` is ignored and warned about, and a CRASH (`vehicleHandle.crashed()`) is
+the only way a ride stops serving guests. See `components/GameManager/Context.md`. Underneath it is
 `createGameManager(t, { groundAt, net, laneY, bins })` + `registerParkEntrance(gate)` (the SOLE
 spawn point) + `registerRide`/`registerStall`/`registerRestroom`/`spawnGuests(n)`, stepped with
 `mgr.update(time, dt)`. Give it the SAME `{nodes, edges}` the PathNetwork rendered — guests walk

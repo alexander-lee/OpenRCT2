@@ -88,8 +88,23 @@ be photographed, which is exactly how the texel-density bug shipped unseen.
 - **Merged** — EIGHT draw calls per world (one per tone band), not one per tile.
   Triangles rise with the finer grid; on a real GPU the frame is bound by draw calls, not
   triangles, so that is the right side of the trade.
-- Tiles settle on `park.floorAt` and sink **0.025 u**, so paths, plaza tiles and ride pads
-  always sit proud of the floor.
+- **A DRAPED HEIGHTFIELD, and it stands PROUD of the ground, not sunk into it.** Every vertex
+  sits at `park.groundAt(x, z) + SOIL_LIFT` (0.05), so the surface is parallel to the terrain
+  at every gradient. Both halves of that sentence are load-bearing and both have been wrong in
+  a shipped version:
+  - `groundAt`, **not** `floorAt`. `floorAt` returns the *paved* level inside a plaza
+    (`plazaBase + 0.096`), so draping off it grew a mesa exactly the shape of every plaza rect.
+  - **+0.05, not −0.04.** A floor beneath the 0.45 u terrain mesh is occluded by it and draws
+    nothing at all — measured 1805/1805 raycast samples buried on `samples/w33a.tsx`. It has to
+    clear the terrain (the drape's 1.2 u chords disagree with the terrain's 0.45 u ones by up to
+    0.036) while staying under a street's pavement top at `corridorGroundMax + 0.126`.
+  - The component must mount this builder at an **explicit y of 0**. The builder emits vertex y
+    in ABSOLUTE world height, so a 2-tuple `position` makes `useComposable` settle the group on
+    top of that and the whole floor is lifted twice — the bug that buried the paths.
+  - Measure with `harness/mp3d-render/probe-world-ground-datum.mjs` before retuning any of it.
+- The rect's edge is **feathered**: the lift tapers through zero to −0.05 over the outer 3
+  rings, so the floor's boundary is the contour where it crosses the terrain rather than a hard
+  rectangular step.
 - Registers **no footprint** and blocks nothing — it is a floor, not an obstacle.
 - **No import from `SetPieceKit`** — that kit re-exports this component, so pulling a value
   back out of it would be a runtime cycle. The fallback dress and the plan shape are declared

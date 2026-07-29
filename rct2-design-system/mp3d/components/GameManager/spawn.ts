@@ -75,11 +75,20 @@ export function createSpawn(s: Sim) {
       const i = guests.length;
       const h = (sd: number) => hash01(i * 91.7 + sd * 17.31);
       const exprs: Expression[] = ['happy', 'neutral', 'happy', 'surprised', 'neutral'];
-      const peep = buildPeep(t, {
+      // the palette is resolved ONCE and kept on the record: the full rig gets it
+      // as materials, and the INSTANCED FAR CROWD (crowd.ts) tints its eight
+      // pools from the same numbers, so near and far guests are the same colours
+      const tint = {
         skin: SKIN_TONES[Math.floor(h(1) * SKIN_TONES.length)],
         shirt: SHIRTS[Math.floor(h(2) * SHIRTS.length)],
         trousers: TROUSERS[Math.floor(h(3) * TROUSERS.length)],
         hair: HAIRS[Math.floor(h(4) * HAIRS.length)],
+      };
+      const peep = buildPeep(t, {
+        skin: tint.skin,
+        shirt: tint.shirt,
+        trousers: tint.trousers,
+        hair: tint.hair,
         expression: exprs[Math.floor(h(5) * exprs.length)],
       });
       peep.group.scale.setScalar(GUEST_SCALE);
@@ -138,9 +147,45 @@ export function createSpawn(s: Sim) {
       peep.group.name = `guest-${i}`;
       peep.group.position.set(x, baseY, z);
       if (entryDelay > 0) peep.group.visible = false;
+      // CLICK PROXY: peep limbs are thin, fast-moving raycast targets that
+      // clicks slip through — a fat body capsule catches them instead. The
+      // raycaster tests `visible: false` meshes (three walks every child and
+      // Mesh.raycast never checks visibility), but the renderer skips them,
+      // so the proxy costs nothing to draw.
+      // `userData.clickProxy` is the CONTRACT with Stage.onPick: the proxy is
+      // allowed to be invisible, but it is a SECOND-PASS target — real geometry
+      // at the clicked pixel always wins first. Without that flag this column
+      // (0.72 wide around a ~0.2-wide body) sat nearer to the camera than the
+      // guest actually under the cursor and stole their click on any busy path.
+      //
+      // IT IS A SIBLING OF THE RIG, NOT A CHILD OF IT (changed with the
+      // instanced far crowd). A guest outside the detail radius has its rig taken
+      // OUT of the scene graph altogether, and `Stage`'s `isDrawn` walks a hit's
+      // ancestors and rejects anything under an invisible parent — so a proxy
+      // parented to the rig would have made every distant guest unclickable,
+      // i.e. "clicking the guest does nothing" for most of the park. As a sibling
+      // it is always in the scene and always positioned from the sim's own
+      // `x/baseY/z` (guestPass), so picking works at every level of detail. It
+      // carries `guestRef` ITSELF for the same reason: `carrierOf` walks UP from
+      // the hit and its parent is now the manager group. Scale is applied here
+      // because it no longer inherits the rig's GUEST_SCALE; local units: the
+      // peep is ~1.8 tall pre-scale.
+      const hitProxy = new t.Mesh(new t.CylinderGeometry(0.72, 0.72, 2.05, 6), new t.MeshBasicMaterial());
+      hitProxy.name = 'guestClickProxy';
+      hitProxy.scale.setScalar(GUEST_SCALE);
+      hitProxy.position.set(x, baseY + 0.95 * GUEST_SCALE, z);
+      hitProxy.visible = false;
+      hitProxy.userData.clickProxy = true;
+      group.add(hitProxy);
       const rec: SimGuest = {
         idx: i,
         peep,
+        proxy: hitProxy,
+        tint,
+        farPhase: h(19) * Math.PI * 2, // stagger the proxy walk cycles
+        farCadence: 0,
+        farShown: false,
+        ateFood: false,
         state: 'walking',
         gone: false,
         hidden: false,
@@ -163,7 +208,14 @@ export function createSpawn(s: Sim) {
         energy: energy0,
         energyTarget: energy0,
         nausea: 0,
-        toilet: seeded(stats?.toilet, Math.floor(h(15) * 78), h, 35, 0, 255),
+        // TOILET STARTS EMPTY. RCT2 rolls a fresh arrival's bladder at 0-77
+        // (Guest.cpp:7360 region) — a guest who walks through the gate already
+        // needing the loo. Here it is 0 and the passive climb only STARTS once
+        // they have eaten (`ateFood` → TOILET_FILL, needs.ts): the need is a
+        // consequence of the meal, so the restroom trip lands after the food
+        // stall rather than before it. `stats.toilet` still overrides it, which
+        // is what the stall/restroom previews stage.
+        toilet: seeded(stats?.toilet, 0, h, 35, 0, 255),
         // RCT2's cash roll: FOUR discrete tiers, not a smooth spread —
         // `cash = guestInitialCash + ((rand & 3) · £10) − £10` (Guest.cpp:7362),
         // so the £50 scenario default gives £40/£50/£60/£70. On this sim's
@@ -237,23 +289,10 @@ export function createSpawn(s: Sim) {
       // clickability (rules/ui.md): the guest's visual group carries a LIVE
       // accessor — Stage.onPick finds it and a GuestInfo window can poll it
       peep.group.userData.guestRef = () => s.queries.recordOf(rec);
-      // CLICK PROXY: peep limbs are thin, fast-moving raycast targets that
-      // clicks slip through — a fat body capsule catches them instead. The
-      // raycaster tests `visible: false` meshes (three walks every child and
-      // Mesh.raycast never checks visibility), but the renderer skips them,
-      // so the proxy costs nothing to draw. Local units: peep is ~1.8 tall
-      // pre-GUEST_SCALE.
-      // `userData.clickProxy` is the CONTRACT with Stage.onPick: the proxy is
-      // allowed to be invisible, but it is a SECOND-PASS target — real geometry
-      // at the clicked pixel always wins first. Without that flag this column
-      // (0.72 wide around a ~0.2-wide body) sat nearer to the camera than the
-      // guest actually under the cursor and stole their click on any busy path.
-      const hitProxy = new t.Mesh(new t.CylinderGeometry(0.72, 0.72, 2.05, 6), new t.MeshBasicMaterial());
-      hitProxy.name = 'guestClickProxy';
-      hitProxy.position.y = 0.95;
-      hitProxy.visible = false;
-      hitProxy.userData.clickProxy = true;
-      peep.group.add(hitProxy);
+      hitProxy.userData.guestRef = () => s.queries.recordOf(rec);
+      // …and claim this guest's slot in the instanced far crowd (colours written
+      // once; the slot is `idx` and never moves). A no-op when the LOD is off.
+      s.crowd.attach(rec);
     }
   };
 

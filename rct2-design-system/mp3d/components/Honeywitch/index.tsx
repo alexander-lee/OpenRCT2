@@ -674,6 +674,73 @@ export function buildHoneywitch(three: typeof THREE, opts: HoneywitchOpts = {}):
   }
 
   // =========================================================================
+  // 7b. THE GIANT CANDIED APPLE — the building says what it sells AT PARK SCALE
+  //
+  //     ⚠️ THE 0.088-R SIGN APPLE ABOVE IS INVISIBLE FROM THE PARK CAMERA. It is
+  //     the right size for a guest standing at the counter and it is ONE RED
+  //     PIXEL from a high overhead shot at ride distance, where this cottage
+  //     reads as a brown thatch rectangle among rides ten times its size.
+  //     CottonCandyStand and BurgerShop never have this problem because THE SHOP
+  //     IS THE ITEM — a 2.1-u sesame bun, a 1.7-u floss cloud — so the
+  //     SILHOUETTE alone says what is sold, from any distance, with no detail
+  //     needing to resolve.
+  //
+  //     This cottage cannot BE an apple without throwing away the catslide, the
+  //     half-timbering and the recessed hatch, so it takes the exemplars' move
+  //     one step down: ONE candied apple at 0.60 R — 6.8× the sign apple,
+  //     1.20 wide × 1.32 tall — planted through the roof ridge on its own 1.5-u
+  //     stick. That makes the APPLE, not the thatch, the largest single shape in
+  //     the piece (thatch reads ~1.6 × 0.9 in plan; the apple is a 1.2 disc of
+  //     saturated madder red against it) and lifts the stall's top from 1.62 to
+  //     2.66. Same `candyApple` recipe as the counter stand, the cauldron rack,
+  //     the hanging sign and the held item — a FIFTH scale, no new vocabulary.
+  //
+  //     WHY THE RIDGE AND NOT THE GABLE. Hung off the +x gable beside the
+  //     existing board a 1.2-wide apple would push the footprint from x 1.39 to
+  //     ~1.6, straight into the cauldron and the approach. Over the ridge it
+  //     lives inside x ±0.60 / z −0.69…0.49 — entirely within the measured
+  //     2.71 × 1.84 footprint — so the registered body (hx 0.6, hz 0.42), the
+  //     queue and the 0.72-u attach point are untouched.
+  //
+  //     IT CASTS NO SHADOW, on purpose. A 1.3-u ball 2 u up would drop a disc of
+  //     shade across the counter, which is the catslide lesson in a third shape
+  //     ("nothing sits over the thing you are selling") — and it saves the
+  //     shadow-pass draws as well. Cost: 5 draws — the apple's own meshes and
+  //     NOTHING ELSE.
+  //
+  //     ⚠️ NO SOCKET COLLAR, and the y was measured rather than guessed. The
+  //     first pass sat the apple at y 2.00 over a two-box iron socket on the
+  //     ridge; rendered, the socket was ENTIRELY INSIDE the fruit (collar top
+  //     1.44 against an apple underside at 1.34) — a draw call for geometry no
+  //     camera can ever see. The apple is at y 1.90 instead, which puts its
+  //     underside at 1.24 against a sagging ridge line of `ridgeY(0)` = 1.185 and
+  //     a ridge-cap crown at 1.255: it is SEATED IN THE THATCH, its stick spears
+  //     down through the roof to y 0.73, and nothing floats.
+  // =========================================================================
+  const signMats: THREE.MeshStandardMaterial[] = [];
+  {
+    const hero = candyApple(t, 0.6, 1.5, 13.1);
+    hero.position.set(0, 1.9, RIDGE_Z);
+    hero.rotation.z = -0.06; // leans back a hair against the cottage's own tip
+    hero.traverse((n) => {
+      const m = n as THREE.Mesh;
+      if (!(m as unknown as { isMesh?: boolean }).isMesh) return;
+      m.castShadow = false;
+      geos.push(m.geometry);
+      const mm = m.material as THREE.MeshStandardMaterial;
+      mats.push(mm);
+      // A LIT SIGN AFTER DARK. The apple's centre is 2.0 u up — far outside the
+      // eave lantern's 3.2-u falloff at any useful intensity — so at night the
+      // one thing that makes this stall findable would be the darkest surface in
+      // the piece. `mat()` never shares a material instance, so a night-gated
+      // emissive on the apple's OWN materials costs no light and no draw call.
+      mm.emissive.setHex(CANDY_HI);
+      signMats.push(mm);
+    });
+    shell.add(hero);
+  }
+
+  // =========================================================================
   // 8. THE GOODS ON THE COUNTER — the whole point of the stall.
   //    A drilled block of candied apples standing up, a board of honey cakes,
   //    a honey crock with a dipper, and a cut honeycomb frame.
@@ -1153,6 +1220,11 @@ export function buildHoneywitch(three: typeof THREE, opts: HoneywitchOpts = {}):
     const flick = 1 + 0.07 * Math.sin(time * 4.9) + 0.05 * Math.sin(time * 8.3 + 1.1);
     for (const gl of lampGlass) gl.emissiveIntensity = 0.05 + (1.2 * flick - 0.05) * ease;
     lanternLight.intensity = ease * 0.85 * flick;
+    // THE GIANT APPLE reads as a LIT SIGN after dark and as plain painted toffee
+    // by day: a self-lit apple at noon would look like a bauble. Kept low (0.32)
+    // — this is "still findable in the dark", not a lamp, and the piece already
+    // owns exactly one lamp (the eave lantern) and one hot surface (the toffee).
+    for (const sm of signMats) sm.emissiveIntensity = 0.32 * ease;
     smoke?.update(time);
     if (peep) peep.group.position.y = Math.abs(Math.sin(time * 2)) * 0.01;
   };

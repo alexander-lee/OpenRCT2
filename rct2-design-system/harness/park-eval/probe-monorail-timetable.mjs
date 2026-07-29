@@ -208,9 +208,14 @@ for (let s = 1; s <= steps; s += 1) {
   const time = s * dt;
   mgr.update(time, dt);
   scene.update(time);
-  // A BROKEN ride is SUPPOSED to be stationary — RCT2 stops it and sends a
-  // mechanic. Those windows are excluded from the stall verdict (and counted
-  // separately) so the probe measures the timetable, not the maintenance.
+  // OUT OF SERVICE IS NOW AN ASSERTION, NOT AN ALLOWANCE. This used to be an
+  // exclusion window: a broken ride is SUPPOSED to be stationary (RCT2 stops it
+  // and sends a mechanic), so those steps were dropped from the duty/stall
+  // verdict. No ride in this design system can break down any more
+  // (GameManager/access.ts `statusOf` returns only 'open' / 'closed'), so the
+  // count must stay at ZERO and any hit is a REGRESSION in that rule, not
+  // maintenance to be excused. The exclusion arithmetic below is kept so the
+  // verdict is still honest if it ever fires — but it also fails the run.
   const st8 = handle.status();
   const down = st8 === 'brokenDown' || st8 === 'beingRepaired';
   if (down) downSteps += 1;
@@ -265,7 +270,8 @@ const pct = (n) => `${((100 * n) / steps).toFixed(1)}%`;
 const pctUp = (n) => `${((100 * n) / upSteps).toFixed(1)}%`;
 console.log(
   `\n    out of service (brokenDown / beingRepaired): ${((downSteps * dt)).toFixed(1)} s of ${SECS} s ` +
-    `(${((100 * downSteps) / steps).toFixed(1)}%) — excluded from duty and stall below`,
+    `(${((100 * downSteps) / steps).toFixed(1)}%) — MUST BE 0.0 s: no ride can break down` +
+    (downSteps ? '   <-- BREAKDOWN REGRESSION' : ''),
 );
 console.log('\n    PER-TRAIN MOTION (dt 1/30, sampled every step):');
 console.log('      train   duty    distance   mean u/s   max u/s   CoV(all)   CoV(cruise)   longest stall');
@@ -318,6 +324,14 @@ summary.forEach((s, i) => {
   if (s.stall > STALL_MAX) fail.push(`train ${i} stalled ${s.stall.toFixed(1)} s (> ${STALL_MAX} s)`);
   if (s.covCruise > COV_MAX) fail.push(`train ${i} cruise CoV ${s.covCruise.toFixed(3)} (> ${COV_MAX}) — not a constant cruise`);
 });
+// ...and it is never out of service. No ride can break down (see the sampling
+// note above), so a single `brokenDown` / `beingRepaired` step is a regression
+// in that rule and fails the run — the figure used to be excused as maintenance.
+if (downSteps > 0)
+  fail.push(
+    `the ride reported brokenDown/beingRepaired for ${(downSteps * dt).toFixed(1)} s — NO RIDE MAY BREAK DOWN ` +
+      '(GameManager/access.ts `statusOf`, GameManager/rideFsm.ts: the breakdown schedule was removed)',
+  );
 if (NTRAINS !== null && trains.length !== NTRAINS) fail.push(`${trains.length} trains built, ${NTRAINS} asked for`);
 if (NTRAINS === null && trains.length < 2) fail.push(`the DEFAULT fleet on a ${PLATFORMS.length}-platform ring is ${trains.length} train(s)`);
 const multiMoving = concurrent.slice(2).reduce((a, b) => a + b, 0) / steps;

@@ -20,6 +20,7 @@ import {
   MEAL_BITES,
   BITE_GAP,
   NEEDS_SLOW_EVERY,
+  TOILET_FILL,
 } from './types';
 import type { SimGuest, RideRec, RideStationRec, StallRec, StallItemKind, ThoughtType, BenchRec } from './types';
 import { freeHand } from './guestFx';
@@ -39,8 +40,10 @@ export function createNeeds(s: Sim) {
   // for me", never a generic line. The one exception is `spentMoney` ("I've
   // spent all my money", :2069) which RCT2 pushes with no argument.
   const joinRefusal = (g: SimGuest, r: RideRec, st: RideStationRec): ThoughtType | 'silent' | null => {
+    // a WRECK is the only ride a guest refuses on safety grounds — the
+    // `brokenAt >= 0` refusal that used to sit here went with the breakdown
+    // schedule (GameManager/access.ts `statusOf`)
     if (r.state === 'crashed') return 'notSafe';
-    if (r.brokenAt >= 0) return 'notSafe'; // broken down / being repaired: no admissions
     if (g.lastRide === r && s.simTime - g.lastRideT < LAST_RIDE_TIMEOUT) return 'silent'; // previous_ride_time_out
     // RCT2 splits the money refusal in two (Guest.cpp:2065-2075): an empty
     // pocket is "I've spent all my money", a merely insufficient one is
@@ -261,6 +264,13 @@ export function createNeeds(s: Sim) {
     // and swallowed clicks aimed at the guests still walking around it (a `gone`
     // pick makes <Park> drop the window again, i.e. "the click does nothing").
     g.peep.group.removeFromParent();
+    // the click proxy is a SIBLING of the rig now (spawn.ts), so it has to be
+    // taken out on its own — leaving it behind would recreate exactly the
+    // invisible click-swallowing pile this removal exists to prevent.
+    g.proxy.visible = false;
+    g.proxy.removeFromParent();
+    // …and give the instanced far crowd its slot back
+    s.crowd.clear(g);
   };
 
   /** can this stall actually HAND OVER what it sells? A `'wearable'` is the one
@@ -363,11 +373,15 @@ export function createNeeds(s: Sim) {
       // as hunger: a DELIBERATE deviation, so drink stalls still see trade
       // inside a guest's few-minute visit. (RCT2-exact would be −1.)
       if (g.holding !== 'drink') g.thirst = Math.max(0, g.thirst - 2);
-      // toilet +1 in RCT2 (Guest.cpp:3096). Doubled here for the same reason
-      // thirst is: on RCT2's own step a bladder started at 0-77 would not reach
-      // the restroom-seeking threshold (TOILET_SEEK 200) inside a guest's
-      // few-minute visit, and the toilets would never be used at all.
-      g.toilet = Math.min(255, g.toilet + 2);
+      // TOILET +1 in RCT2 (Guest.cpp:3096), unconditionally, from a fresh
+      // arrival's rolled 0-77. Here the need is a CONSEQUENCE OF EATING instead:
+      // every guest spawns at toilet 0 (spawn.ts) and this passive climb is held
+      // until their first mouthful — so the trip to the restroom lands after the
+      // burger, in that order, which is the loop a park owner can actually see.
+      // The step is `TOILET_FILL` (6, not RCT2's 1) because it now has only the
+      // POST-MEAL part of a visit to cover rather than the whole of it; the
+      // arithmetic is in types.ts.
+      if (g.ateFood) g.toilet = Math.min(255, g.toilet + TOILET_FILL);
     }
     // consumption: PROGRESSIVE relief, one scheduled bite/sip at a time
     // (RCT2 updateConsumptionMotives, Guest.cpp:815-854: +7 per nibble,
@@ -379,6 +393,11 @@ export function createNeeds(s: Sim) {
         g.hunger = Math.min(255, g.hunger + 7); // RCT2's +7 (was +4): 12-16 bites now REFILL a meal's worth
         g.thirst = Math.max(0, g.thirst - 3); // Guest.cpp:831 — eating makes you thirsty
         g.toilet = Math.min(255, g.toilet + 2); // Guest.cpp:832
+        // THE FIRST MOUTHFUL is what starts the bladder filling at all (see the
+        // TOILET_FILL step above and spawn.ts's toilet 0). It is set on the BITE,
+        // not on the purchase, so a guest carrying an untouched burger has not
+        // eaten yet — RCT2 fills the bladder off the nibble too (:832).
+        g.ateFood = true;
       } else {
         g.thirst = Math.min(255, g.thirst + 7); // Guest.cpp:827
       }

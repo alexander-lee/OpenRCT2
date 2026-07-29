@@ -255,7 +255,7 @@ A transport ride also departs an EMPTY platform once `minWait` expires (RCT2's m
 Read that honestly, because two of the numbers are not wins:
 
 * **The 10 s quiet window is almost never the deadline that fires.** Measured inter-boarding gaps are a median **1.8–2.0 s**, five times shorter than the window, so on a busy platform it re-arms continuously and the **`maxWait` cap ends 29–34 of ~36 departures**; the quiet window itself ends 2, and 6 of 14 in the long-queue case. The rule as asked for ("wait 10 s for no guest to go in") therefore behaves, on any ride with a queue, as *"load for up to `maxWait` seconds from the first boarding"*. Lower `maxWait` to make rides leave sooner; `quietWait` only governs a platform that goes quiet.
-* **Riders SERVED per sim-minute fell ~10 % on two scenarios while riders BOARDED rose.** The gap is riders lost to a breakdown *while loading* (`drainRide` unloads them as `notSafe` and credits nobody): 15 → 37 and 14 → 34 lost per 1800 s. A longer dwell is longer exposure at a mean breakdown interval of ~40–95 s. It is a property of the breakdown schedule, not of the departure rule.
+* **Riders SERVED per sim-minute fell ~10 % on two scenarios while riders BOARDED rose.** The gap was riders lost to a breakdown *while loading* (`drainRide` unloads them as `notSafe` and credits nobody): 15 → 37 and 14 → 34 lost per 1800 s. A longer dwell is longer exposure at a mean breakdown interval of ~40–95 s. It was a property of the breakdown schedule, not of the departure rule — **and that schedule has since been removed outright** (see "NO RIDE CAN BREAK DOWN" below), so this cost is now structurally zero and BOARDED equals SERVED. The two figures above are kept as the historical measurement that identified the cause; do not re-measure them expecting the same gap.
 * **Every first cycle lands ~6–13 s later.** That broke `validatePark`'s sim-smoke window, so **the window moved with the rule: `SIM_SMOKE_SECONDS` 60 → 85** (`ParkBuilder/validate.ts`). See the next section — do not put it back.
 
 #### THE ACCEPTANCE GATE MOVED WITH THIS RULE — DO NOT "OPTIMISE" IT BACK
@@ -275,7 +275,7 @@ Cost of the wider window, measured with `probe-perf.mjs` off `<Park>`'s own `[Pa
 
 ### `createMotionGate(update, { spinUp?, spinDown? })` — station behaviour for ride VISUALS
 
-RCT2 vehicles WAIT in the station while guests board and stop again to unload, but catalog ride visuals animate on an absolute clock. `createMotionGate` wraps such an updater with an internal gated clock (dt clamped ≤ 0.1): the clock only advances while the FSM says the vehicle is in motion — speed eases 0→1 over `spinUp` (0.8 s) on `departing`/`travelling`, eases 1→0 over `spinDown` (1.2 s) into `arriving`/`movingToEndOfStation`/`brokenDown`/`beingRepaired`/`crashed` (the graceful spin-down; a mid-motion breakdown parks the FSM in `movingToEndOfStation`, so it rides the same easing), and is a HARD 0 in `waitingForPassengers`/`waitingToDepart`/`unloadingPassengers`. Returns `{ update, onStateChange, speed(), clock() }` — wire `update` as the built result's updater and CHAIN `onStateChange` before the ride's own handler (compose, don't replace breakdown spin-downs). CRITICAL: the gate starts **UNGATED** — raw time passes straight through until the first `onStateChange`, so un-registered previews are byte-identical. The wrapped updater receives the eased speed (0..1) as a second argument: oscillating rides use it as an amplitude envelope (`× motionK`) so ships/arms/towers SETTLE level or at the base instead of freezing mid-swing; cycle rides key their phase off `clock()` captured at `departing` so every run starts from zero. Fleet-wide exceptions: **Chairlift** (real chairlifts circulate — guests board moving chairs) and **HauntedMansion** (walkthrough — nothing to park).
+RCT2 vehicles WAIT in the station while guests board and stop again to unload, but catalog ride visuals animate on an absolute clock. `createMotionGate` wraps such an updater with an internal gated clock (dt clamped ≤ 0.1): the clock only advances while the FSM says the vehicle is in motion — speed eases 0→1 over `spinUp` (0.8 s) on `departing`/`travelling`, eases 1→0 over `spinDown` (1.2 s) into `arriving`/`movingToEndOfStation`/`brokenDown`/`beingRepaired`/`crashed` (the graceful spin-down. The FSM never EMITS the two mechanic states — no ride can break down — so those two arms only fire when a park drives a visual through them by hand; they are kept because that is still a legal thing to ask for), and is a HARD 0 in `waitingForPassengers`/`waitingToDepart`/`unloadingPassengers`. Returns `{ update, onStateChange, speed(), clock() }` — wire `update` as the built result's updater and CHAIN `onStateChange` before the ride's own handler (compose, don't replace a ride's own spin-down). CRITICAL: the gate starts **UNGATED** — raw time passes straight through until the first `onStateChange`, so un-registered previews are byte-identical. The wrapped updater receives the eased speed (0..1) as a second argument: oscillating rides use it as an amplitude envelope (`× motionK`) so ships/arms/towers SETTLE level or at the base instead of freezing mid-swing; cycle rides key their phase off `clock()` captured at `departing` so every run starts from zero. Fleet-wide exceptions: **Chairlift** (real chairlifts circulate — guests board moving chairs) and **HauntedMansion** (walkthrough — nothing to park).
 
 ### `makeSeatWorld(t, seats)` — the standard seatWorld factory
 
@@ -340,32 +340,32 @@ Each guest has a LEFT and RIGHT hand slot (plus the HEAD slot for wearables, abo
 
 ## Held items + eat/drink animation
 
-A consumable purchase puts a VISIBLE item in the guest's eat hand, parented to that arm pivot at the hand position (arm-local `[0, −0.34, 0.03]`) so it tracks every swing. Food = a small light-brown burger puck; drink = a small red cup with a straw stub — unless the selling stall supplied its own (`StallConfig.heldItem`, above), which stands in for these while the meal lasts; when consumption ends (`holding = 'container'`) the item swaps to a crumpled grey container until it's binned or dropped (the existing litter/bin flow, unchanged). The three meshes are built ONCE per guest PER HAND on first use and only shown/hidden after — no per-frame allocation. While `holding = 'food'`: an eat cycle every ~1.6 s — the eat arm eases up to ≈ −2.2 rad (hand at the mouth) over 0.35 s and back down over 0.35 s, with a tiny head nod into each bite. While drinking: longer swigs, less frequently — a ~1.2 s raised hold every ~3.4 s with a slight extra arm tilt (−2.35) and the head tipping back. The override composes ON TOP of the pose layer through an eased envelope (`eatK`) and a final eat-arm slew guard — starting or finishing a snack mid-cycle never snaps the arm — and is suppressed while seated on a ride (the lap-bar pose wins). Deterministic (time + guest phase).
+A consumable purchase puts a VISIBLE item in the guest's eat hand, parented to that arm pivot at the hand position (arm-local `[0, −0.34, 0.03]`) so it tracks every swing. Food = a sesame-crowned burger (3 merged meshes: bun crown + heel with same-tint seed bumps, an uneven grilled patty overhanging the bun, and a lettuce frill in the seam); drink = a lidded red soda cup (2 merged meshes: tapered body with a rolled rim, base ring and printed band, plus a cream lid + straw) — unless the selling stall supplied its own (`StallConfig.heldItem`, above), which stands in for these while the meal lasts; when consumption ends (`holding = 'container'`) the item swaps to a crushed grey carton (1 merged mesh: a stamped-flat base with two collapsed leaves folded over it) until it's binned or dropped (the existing litter/bin flow, unchanged). The three meshes are built ONCE per guest PER HAND on first use and only shown/hidden after — no per-frame allocation. While `holding = 'food'`: an eat cycle every ~1.6 s — the eat arm eases up to ≈ −2.2 rad (hand at the mouth) over 0.35 s and back down over 0.35 s, with a tiny head nod into each bite. While drinking: longer swigs, less frequently — a ~1.2 s raised hold every ~3.4 s with a slight extra arm tilt (−2.35) and the head tipping back. The override composes ON TOP of the pose layer through an eased envelope (`eatK`) and a final eat-arm slew guard — starting or finishing a snack mid-cycle never snaps the arm — and is suppressed while seated on a ride (the lap-bar pose wins). Deterministic (time + guest phase).
 
 ## Balloons — hold, DROP, fly-away (RCT2 Guest.cpp:6939-6963, Balloon.cpp:33-71)
 
-A bought balloon is a string + ball rig on the free hand's pivot: thin string straight UP from the fist (0.55 local), knot, and an egg-shaped ball in a colour hashed deterministically per guest+hand from `BALLOON_COLS` (RCT2 assigns `balloonColour` at purchase, Guest.cpp:1682). The ARM STAYS RELAXED — a per-frame counter-rotation keeps the string world-up over the swinging hand with a gentle hashed sway, sampled after every arm overlay so it rides the final pose. The hold lasts a hashed **60–120 sim-s** per guest (RCT2 instead rolls a ~0.5 %/tick blow-away chance, Guest.cpp:6951 — same expected fate, deterministic here); ride exits add a 12 % hashed slip chance and the post-ride 'wow' hop a 15 % one (earlier `dropAt`). On the DROP the rig detaches exactly at the ball's world position and becomes an airborne balloon (pooled, cap 10, oldest slot reused): ACCELERATING buoyant climb (0.25 u/s + 0.15 u/s² — RCT2 balloons climb steadily until they pop at altitude, Balloon.cpp:33-71), hashed wind sway + drift, a slow spin, then it shrinks/fades out above ~8 u of climb and frees its slot. The ex-owner loses 4 happiness (value and target) and glances UP sadly for ~1.6 s (head-tilt overlay). Drops are deferred while hidden or seated (`onRide` — the lap bar pins the hands).
+A bought balloon is a TWO-MESH rig on the free hand's pivot: a thin string straight UP from the fist (0.55 local), and one merged balloon body — pear-shaped, with a tapered NECK and the tied knot at its tip, which lands exactly on the string's top end — in a colour hashed deterministically per guest+hand from `BALLOON_COLS` (RCT2 assigns `balloonColour` at purchase, Guest.cpp:1682). The ARM STAYS RELAXED — a per-frame counter-rotation keeps the string world-up over the swinging hand with a gentle hashed sway, sampled after every arm overlay so it rides the final pose. The hold lasts a hashed **60–120 sim-s** per guest (RCT2 instead rolls a ~0.5 %/tick blow-away chance, Guest.cpp:6951 — same expected fate, deterministic here); ride exits add a 12 % hashed slip chance and the post-ride 'wow' hop a 15 % one (earlier `dropAt`). On the DROP the rig detaches exactly at the ball's world position and becomes an airborne balloon (pooled, cap 10, oldest slot reused): ACCELERATING buoyant climb (0.25 u/s + 0.15 u/s² — RCT2 balloons climb steadily until they pop at altitude, Balloon.cpp:33-71), hashed wind sway + drift, a slow spin, then it shrinks/fades out above ~8 u of climb and frees its slot. The ex-owner loses 4 happiness (value and target) and glances UP sadly for ~1.6 s (head-tilt overlay). Drops are deferred while hidden or seated (`onRide` — the lap bar pins the hands).
 
 ## Restrooms + the poop fallback
 
 `registerRestroom({ anchor, yaw? })` or `registerRestroom({ doorway })` — LOGIC only; the caller places the `buildRestroom` hut mesh. With `anchor`/`yaw` the manager derives the world doorway from the buildRestroom contract (`anchor + rotY(yaw)·[0, 0, 0.72]`, walk-in height +0.08 = the apron top); a world `doorway` point is accepted directly. The doorway gets a routing attach spur. Returns `{ uses() }`.
 
 - toilet ≥ 200 (walking, aimless) → goal-seek the NEAREST restroom via the routing net; on arriving at its attach node the guest walks through the doorway, is hidden 2 s (`usingRestroom`, "relieving"), then toilet resets to 40, happinessTarget +10, and they rejoin the network at the doorway spur.
-- **Poop fallback:** if toilet reaches 255 and NO restroom is registered/REACHABLE (checked over the routing graph from the guest's current node), a small discreet poop mesh (2 tiny stacked brown flattened balls) is dropped at the guest's verge position — capped at 8 meshes, oldest reused — toilet resets to 30, thought "Oh no... how embarrassing!" and happiness −20 (value AND target). Nearby guests treat poop like litter in the existing ≥3-within-1.2 u blight check, with each poop counting DOUBLE. With a reachable restroom the need simply clamps at 255 while the guest seeks it — no poop.
+- **Poop fallback:** if toilet reaches 255 and NO restroom is registered/REACHABLE (checked over the routing graph from the guest's current node), a small discreet poop mesh (ONE merged mesh: a tapering coil of three squashed rings on a ground smear, capped with a soft peak — the RCT2 silhouette) is dropped at the guest's verge position — capped at 8 meshes, oldest reused — toilet resets to 30, thought "Oh no... how embarrassing!" and happiness −20 (value AND target). Nearby guests treat poop like litter in the existing ≥3-within-1.2 u blight check, with each poop counting DOUBLE. With a reachable restroom the need simply clamps at 255 while the guest seeks it — no poop.
 
 ## Guest event animations (throw trash / throw up / poop squat)
 
 Three visible one-shot events, all deterministic and composed OVER the pose layer:
 
 - **Throw trash:** when the litter chance fires, the guest plays a 0.65 s eat-arm FLING (wind-up back, sweep forward with release at 0.28 s, recover — a pure additive offset that is 0 at both ends and peaks at ~7.8 rad/s, under the pose layer's 8.5 rad/s continuity limit) and the scrap mesh ARCS from the hand to its ground spot on a 0.5 s parabolic tween (+0.3 lob over the chord, tumbling), landing in the normal litter ring (cap 40, oldest reused). The held container vanishes at release.
-- **Throw up:** a walking guest with nausea ≥ 200 has a 20 %/s hashed chance to stop for 2.6 s (`'vomit'` action): eased hunch (torso pitch + head down through the slew-chased slump/tilt channels), face turns GREEN via `buildPeep().setSick(true)` (green-tinted grimace face — its own texture-cache key), and at the deepest point (1.1 s) a 12-droplet green ParticleKit burst fires at mouth height plus a splat decal ahead of the guest (own 8-slot ring, reusing the litter machinery; counts DOUBLE in the blight check like poop). Effects: nausea −130, happiness −12 (value and target), thought "I feel sick". The normal face is restored ~4 s after onset.
+- **Throw up:** a walking guest with nausea ≥ 200 has a 20 %/s hashed chance to stop for 2.6 s (`'vomit'` action): eased hunch (torso pitch + head down through the slew-chased slump/tilt channels), face turns GREEN via `buildPeep().setSick(true)` (green-tinted grimace face — its own texture-cache key), and at the deepest point (1.1 s) a 12-droplet green ParticleKit burst fires at mouth height plus a splat decal ahead of the guest (ONE merged mesh: a wet puddle with three splash lobes creeping out of it and two chunks; own 8-slot ring, reusing the litter machinery; counts DOUBLE in the blight check like poop). Effects: nausea −130, happiness −12 (value and target), thought "I feel sick". The normal face is restored ~4 s after onset.
 - **Poop squat:** the no-restroom fallback now plays a 0.8 s SQUAT first (walking guests only — hidden/stationary guests keep the instant drop): legs fold +1.15 rad, body drops, slight forward pitch, and the female skirt flares to cover; the poop mesh, toilet reset, −20 happiness and the "how embarrassing" thought all land as the guest stands, followed by the usual unhappy walk-off.
 
 One shared burst-only vomit emitter (`ParticleKit.buildEmitter`, max 48) lives on the manager group; `update` also drives the thrown-litter flights.
 
 ## Litter + bins (Guest.cpp:5534-6256)
 
-`registerBin(x, z)` (or `bins: [x,z][]` in opts) tracks LOGIC only — capacity 3 each; bin meshes are placed by the caller/ParkBuilder. A guest `holding = 'container'`: passing within 0.6 u of a non-full bin → `usingBin` (walk over, 0.8 s, deposit, count +1, then resume the exact edge position); otherwise each edge traversed carries a 6 % hashed chance to DROP litter, and a PATIENCE CAP guarantees disposal: ~30–45 hashed s after finishing (5–9 s for guests already walking OUT — the classic RCT2 exit-path litter) the container is thrown at the next stride — a little crumpled 2–3-box scrap mesh with deterministic tint spawns at their feet (capped at 40 meshes, oldest reused). Guests passing ≥ 3 litter pieces within 1.2 u: happinessTarget −17 + thought "The litter here is really bad" (rate-limited per guest).
+`registerBin(x, z)` (or `bins: [x,z][]` in opts) tracks LOGIC only — capacity 3 each; bin meshes are placed by the caller/ParkBuilder. A guest `holding = 'container'`: passing within 0.6 u of a non-full bin → `usingBin` (walk over, 0.8 s, deposit, count +1, then resume the exact edge position); otherwise each edge traversed carries a 6 % hashed chance to DROP litter, and a PATIENCE CAP guarantees disposal: ~30–45 hashed s after finishing (5–9 s for guests already walking OUT — the classic RCT2 exit-path litter) the container is thrown at the next stride — a litter pile spawns at their feet: ONE merged mesh per pile, drawn from 6 hashed variants of 2–3 pieces of recognisable rubbish (a crushed cup with its rolled rim, a scrunched foil wrapper, an emptied carton with the lid flap open, a dropped straw and lid) in a hashed tint — capped at 40 meshes, oldest reused. Guests passing ≥ 3 litter pieces within 1.2 u: happinessTarget −17 + thought "The litter here is really bad" (rate-limited per guest).
 
 ## Guests TRY THE WHOLE ROSTER (2026-07)
 
@@ -488,11 +488,11 @@ A miserable park therefore takes in ~2 guests a minute while its own leave roll 
 
 **Which clock.** The generation roll is authored per RCT2 tick, so it is read at RCT2's REAL 40 ticks/s (`TR`), NOT the 4×-compressed appetite clock — see "THE TWO CLOCKS". That asymmetry is deliberate and is what makes the gate bite: arrivals run at RCT2's pace while a soured park's departures run compressed.
 
-**The rest of the rating** is ported term for term off what the sim actually keeps: the guest-count slope (`:391`), ride UPTIME from live breakdown state (open 100 / broken or being repaired 25 / crashed 0, `:441-445`), RCT2's two excitement-intensity terms for rides that carry MEASURED `cfg.ratings` (`:449-471`; RCT2's own `RideHasRatings` gate means an unrated ride still costs the park the −100/−200 baselines, so `rateCoaster`-measured coasters really do draw a bigger crowd), and the litter penalty (`:475-483`). Not modelled: the lost-guest penalty (needs `guestIsLostCountdown`) and `ratingCasualtyPenalty`. This sim's litter carries no age, so ALL of it counts where RCT2 only counts litter over ~5 min old; the `LITTER_CAP` pool bounds that penalty at 160 points.
+**The rest of the rating** is ported term for term off what the sim actually keeps: the guest-count slope (`:391`), ride UPTIME, which is 100 for every ride that has not CRASHED and 0 for one that has (`:441-445`; no ride can break down, so RCT2's broken-down 25 never occurs — see "NO RIDE CAN BREAK DOWN" below), RCT2's two excitement-intensity terms for rides that carry MEASURED `cfg.ratings` (`:449-471`; RCT2's own `RideHasRatings` gate means an unrated ride still costs the park the −100/−200 baselines, so `rateCoaster`-measured coasters really do draw a bigger crowd), and the litter penalty (`:475-483`). Not modelled: the lost-guest penalty (needs `guestIsLostCountdown`) and `ratingCasualtyPenalty`. This sim's litter carries no age, so ALL of it counts where RCT2 only counts litter over ~5 min old; the `LITTER_CAP` pool bounds that penalty at 160 points.
 
 **Two ceilings.**
 
-- RCT2's own SOFT cap, `suggestedGuestMaximum` = Σ `BonusValue` over open, unbroken rides (`Park.cpp:107-140`) — exceeding it quarters the probability. RCT2 reads `BonusValue` off the ride type descriptor; this sim has no RCT2 ride type, so the three bands are the medians of the real tables (`src/openrct2/ride/rtd/**`): intensity ≥ 7 → 90 (coasters, 50-120), ≥ 4 → 50, else 40 (gentle, 22-50). A one-ride park is throttled to a quarter rate from ~40 guests up, exactly as RCT2 would.
+- RCT2's own SOFT cap, `suggestedGuestMaximum` = Σ `BonusValue` over open rides — here, every ride that has not crashed (`Park.cpp:107-140`) — exceeding it quarters the probability. RCT2 reads `BonusValue` off the ride type descriptor; this sim has no RCT2 ride type, so the three bands are the medians of the real tables (`src/openrct2/ride/rtd/**`): intensity ≥ 7 → 90 (coasters, 50-120), ≥ 4 → 50, else 40 (gentle, 22-50). A one-ride park is throttled to a quarter rate from ~40 guests up, exactly as RCT2 would.
 - A HARD cap, `arrivals.cap` — a PERFORMANCE guard, not an RCT2 mechanic. Arrivals stop while `activeGuests >= cap` and resume the instant a `leavingPark` guest despawns, so the population breathes at the ceiling instead of ratcheting. `<Park>` wires `guestCapForSize(size)` = **2× the opening population, clamped to [24, 160]** — 26 on a 16, 52 on a 48, 100 on a 128, 132 on a 192.
 
 **Knobs.** `createGameManager(t, { arrivals: { enabled?, cap? } })`; `enabled: false` gives the old fixed-population behaviour for a preview or probe that must hold an exact roster. Fully deterministic: each roll is `hash01(rollN·7.13 + 37.77)`, keyed on a monotonic roll counter, and the accumulator is driven by the clamped `dt`, so validatePark's 1/30 smoke loop and a variable-rate render loop admit the same guests after the same elapsed sim time.
@@ -501,21 +501,83 @@ A miserable park therefore takes in ~2 guests a minute while its own leave roll 
 
 Every `T(128)`, a guest with energy < 55 or happiness < 45 has a 5 % hashed chance to enter `leavingPark`: they route to the despawn point — the park-entrance archway when one is registered (walking out under the arch to `spawnPoint`), else the network node nearest the spawn area passed to `spawnGuests(count, area)` — and despawn there (hidden, slot freed). A freed slot is immediately available to the GATE STREAM, so a park sitting at its hard ceiling keeps turning its crowd over instead of freezing.
 
-## Breakdowns — deterministic, hashed per-ride reliability (additive)
+## NO RIDE CAN BREAK DOWN — the machinery is REMOVED, not disarmed
 
-Every ride carries a hashed reliability fixing its mean time between failures
-(~40–95 s, or `cfg.breakdownEvery` seconds); breakdowns fire on a schedule
-(no run-time randomness), last 12 s `'brokenDown'` + 6 s `'beingRepaired'`
-(~18 s total, `BREAK_DOWN_SECS`/`REPAIR_SECS`) and then the ride reopens with
-the next failure rearmed. On breakdown the FSM parks at
-`movingToEndOfStation` (state callbacks fire, e.g. spin-down) and PAUSES — no
-admissions — while the queue drains through the shared crash-ish path
-(`drainRide`: queuers/enterers walk off thinking `notSafe`, anyone aboard
-leaves via the exit hut). `joinRefusal` refuses broken rides and aimless
-guests skip them as goals. The handle's `status()` reports the RCT2
-ride-window status line (`Ride::formatStatusTo`,
-`src/openrct2/ride/Ride.cpp:528-564`): `'open' | 'closed' (crashed) |
-'brokenDown' | 'beingRepaired'`.
+**A DELIBERATE DIVERGENCE FROM RCT2.** RCT2 breaks rides down on a reliability
+roll and sends a mechanic (`RideFlag::brokenDown`; `Ride::formatStatusTo` draws
+"Broken down", `src/openrct2/ride/Ride.cpp:528-564`). This design system does
+not, in any circumstance. These parks are LOOKED AT, not managed: there is no
+mechanic to dispatch, no maintenance decision to make and nothing a viewer can
+do about a stopped ride, so a breakdown was pure downtime.
+
+`handle.status()` therefore answers **`'open'`, or `'closed'` for a crashed
+ride, and nothing else**. There is no third state and no way to ask for one.
+
+### What was removed, and from where
+
+| gone | was in |
+|---|---|
+| `breakIntervalOf()` (the hashed 40–95 s schedule) | `access.ts` |
+| `breakDown()`, the schedule block in `updateRide`, the 18 s repair countdown | `rideFsm.ts` |
+| `RideRec.brokenAt` / `.breakN` / `.nextBreak` | `types.ts` |
+| `BREAK_DOWN_SECS` (12) / `REPAIR_SECS` (6) | `types.ts` |
+| `statusOf`'s `'brokenDown'` / `'beingRepaired'` arms | `access.ts` |
+| `joinRefusal`'s broken-ride `notSafe` refusal | `needs.ts` |
+| `seekRide`'s broken-ride skip | `navigation.ts` |
+| the park-rating `uptime = 25` arm and `suggestedGuestMaximum`'s broken-ride skip | `arrivals.ts` |
+
+REMOVED rather than parked at a never-reached value, because a schedule that
+merely never fires is one edit away from firing again, and every downstream
+`brokenAt >= 0` branch would have stayed live-looking and untestable. With the
+FIELDS gone there is no state left to re-arm by accident: `updateRide` has
+exactly one way to stop serving guests and it is a CRASH.
+
+### `cfg.breakdownEvery` is IGNORED, and says so
+
+The field is still DECLARED (existing callers must keep type-checking — three
+`*.previews.tsx` files pass it) and is marked `@deprecated`. `registerRide`
+raises one `console.warn` naming it and exits. Ignoring it silently would leave
+an author wondering why their ride never stops; honouring it would contradict
+the rule.
+
+### A CRASH IS A DIFFERENT MECHANISM AND STILL WORKS
+
+`cfg.vehicleHandle.crashed()` — a coaster derailing, owned by the ride's own
+vehicle model, not by the manager — still drives `crashRide`: the ride enters
+`'crashed'`, `drainRide` empties every platform (queuers and enterers walk off
+thinking `notSafe`, anyone aboard leaves via the exit hut), guests stop treating
+it as a goal, and `status()` reports `'closed'`. It is permanent: nothing repairs
+a wreck. Do not "tidy" this away with the breakdown model — it is the only
+remaining out-of-service path and it is deliberate.
+
+### Measured (`harness/park-eval/probe-no-breakdown.mjs`, 1800 sim-s per scenario, `handle.status()` sampled every 1/30 s)
+
+`--breakdowns` restores the old schedule IN MEMORY at bundle time (esbuild
+`onLoad`, seven asserted anchors across five modules — nothing under `mp3d/` is
+written), so the A/B is one command and the zero is falsifiable:
+
+| | out of service | riders served / sim-min | transfers |
+|---|---|---|---|
+| flat ride, no knob — **old hashed schedule** | 252.0 s (**14.00 %**) | 3.50 | — |
+| flat ride, no knob — **now** | **0.0 s (0.00 %)** | 3.40 | — |
+| flat ride, `breakdownEvery: 30` — **old** | 616.4 s (**34.24 %**) | **0.03** (1 rider in 30 min) | — |
+| flat ride, `breakdownEvery: 30` — **now** | **0.0 s** | **3.40** | — |
+| 4-platform monorail, `breakdownEvery: 30` — **old** | 616.4 s (**34.24 %**) | 0.47 | 14 |
+| 4-platform monorail, `breakdownEvery: 30` — **now** | **0.0 s** | **2.43** (**5.2×**) | **73** |
+
+Read it honestly: the ride that opted IN is where the win is enormous (a ride
+broken a third of the time loses nearly every loading cycle to `drainRide`,
+which credits nobody), and the monorail gains 5.2× because a frozen fleet
+carries no one. The **no-knob flat ride is a wash — 3.50 → 3.40, −2.9 %** — and
+that is not a regression to chase: in a ONE-RIDE park the 20 s previous-ride
+refusal (`LAST_RIDE_TIMEOUT`) throttles re-rides, while a drained guest never
+rode and so may re-queue at once, and the legacy half also churned its crowd
+faster (11 vs 26 guests still in the park at the end). At ±3 % over a chaotic
+1800 s trajectory that is noise, not a mechanism.
+
+`probe-monorail-timetable.mjs` now FAILS the run on any out-of-service step
+rather than excusing it as maintenance: measured 0.0 s of 1800 s, four trains at
+97.4 % duty, 102 riders and 102 transfers.
 
 ## UI accessors (additive — feed the window suite)
 
@@ -555,7 +617,7 @@ ride-window status line (`Ride::formatStatusTo`,
 
 ## API summary
 
-- `registerRide(cfg)` — v1 fields unchanged (`name, capacity, rideDuration, loadTime?, queueAnchor, queueDir, entrance?, boardPoint, exitPoint, onStateChange?`; `loadTime` now times the `departing` phase) plus `intensity?` (1–10, default 4), `price?` (default 0), `minWait?`/`maxWait?`/`quietWait?` (seconds — see THE DEPARTURE RULE above: `maxWait` is now anchored on the first BOARDING, and `quietWait` defaults to `BOARD_QUIET_SECS` = 10), `vehicleHandle?`, `seatWorld?` (per-seat rider transform, see Boarding), `breakdownEvery?` (mean seconds between deterministic breakdowns), and `laneLen?` (round-2, ADDITIVE: explicit queue-lane length in world units, min 1.2; default stays the capacity formula `max(2.2, 0.6 + capacity·2·0.28 + 0.5)` — Park's register wrappers pass a trimmed value so the derived tail spur at `queueAnchor + (laneLen + 0.35)·queueDir` lands ON the street node the layout planned). Still builds the red QueuePath-style lane + entrance/exit huts (exit possibly audit-shifted) and returns `{ name, state(), queueLength(), occupancy(), exitPoint(), exitShift, status(), totalRides(), boardPoint(), seatAt(k) }` — `occupancy()` = `{ riders, capacity, occupied }`, `seatAt(k)` the live per-seat transform (ADDITIVE; `null` without `seatWorld`).
+- `registerRide(cfg)` — v1 fields unchanged (`name, capacity, rideDuration, loadTime?, queueAnchor, queueDir, entrance?, boardPoint, exitPoint, onStateChange?`; `loadTime` now times the `departing` phase) plus `intensity?` (1–10, default 4), `price?` (default 0), `minWait?`/`maxWait?`/`quietWait?` (seconds — see THE DEPARTURE RULE above: `maxWait` is now anchored on the first BOARDING, and `quietWait` defaults to `BOARD_QUIET_SECS` = 10), `vehicleHandle?` (the CRASH hook — still live), `seatWorld?` (per-seat rider transform, see Boarding), `breakdownEvery?` (**IGNORED and warned about — no ride can break down**), and `laneLen?` (round-2, ADDITIVE: explicit queue-lane length in world units, min 1.2; default stays the capacity formula `max(2.2, 0.6 + capacity·2·0.28 + 0.5)` — Park's register wrappers pass a trimmed value so the derived tail spur at `queueAnchor + (laneLen + 0.35)·queueDir` lands ON the street node the layout planned). Still builds the red QueuePath-style lane + entrance/exit huts (exit possibly audit-shifted) and returns `{ name, state(), queueLength(), occupancy(), exitPoint(), exitShift, status(), totalRides(), boardPoint(), seatAt(k) }` — `occupancy()` = `{ riders, capacity, occupied }`, `seatAt(k)` the live per-seat transform (ADDITIVE; `null` without `seatWorld`).
 - `registerStall(cfg)` → `{ name, sold() }`; `registerBin(x, z)` → `{ count() }`; `setBenches(list)` replaces the registered bench seats (see "Benches").
 - `createGameManager(t, opts)` takes `benches?: { x, y, z, yaw }[]` — bench SEATS a tired guest walks to and sits on. Logic only; the meshes are PathNetwork's. Omit it and the rest stop stays the in-place pause it always was.
 - `registerRestroom({ anchor?, yaw?, doorway?, owner? })` → `{ uses() }` (logic only — place the `buildRestroom` mesh yourself; `owner` ties the registration to the hut's own blocker so a guest walking to THIS doorway is never blocked by it).
@@ -578,7 +640,7 @@ ride-window status line (`Ride::formatStatusTo`,
 | `sim.ts` | the `Sim` type — immutable wiring, shared collections, shared MUTABLE scalars (`simTime`, `riddenTotal`, `spawnPt`, `parkEntrance`, balloon counters — never destructure these) and the subsystem slots |
 | `blockers.ts` | the blocker registry, its uniform grid and the routing `edgeAllowed` gate |
 | `guestFx.ts` | thoughts, the hashed per-guest `draw`, litter/vomit/poop pools, the two-hand registry, held items (generic + per-stall `heldItem` clones), head-slot wearables, held + flown balloons and their per-frame tweens |
-| `access.ts` | queue lane + slot geometry, `placeAccess` audit, RCT2 status line, breakdown interval, NaN-guarded attach, relocation accessors, `corridorCells` |
+| `access.ts` | queue lane + slot geometry, `placeAccess` audit, RCT2 status line (open/closed only), NaN-guarded attach, relocation accessors, `corridorCells` |
 | `registry.ts` | `register{Ride,Stall,Bin,Restroom,DanceZone,WatchZone,ParkEntrance}` and the handles they return |
 | `spawn.ts` | `spawnGuests` — rig build, hashed appearance, fresh-arrival stat block, click proxy |
 | `arrivals.ts` | THE GATE STREAM — RCT2's park rating + guest-generation probability, the per-RCT2-tick roll, the soft (`suggestedGuestMaximum`) and hard (`cap`) ceilings |

@@ -34,7 +34,6 @@ import {
   exitLaneLabels,
   laneFenceRects,
   hutRect,
-  breakIntervalOf,
   EXIT_LANE_BACK,
   EXIT_LANE_MAX,
 } from './access';
@@ -383,16 +382,22 @@ export function createRegistry(s: Sim) {
       boardAt: -1,
       lastBoardAt: -1,
       total: 0,
-      brokenAt: -1,
-      breakN: 0,
-      nextBreak: 0, // resolved below once the rec exists (hashed reliability)
       laneBlockers: rig0.laneBlockers,
       padBlocker: rig0.padBlocker,
       stations: [],
       atStation: 0,
       transfers: 0,
     };
-    rec.nextBreak = s.simTime + breakIntervalOf(rec);
+    // NO RIDE CAN BREAK DOWN. `breakdownEvery` is the one knob that used to buy
+    // a breakdown, so a park still passing it is told, once, that it now buys
+    // nothing — silently honouring it would contradict the rule, and silently
+    // dropping it would leave an author wondering why their ride never stops.
+    // (DELIBERATE DIVERGENCE FROM RCT2 — see RideConfig.breakdownEvery.)
+    if (cfg.breakdownEvery !== undefined)
+      console.warn(
+        `[GameManager] registerRide(${cfg.name}): breakdownEvery=${cfg.breakdownEvery} is IGNORED — no ride in this design system can break down. ` +
+          'Remove the field; a crash (cfg.vehicleHandle.crashed()) is the only way a ride stops serving guests.',
+      );
     // stations[0] is a VIEW over the ride's own fields (same objects, delegated
     // by accessor) — a one-station ride is byte-identical to what it was, and
     // every existing consumer of rec.queue / rec.dir / rec.exitPos still sees
@@ -485,7 +490,10 @@ export function createRegistry(s: Sim) {
         end: [rec.exitOut.x, rec.exitOut.z] as [number, number],
       }),
       // ---- additive accessors (UI window suite) ----
-      /** RCT2 status line: open / closed / brokenDown / beingRepaired */
+      /** RCT2 status line — `'closed'` for a crashed ride, else `'open'`.
+       *  It can NEVER return `'brokenDown'` / `'beingRepaired'`: no ride in
+       *  this design system breaks down (access.ts `statusOf`). A caller
+       *  branching on those two arms is writing dead code. */
       status: () => s.access.statusOf(rec),
       /** riders served over the ride's lifetime */
       totalRides: () => rec.total,

@@ -110,7 +110,16 @@ export type RideState =
 
 // ---- ride status — the RCT2 ride-window status line (Ride::formatStatusTo,
 // src/openrct2/ride/Ride.cpp:528-564: Crashed / Broken down / Closed / Open;
-// 'being repaired' is the mechanic-fixing tail of a breakdown) ---------------
+// 'being repaired' is the mechanic-fixing tail of a breakdown).
+//
+// THE SIM NEVER PRODUCES THE LAST TWO. `access.ts`'s `statusOf` — the only
+// source of a live status — answers `'closed'` (crashed) or `'open'` and
+// nothing else, because no ride can break down. They stay in the union because
+// they are still a legal thing to ASK FOR: `createMotionGate.onStateChange`
+// takes `RideState | RideStatus | string`, so a park can spin a ride visual
+// down through them by hand, and the window suite (`RideViewer`, `ParkInfo`)
+// keeps a row for each. Anything switching on a LIVE status only ever needs the
+// two real arms — a `brokenDown` branch fed from `handle.status()` is dead code.
 export type RideStatus = 'open' | 'closed' | 'brokenDown' | 'beingRepaired';
 
 // ---- motion gate: RCT2 station behaviour for ride VISUALS ------------------
@@ -334,17 +343,27 @@ export interface RideConfig {
   quietWait?: number;
   /** external vehicle handle — crashed() true puts the ride into 'crashed' */
   vehicleHandle?: { crashed?(): boolean };
-  /** ADDITIVE: mean seconds between deterministic breakdowns.
+  /**
+   * @deprecated IGNORED — **NO RIDE IN THIS DESIGN SYSTEM CAN BREAK DOWN.**
    *
-   *  **Omit it and the ride NEVER breaks down — that is the default.** It used
-   *  to default to a hashed 40–95 s, which held every ride out of service
-   *  16–31% of the time and cost 8–23% of all boarded riders (a breakdown
-   *  drains the vehicle as `notSafe` and credits nobody). These parks are
-   *  looked at, not managed, and nothing dispatches a mechanic.
+   * Passing a number here does nothing except raise one `console.warn` at
+   * registration. The field is kept ONLY so that existing callers still
+   * type-check; there is no code path left that can put a ride out of service
+   * (`RideRec` no longer carries a breakdown clock and `rideFsm.ts` no longer
+   * has a schedule to fire — see the note above `statusOf` in access.ts).
    *
-   *  Set it to opt a ride back in; the value is then the exact mean, ±25%
-   *  jitter. Each breakdown lasts ~18 s (`brokenDown` then `beingRepaired`),
-   *  then the ride reopens. See `breakIntervalOf`. */
+   * This is a DELIBERATE DIVERGENCE FROM RCT2, which does break rides down and
+   * sends a mechanic (`RideFlag::brokenDown`, `Ride::formatStatusTo`,
+   * src/openrct2/ride/Ride.cpp:528-564). These parks are looked at, not
+   * managed: nothing here dispatches a mechanic, so a breakdown was pure
+   * downtime. Measured before removal, on a hashed 40–95 s mean interval
+   * against 18 s of repair: every ride out of service 16–31 % of the clock,
+   * 8–23 % of all boarded riders lost (a breakdown drains the vehicle as
+   * `notSafe` and credits nobody), and the reference monorail fleet frozen for
+   * 14.3 % of the run.
+   *
+   * A CRASH is a different mechanism and still works — see `vehicleHandle`.
+   */
   breakdownEvery?: number;
   /** ADDITIVE (round-2): explicit queue-lane length in world units (min 1.2).
    *  Default: the capacity formula `max(2.2, 0.6 + capacity·2·0.28 + 0.5)`.
@@ -617,6 +636,20 @@ export interface GameManagerOpts {
    *  sources). On by default whenever a park entrance is registered; `<Park>`
    *  wires the size-scaled `cap`. */
   arrivals?: ArrivalsOpts;
+  /** LIVE CAMERAS — enables the INSTANCED FAR CROWD (crowd.ts): guests beyond
+   *  `CROWD_DETAIL_RADIUS` of every camera are drawn by eight `InstancedMesh`
+   *  pools instead of their own 13-mesh rigs, which is what makes a 500-guest
+   *  park affordable (measured: 22 ms of frame → ~2 ms). `<Park>` wires its
+   *  Stage cameras.
+   *
+   *  OMIT IT and the LOD is OFF — every guest keeps its full rig and the pose
+   *  stack runs on all of them, i.e. the pre-crowd behaviour exactly. That is
+   *  the contract component PREVIEWS rely on (screenshots must stay
+   *  pixel-identical), so `<ScenePreview>` deliberately passes nothing.
+   *
+   *  The LOD is VISUAL ONLY: nothing the sim reads is gated on it, so the park
+   *  evolves identically whatever the camera does (see crowd.ts DETERMINISM). */
+  cameras?: () => THREE.Camera[];
 }
 
 /** ADDITIVE (round 9): `spawnGuests`' optional THIRD argument — STARTING-STAT
@@ -775,6 +808,25 @@ export interface BalloonHold {
 export interface SimGuest {
   idx: number;
   peep: ReturnType<typeof buildPeep>;
+  /** the fat invisible CLICK PROXY, a SIBLING of the rig in the manager group
+   *  (see spawn.ts for why it is not a child): it is what keeps a guest
+   *  pickable while the instanced far crowd is drawing them. */
+  proxy: THREE.Mesh;
+  /** the hashed appearance palette, kept as NUMBERS so the instanced far crowd
+   *  (crowd.ts) can tint its pools without re-reading 13 materials off the rig */
+  tint: { shirt: number; trousers: number; skin: number; hair: number };
+  /** FAR-CROWD walk phase (rad) and its cadence (rad/s). Only advanced while the
+   *  guest is drawn by the instanced pools — the full rig owns its own phase
+   *  inside the `<Guest>` pose layer. */
+  farPhase: number;
+  farCadence: number;
+  /** does this guest currently occupy its instanced-crowd slot? (so switching
+   *  back to the full rig blanks the instance exactly once) */
+  farShown: boolean;
+  /** has this guest EATEN yet? RCT2 fills a bladder from food (Guest.cpp:832);
+   *  here the passive toilet climb is gated on it too, so an arrival starts at
+   *  toilet 0 and only starts needing a restroom after their first meal. */
+  ateFood: boolean;
   state: GuestState;
   gone: boolean;
   hidden: boolean;
@@ -1035,11 +1087,13 @@ export interface RideRec {
    *  boarding-quiet window is measured from here, so every new rider buys the
    *  platform another `quietWait` seconds. */
   lastBoardAt: number;
-  // ---- additive: breakdown model + per-ride totals ----
   total: number; // riders served over the ride's lifetime ("total rides")
-  brokenAt: number; // simTime the current breakdown began (-1 = running fine)
-  breakN: number; // completed breakdowns (feeds the deterministic schedule)
-  nextBreak: number; // simTime of the next scheduled breakdown
+  // NO BREAKDOWN CLOCK. `brokenAt` / `breakN` / `nextBreak` used to live here
+  // and are gone: a ride that cannot break down has nothing to time. Removing
+  // the FIELDS rather than parking them at a never-reached value is what makes
+  // "no ride can break down" readable off the record instead of off a schedule
+  // — there is no state left for a future edit to re-arm by accident.
+  // DELIBERATE DIVERGENCE FROM RCT2 (see RideConfig.breakdownEvery).
   // ---- ADDITIVE: MULTI-STATION (RCT2 Ride::GetStations(), Ride.h) ----------
   /** every platform on this ride, in visit order. Length 1 for an ordinary
    *  ride, and `stations[0]` is then just a view over the fields above. */
@@ -1110,6 +1164,24 @@ export const SIT_DROP = 0.46 * GUEST_SCALE;
 export const LITTER_CAP = 40;
 export const POOP_CAP = 8; // discreet fallback meshes, oldest reused
 export const TOILET_SEEK = 200; // toilet need at which a guest hunts for a restroom
+/** PASSIVE BLADDER FILL per 512-tick cycle, once the guest has EATEN.
+ *
+ *  RCT2 steps `Toilet` by +1 per 512 ticks unconditionally (Guest.cpp:3096) from
+ *  a fresh-arrival roll of 0-77. This sim now spawns every guest at toilet 0 and
+ *  holds the passive climb until their first meal (`g.ateFood`) — the need is a
+ *  CONSEQUENCE of eating, not of existing — so the whole climb has to fit in the
+ *  post-meal part of a visit rather than the whole visit, and the step is scaled
+ *  to that shorter window instead:
+ *
+ *      TOILET_SEEK (200) / TOILET_FILL (6) x 3.2 s = 107 sim-s after the first
+ *      bite before a guest goes looking for a restroom
+ *
+ *  …plus RCT2's own +2 per food nibble (:832), which a 12-16-bite meal adds
+ *  ~28 of on top, so the hunt starts roughly a minute and a half after the
+ *  burger. On the RCT2-exact +1 it would be 640 s — longer than a guest's whole
+ *  stay, i.e. the restrooms would never be used at all, which is the same
+ *  reasoning that already doubled this step to +2 before the spawn value changed. */
+export const TOILET_FILL = 6;
 // ---- RCT2 tick-derived thresholds -------------------------------------------
 export const NEEDS_TICK = T(128); // 0.8 s — the Tick128 cadence (Guest.cpp:769)
 // THE 512-TICK SUB-CADENCE. tick128UpdateGuest is entered every 128 ticks, but
@@ -1153,11 +1225,12 @@ export const BITE_GAP = 8; // seconds between bites, + hashed 0-4
 export const GUEST_CASH_BASE = 100; // the £40 tier
 export const GUEST_CASH_STEP = 25; // £10 in sim coins
 export const GUEST_CASH_TIERS = 4; // RCT2's (rand & 3)
-// breakdown phases (RideFlag::brokenDown — Ride::formatStatusTo draws
-// "Broken down", src/openrct2/ride/Ride.cpp:534-537): the fault lasts 12 s,
-// the mechanic's repair another 6 s (~18 s total), then the ride reopens
-export const BREAK_DOWN_SECS = 12;
-export const REPAIR_SECS = 6;
+// NO BREAKDOWN DURATIONS. `BREAK_DOWN_SECS` (12) and `REPAIR_SECS` (6) used to
+// live here, timing RCT2's fault + mechanic-repair phases. Nothing computes with
+// them now — no ride can break down (see RideConfig.breakdownEvery) — so they
+// are removed rather than exported as a pair of numbers no code reads. The two
+// VISUAL states they timed still exist in `RideStatus` / `createMotionGate`,
+// because a park may drive a ride's spin-down through them by hand.
 // BOARDING-QUIET WINDOW: how long a part-full vehicle holds the doors open
 // after the LAST guest sat down. Every boarding restarts it; when it runs out
 // with at least one rider aboard, the ride leaves (rideFsm.ts

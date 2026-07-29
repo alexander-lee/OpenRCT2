@@ -111,6 +111,16 @@ export const WORLD_PRESET_IDS: WorldThemeId[] = ['fire', 'pirateBeach', 'steampu
  * made `componentsOfWorld()` advertise an unbuildable piece in every
  * `crossTheme` message. Each world's REAL content (its rides, its stall, its
  * five scenery pieces) is untouched and is what fills a world now.
+ *
+ * **THE FOUR NEW GIANTS ARE KEYS HERE AS OF 2026-07-28.** `Volcano` was the only
+ * landmark in this table, so when the other four worlds got theirs
+ * (`BeachedGalleon`, `GreatZeppelin`, `DragonRoost`, `DiscoBallFloor` — see
+ * `components/WorldLandmark`) they mounted as NEUTRAL: measured on
+ * harness/park-eval/shots/w33a, `DragonRoost` and `DiscoBallFloor` were both in
+ * the scene and neither appeared in `worlds.themedPieces`, while `Volcano` did.
+ * A world's own GIANT counted for nothing on the coherence audit and a galleon
+ * standing in the glade was undetectable — the exact hole this table exists to
+ * close.
  */
 export const COMPONENT_THEME: Record<string, WorldThemeId> = {
   // ---- EMBERFALL CALDERA (volcanic) ----
@@ -126,6 +136,7 @@ export const COMPONENT_THEME: Record<string, WorldThemeId> = {
   LavaFissure: 'fire',
   CharredSnag: 'fire',
   // ---- TIDEWATER HOLLOW (shipwreck cove) ----
+  BeachedGalleon: 'pirateBeach',
   ReefRacer: 'pirateBeach',
   DeepDrift: 'pirateBeach',
   OceanTunnelSlide: 'pirateBeach',
@@ -136,6 +147,7 @@ export const COMPONENT_THEME: Record<string, WorldThemeId> = {
   TidePool: 'pirateBeach',
   DockPilings: 'pirateBeach',
   // ---- BRASSWORK FOUNDRY (steampunk) ----
+  GreatZeppelin: 'steampunk',
   GearworksExpress: 'steampunk',
   AetherBalloons: 'steampunk',
   BoilerBurst: 'steampunk',
@@ -152,6 +164,7 @@ export const COMPONENT_THEME: Record<string, WorldThemeId> = {
   // never registerRide), so a park could not mount all of its theme's rides.
   // Blast radius measured first: 4 of 30 corpus parks.
   Chairlift: 'enchantedForest',
+  DragonRoost: 'enchantedForest',
   WyrmsHollow: 'enchantedForest',
   MoonlitBarge: 'enchantedForest',
   MagicMirror: 'enchantedForest',
@@ -167,6 +180,7 @@ export const COMPONENT_THEME: Record<string, WorldThemeId> = {
   // ride, and `neon` owned only TWO rides, so a park could never mount all of
   // its theme's rides. Blast radius measured first: 1 of 30 corpus parks.
   MagneticRide: 'neon',
+  DiscoBallFloor: 'neon',
   Bassline: 'neon',
   Discotron: 'neon',
   BigPiano: 'neon',

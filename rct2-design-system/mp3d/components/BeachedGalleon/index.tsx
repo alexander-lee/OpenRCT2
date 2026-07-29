@@ -331,4 +331,27 @@ export function buildBeachedGalleon(t: typeof THREE): LandmarkBuilt {
 }
 
 /** `<BeachedGalleon>` — pirateBeach's landmark. */
-export const BeachedGalleon = composable('BeachedGalleon', (t) => buildBeachedGalleon(t));
+export const BeachedGalleon = composable<Record<string, never>, LandmarkBuilt>(
+  'BeachedGalleon',
+  (t) => buildBeachedGalleon(t),
+  {
+    // REGISTER THE MASS. This header has always claimed the giant "registers a
+    // footprint so guests and the OBB sweep route around it" and it did not:
+    // `composable()` was called with no `compose` cfg, so nothing was declared
+    // and guests walked straight THROUGH the hull / the mooring mast / the nest.
+    // MEASURED 2026-07-28: of the five world giants only <Volcano> registered a
+    // blocker (3 calls); these four registered none. The builder already returns
+    // the `radius` guests are meant to walk around — it was simply never used.
+    compose: (park, { built, position, rotation, scale }) => {
+      void rotation;
+      const [wx, , wz] = position;
+      const un = park.registerBlocker({
+        circle: { cx: wx, cz: wz, r: built.radius * scale },
+        label: '<BeachedGalleon>',
+        height: 3.0 * scale,
+        kind: 'scenery',
+      });
+      return () => un();
+    },
+  },
+);

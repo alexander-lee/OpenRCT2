@@ -8,6 +8,7 @@ import { createGuestFx } from './guestFx';
 import { createAccess } from './access';
 import { createRegistry } from './registry';
 import { createSpawn } from './spawn';
+import { createCrowd } from './crowd';
 import { createArrivals } from './arrivals';
 import { createLocomotion } from './locomotion';
 import { createNeeds } from './needs';
@@ -174,6 +175,9 @@ export function createGameManager(t: typeof THREE, opts: GameManagerOpts = {}) {
   s.fx = createGuestFx(s);
   s.access = createAccess(s);
   s.registry = createRegistry(s);
+  // the far crowd BEFORE spawn: `spawnGuests` registers every new guest's
+  // palette with it as it builds them
+  s.crowd = createCrowd(s);
   s.spawn = createSpawn(s);
   s.arrivals = createArrivals(s);
   s.loco = createLocomotion(s);
@@ -191,7 +195,13 @@ export function createGameManager(t: typeof THREE, opts: GameManagerOpts = {}) {
     // `simTime` — on a slow page they diverge by more than 10x.
     s.walkClock += d;
     rides.forEach((r) => s.rideFsm.updateRide(r, d));
+    // THE CROWD LOD BRACKETS THE GUEST PASS: `beginFrame` samples the live
+    // cameras and closes its detail-radius controller, the pass decides each
+    // guest's level of detail and writes the far ones' instance matrices, and
+    // `endFrame` uploads them. See crowd.ts — everything it gates is visual.
+    s.crowd.beginFrame();
     guests.forEach((g) => s.guestPass.updateGuest(g, time, d));
+    s.crowd.endFrame();
     s.fx.update(time, d);
     // THE GATE STREAM last: a guest who despawned in the pass above has
     // already freed their slot, and an arrival spawned here starts its own
@@ -259,5 +269,15 @@ export function createGameManager(t: typeof THREE, opts: GameManagerOpts = {}) {
     /** is this path edge walkable? (false = its span crosses a blocker;
      *  access spurs are always walkable) — validatePark's street gate */
     edgeWalkable: blockers.edgeAllowed,
+    /** live numbers from the instanced far crowd (crowd.ts): the current detail
+     *  radius, how many guests are on full rigs, how many the pools are drawing
+     *  and how many draw calls that costs */
+    crowd: s.crowd.snapshot,
+    /** HEADLESS SWITCH for a run nobody is watching — `validatePark`'s sim smoke
+     *  steps the whole population ~2550 times with no frame in between, and at
+     *  500 guests animating that audience of nobody was the dominant cost of the
+     *  acceptance gate. Everything with a sim consequence still runs. See
+     *  crowd.ts `setVisuals`. */
+    setVisuals: s.crowd.setVisuals,
   };
 }

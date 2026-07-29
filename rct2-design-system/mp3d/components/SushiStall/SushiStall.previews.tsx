@@ -102,9 +102,12 @@ const previews = {
     {
       name: '3D rig',
       description:
-        'Sushi stall: driftwood plank counter lashed with rope, slate top, an open ice case of nigiri and stood maki rolls, a gantry with a brine-teal noren strip and a swag of cork/glass net floats, a slate chalk menu and one paper lantern.',
+        'Sushi stall: driftwood plank counter lashed with rope, slate top, an open ice case of nigiri and stood maki rolls, a gantry with a brine-teal noren strip and a swag of cork/glass net floats, a slate chalk menu and one paper lantern — and, standing on a driftwood trestle behind the counter, a GIANT NIGIRI (1.8 u wide, ~15x the case pieces, salmon slice + nori band over a cream rice pillow) so the stall says what it sells from the park camera and not just from the counter.',
+      // FRAMED FOR THE HERO PIECE. At distance 4.8 / targetY 0.75 the giant
+      // nigiri's crown (y ~2.3) was cropped off the top of the canvas, which is
+      // the one thing this preview now exists to judge.
       render: () => (
-        <ScenePreview distance={4.8} targetY={0.75} autoRotate={false}>
+        <ScenePreview distance={6.2} targetY={1.15} autoRotate={false}>
           <SushiStall withGuest />
         </ScenePreview>
       ),

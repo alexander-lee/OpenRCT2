@@ -138,7 +138,7 @@ const previews = {
     {
       name: '3D rig',
       description:
-        "The Goggle Works: riveted brass and copper panels on a soot-iron carcass, a treadle-driven lens-grinding wheel turning on the counter behind its flat leather belt, a patinated copper boiler with three live pressure gauges venting steam through the roof, a display rack of finished goggles, a brass gaslight on a curved bracket and one heroic pair of goggles as the shop sign. The browsing guest is already wearing a pair — the same recipe the GameManager clones onto every buyer's head.",
+        "The Goggle Works: riveted brass and copper panels on a soot-iron carcass, a treadle-driven lens-grinding wheel turning on the counter behind its flat leather belt, a patinated copper boiler with three live pressure gauges venting steam through the roof, a display rack of finished goggles, a brass gaslight on a curved bracket and, on the roof, a GIANT pair of goggles as the shop sign — 6.4x the worn pair, 1.64 u wide across a 1.84 u roof, tipped back 0.5 rad so the two lens discs face the park camera square-on instead of showing it their rims edge-on. The browsing guest is already wearing a pair — the same recipe the GameManager clones onto every buyer's head.",
       // LOOK UNDER THE ROOF. With no `dress` this preview took the ScenePreview
       // default pose, measured at 50.8 deg of elevation and 4.44 u out: from up
       // there the shop is its own back-half roof plate, and the grinder, the
@@ -147,13 +147,19 @@ const previews = {
       // camera under the roof line and onto the serving front, and the yard disc
       // stops the kiosk standing on open grass.
       render: () => (
+        // …AND THEN PULLED BACK FOR THE HERO SIGN. The 26 deg pose is kept (it is
+        // the only shot that gets under the roof line), but at 3.5 u out the
+        // GIANT goggles — 1.64 wide, topping out at y 2.10 — were cropped off the
+        // canvas. The camera moves straight out along the same ray, so the
+        // elevation is unchanged at ~25 deg and everything the modelling note
+        // protects is still in shot.
         <ScenePreview
-          distance={3.5}
-          targetY={0.55}
+          distance={4.7}
+          targetY={0.9}
           autoRotate={false}
           dress={(t, g, api) => {
             foundryYard(2.4)(t, g);
-            api.setCameraPose?.([1.55, 2.05, 2.75], [0, 0.55, 0.05]);
+            api.setCameraPose?.([2.1, 2.9, 3.75], [0, 0.9, 0.05]);
           }}
         >
           <GoggleWorks withGuest />

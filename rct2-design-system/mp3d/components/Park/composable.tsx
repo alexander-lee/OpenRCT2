@@ -172,8 +172,19 @@ export function composable<P extends object, B extends ComposableBuilt = Composa
   const Component: React.FC<P & ComposableProps> = (all) => {
     const { position, rotation = 0, scale = 1, deps, ...rest } = all as ComposableProps & Record<string, unknown>;
     const props = { ...cfg.props, ...rest } as P;
-    const inScene = useComposable(
-      (t, park) => {
+    // NAME THE QUEUED BUILD. `useComposable` labels its queue item
+    // `buildRef.current.name || 'composable'`, and that label is the ONLY thing
+    // `runOneBuild`'s catch prints when a builder throws (parkContext.ts:766).
+    // An anonymous arrow has no `.name`, so EVERY catalog component's failure
+    // read `[Park] build failed (composable): …` and named nothing — MEASURED
+    // across harness/park-eval/shots/w31a..w33b, six consecutive parks logged
+    // exactly two such lines each, with two of the five world giants silently
+    // absent from the scene, and the log could not say which two components had
+    // thrown. A computed key gives the arrow the component's own displayName at
+    // no runtime cost; the `/Scene$/` misuse guard in useComposable still sees a
+    // component name, never a `build<Name>Scene`.
+    const buildFor = {
+      [displayName]: (t: typeof THREE, park: ParkContextValue) => {
         const built = toBuilt(build(t, props, park)) as B;
         tagComponent(built, displayName, 'scenery');
         if (cfg.compose && !(park as ParkStore)._previewHost) {
@@ -191,8 +202,8 @@ export function composable<P extends object, B extends ComposableBuilt = Composa
         }
         return built;
       },
-      { position, rotation, scale, deps: deps ?? rest },
-    );
+    }[displayName];
+    const inScene = useComposable(buildFor, { position, rotation, scale, deps: deps ?? rest });
     if (!inScene) console.warn(`<${displayName}> must be rendered inside a <Park> or <ScenePreview> — nothing mounted`);
     return null;
   };

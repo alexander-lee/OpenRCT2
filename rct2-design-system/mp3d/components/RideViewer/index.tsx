@@ -19,6 +19,13 @@ import { rect43, StageApi, StageViewportRect } from '../Stage';
 // `vehicle` object. Deterministic; polls the ride handle.
 // ---------------------------------------------------------------------------
 
+// A LIVE GameManager HANDLE ONLY EVER REPORTS THE FIRST TWO. No ride in this
+// design system can break down (a deliberate divergence from RCT2 — see
+// `GameManager/Context.md`), so `handle.status()` answers 'open', or 'closed'
+// for a crashed ride. The two mechanic values stay in the union because this is
+// a STRUCTURAL interface: anything that supplies a `status()` can drive this
+// window, and the rows below still render correctly if something does. Nothing
+// here goes stale — the window polls `status()` every frame.
 export type RideViewerStatus = 'open' | 'closed' | 'brokenDown' | 'beingRepaired';
 
 /** structural view of a GameManager registerRide handle (incl. the additive

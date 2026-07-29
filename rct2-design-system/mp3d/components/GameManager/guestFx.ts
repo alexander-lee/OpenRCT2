@@ -9,10 +9,16 @@
 // Every pool is CAPPED with oldest-slot reuse, exactly as RCT2 recycles its
 // litter/vomit entities, and every random choice is a hashed draw, so the
 // whole module is deterministic. Implementation detail of createGameManager.
+//
+// Every one of those objects is instantiated per pool slot or PER GUEST, so
+// each is built as ONE MERGED MESH PER MATERIAL out of a cached geometry (see
+// the MESH RECIPES block below) — detail here is paid in draw calls hundreds of
+// times over, and the recipes are exported so shot-guestfx.mjs can shoot them.
 // ---------------------------------------------------------------------------
 
 import type * as THREE from 'three';
-import { box, cyl, ball } from '../Stage';
+import { cyl, mat, mergedParts, mtx } from '../Stage';
+import type { MatOpts, PartSpec } from '../Stage';
 import { buildEmitter } from '../ParticleKit';
 import { BALLOON_COLS } from '../BalloonStand';
 import { hash01, clamp255, LITTER_CAP, POOP_CAP, thoughtText, thoughtNamesSubject } from './types';
@@ -38,6 +44,298 @@ export const freeHand = (g: SimGuest, prefer: HandSlot): HandSlot | null => {
 
 const dimCol = (c: number, f: number) =>
   (((((c >> 16) & 255) * f) | 0) << 16) | (((((c >> 8) & 255) * f) | 0) << 8) | (((c & 255) * f) | 0);
+
+// ---------------------------------------------------------------------------
+// MESH RECIPES — every pooled / carried thing is ONE MERGED MESH per material.
+//
+// These are the most-instantiated objects in the park: 40 litter piles, 8
+// poops, 8 vomits, 10 airborne balloons and a food / drink / container set on
+// EVERY buying guest's hand (and the guest count runs into the hundreds). The
+// frame budget here is DRAW CALLS, not triangles — one mesh is one draw call,
+// and a mesh also costs a shadow-pass draw and a place in three's per-object
+// walk — so no recipe below is a loose pile of `box()`/`ball()` primitives.
+// Each is a `mergedParts` batch: the crushed cup, its rolled rim and the
+// scrunched wrapper beside it are ONE mesh, and the triangles freed up by that
+// are spent on making the silhouette actually readable at park zoom (RCT2's
+// litter/poop sprites are recognisable SHAPES, not grey cubes).
+//
+// The merged geometries are CACHED per recipe key and flagged
+// `userData.shared`, exactly like the Stage's box/cyl/ball cache: every guest
+// in the park shares ONE bun buffer, and `disposeDeep` leaves the cache warm
+// across remounts. Litter therefore has a FIXED SET of hashed VARIANTS
+// (LITTER_VARS) instead of a bespoke geometry per pile — the variant and the
+// tint are still hashed draws, so the world stays varied AND deterministic
+// without minting 40 one-off buffers.
+// ---------------------------------------------------------------------------
+const _fxGeo = new Map<string, THREE.BufferGeometry>();
+const fxGeo = (t: typeof THREE, key: string, parts: () => PartSpec[]): THREE.BufferGeometry => {
+  let g = _fxGeo.get(key);
+  if (!g) {
+    // mergedParts wants a material; the geometry is all we keep from this call
+    const tmp = mergedParts(t, parts(), new t.MeshBasicMaterial());
+    (tmp.material as THREE.Material).dispose();
+    g = tmp.geometry;
+    g.userData.shared = true; // survives disposeDeep, like the Stage geo cache
+    _fxGeo.set(key, g);
+  }
+  return g;
+};
+/** one merged mesh from a cached recipe: `key` identifies the GEOMETRY, while
+ *  the material stays per-mesh (repo convention — materials are never shared) */
+const fxMesh = (t: typeof THREE, key: string, parts: () => PartSpec[], color: number, o: MatOpts = {}) => {
+  const m = new t.Mesh(fxGeo(t, key, parts), mat(t, color, o));
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
+};
+
+// ---- litter: 6 hashed variants of 2–3 pieces of RECOGNISABLE rubbish --------
+// (was 2–3 identical 5 cm boxes with a random yaw, which read as gravel.) The
+// menu is a crushed paper cup on its side with its rolled rim bent open, a
+// scrunched foil wrapper of three folded leaves, an emptied carton with its lid
+// flap standing up, and a dropped straw beside a flat cup lid.
+const LITTER_TINTS = [0xb0342a, 0xc8b898, 0x9a6a30, 0xd8d4c8]; // cup / wrapper / carton / paper
+const LITTER_VARS = 6;
+const litterParts = (t: typeof THREE, v: number): PartSpec[] => {
+  const H = (k: number) => hash01(v * 41.3 + k * 7.13 + 0.37);
+  const parts: PartSpec[] = [];
+  const n = 2 + Math.floor(H(1) * 2); // 2–3 pieces per pile, as before
+  for (let k = 0; k < n; k += 1) {
+    const ox = (H(k * 20 + 2) - 0.5) * 0.15;
+    const oz = (H(k * 20 + 3) - 0.5) * 0.15;
+    const yaw = H(k * 20 + 4) * Math.PI * 2;
+    switch (Math.floor(H(k * 20 + 5) * 4) % 4) {
+      case 0: {
+        // crushed cup on its side: tapered tube squashed across its cross-
+        // section (local x — rotZ π/2 lays that flat) + the rolled rim ring
+        const rot: [number, number, number] = [0, yaw, Math.PI / 2 + 0.1];
+        const ax = new t.Vector3(0, 1, 0).applyEuler(new t.Euler(rot[0], rot[1], rot[2], 'YXZ'));
+        parts.push({ geo: new t.CylinderGeometry(0.03, 0.021, 0.07, 12), matrix: mtx(t, [ox, 0.021, oz], rot, [0.62, 1, 1]) });
+        parts.push({
+          geo: new t.CylinderGeometry(0.033, 0.032, 0.006, 12),
+          matrix: mtx(t, [ox + ax.x * 0.036, 0.021 + ax.y * 0.036, oz + ax.z * 0.036], rot, [0.62, 1, 1]),
+        });
+        break;
+      }
+      case 1: {
+        // scrunched wrapper: three thin leaves folded across each other
+        for (let p = 0; p < 3; p += 1)
+          parts.push({
+            geo: new t.BoxGeometry(0.05, 0.006, 0.042),
+            matrix: mtx(
+              t,
+              [ox + (H(k * 20 + 6 + p) - 0.5) * 0.028, 0.006 + p * 0.008, oz + (H(k * 20 + 9 + p) - 0.5) * 0.028],
+              [(H(k * 20 + 12 + p) - 0.5) * 1.1, yaw + p * 1.05, (H(k * 20 + 15 + p) - 0.5) * 1.1],
+            ),
+          });
+        break;
+      }
+      case 2: {
+        // emptied carton, lid flap hinged OPEN (composed off the body matrix so
+        // the flap follows the carton's yaw instead of floating beside it)
+        const base = mtx(t, [ox, 0.013, oz], [0.06, yaw, 0.05]);
+        parts.push({ geo: new t.BoxGeometry(0.052, 0.026, 0.04), matrix: base });
+        parts.push({ geo: new t.BoxGeometry(0.052, 0.004, 0.034), matrix: base.clone().multiply(mtx(t, [0, 0.019, -0.021], [-1.15, 0, 0])) });
+        break;
+      }
+      default: {
+        // dropped straw + the flat lid it came off
+        parts.push({ geo: new t.CylinderGeometry(0.0035, 0.0035, 0.088, 6), matrix: mtx(t, [ox, 0.0045, oz], [0, yaw, Math.PI / 2]) });
+        parts.push({ geo: new t.CylinderGeometry(0.023, 0.023, 0.005, 12), matrix: mtx(t, [ox + 0.03, 0.004, oz - 0.02], [0.22, yaw, 0.1]) });
+      }
+    }
+  }
+  return parts;
+};
+/** a hashed litter pile — a Group (the throw tween owns its transform) holding
+ *  exactly ONE mesh, down from the 2–3 it used to hold */
+export function buildLitterMesh(t: typeof THREE, seed: number): THREE.Group {
+  const g = new t.Group();
+  g.name = 'litter';
+  const v = Math.floor(hash01(seed * 1.93 + 0.11) * LITTER_VARS) % LITTER_VARS;
+  const tint = LITTER_TINTS[Math.floor(hash01(seed * 3.7) * LITTER_TINTS.length) % LITTER_TINTS.length];
+  g.add(fxMesh(t, `litter:${v}`, () => litterParts(t, v), tint, { rough: 0.9, flat: true }));
+  return g;
+}
+
+// ---- poop: the RCT2 silhouette — a tapering COIL of three squashed rings on
+// a ground smear, capped with a little peak (was two stacked brown balls, which
+// read as a pebble). One mesh.
+const poopParts = (t: typeof THREE): PartSpec[] => {
+  const sph = new t.SphereGeometry(1, 12, 8);
+  const parts: PartSpec[] = [
+    { geo: sph, matrix: mtx(t, [0, 0.007, 0], [0, 0.3, 0], [0.062, 0.011, 0.052]) }, // smear on the path
+    { geo: sph, matrix: mtx(t, [0, 0.03, 0], [0, 0, 0], [0.032, 0.03, 0.03]) }, // core, so the coil has no hole
+  ];
+  for (const [R, r, y, yaw] of [
+    [0.046, 0.017, 0.021, 0.0],
+    [0.036, 0.0155, 0.045, 0.7],
+    [0.025, 0.0135, 0.065, 1.5],
+  ] as [number, number, number, number][])
+    parts.push({ geo: new t.TorusGeometry(R, r, 7, 16), matrix: mtx(t, [0, y, 0], [Math.PI / 2, yaw, 0], [1, 1, 0.88]) });
+  parts.push({ geo: new t.ConeGeometry(0.014, 0.03, 9), matrix: mtx(t, [0.005, 0.084, 0], [0, 0, -0.4]) });
+  return parts;
+};
+/** a poop slot: a Group (the pool moves its transform) holding ONE mesh */
+export function buildPoopMesh(t: typeof THREE): THREE.Group {
+  const g = new t.Group();
+  g.name = 'poop';
+  g.add(fxMesh(t, 'poop', () => poopParts(t), 0x55391b, { rough: 0.72 }));
+  return g;
+}
+
+// ---- vomit: a wet puddle with three splash lobes creeping out of it and two
+// chunks (was one squashed ball + one lump). One mesh; the green DROPLET burst
+// is the shared ParticleKit emitter, not geometry.
+const vomitParts = (t: typeof THREE): PartSpec[] => {
+  const sph = new t.SphereGeometry(1, 14, 9);
+  const lo = new t.SphereGeometry(1, 6, 4);
+  const parts: PartSpec[] = [{ geo: sph, matrix: mtx(t, [0, 0.006, 0], [0, 0.2, 0], [0.105, 0.011, 0.082]) }];
+  for (const [x, z, r] of [
+    [0.085, 0.02, 0.036],
+    [-0.06, 0.062, 0.03],
+    [0.02, -0.085, 0.026],
+  ] as [number, number, number][])
+    parts.push({ geo: lo, matrix: mtx(t, [x, 0.005, z], [0, x * 9, 0], [r, 0.008, r * 0.85]) });
+  parts.push({ geo: lo, matrix: mtx(t, [0.03, 0.012, 0.02], [0, 0.4, 0], [0.026, 0.013, 0.022]) });
+  parts.push({ geo: lo, matrix: mtx(t, [-0.028, 0.011, -0.014], [0, 1.1, 0], [0.02, 0.011, 0.018]) });
+  return parts;
+};
+/** a vomit slot: a Group (the pool moves its transform) holding ONE mesh */
+export function buildVomitMesh(t: typeof THREE): THREE.Group {
+  const g = new t.Group();
+  g.name = 'vomit';
+  g.add(fxMesh(t, 'vomit', () => vomitParts(t), 0x7a9a42, { rough: 0.32 }));
+  return g;
+}
+
+// ---- the held BURGER: three meshes, the same count as the old bun/patty/base
+// stack, but each is now a merged batch — a SEEDED crown (six same-tint bumps,
+// which read as sesame in the shading without a fourth material), a hand-formed
+// patty with an uneven grilled edge that overhangs the bun, and a LETTUCE FRILL
+// peeking out of the seam. The green frill is what makes it read as a burger
+// rather than a beige lump at park zoom.
+const bunParts = (t: typeof THREE): PartSpec[] => {
+  const sph = new t.SphereGeometry(1, 16, 10);
+  const lo = new t.SphereGeometry(1, 6, 4);
+  const parts: PartSpec[] = [
+    { geo: sph, matrix: mtx(t, [0, 0.048, 0], [0, 0, 0], [0.093, 0.064, 0.093]) }, // crown
+    { geo: new t.CylinderGeometry(0.088, 0.081, 0.032, 16), matrix: mtx(t, [0, -0.03, 0]) }, // heel
+    { geo: sph, matrix: mtx(t, [0, -0.042, 0], [0, 0, 0], [0.081, 0.016, 0.081]) }, // rounded base
+  ];
+  for (let i = 0; i < 6; i += 1) {
+    const a = i * 1.047 + 0.3;
+    const rr = 0.028 + (i % 2) * 0.026;
+    parts.push({ geo: lo, matrix: mtx(t, [Math.cos(a) * rr, 0.104 - rr * rr * 2.4, Math.sin(a) * rr], [0, a, 0], [0.008, 0.004, 0.005]) });
+  }
+  return parts;
+};
+const pattyParts = (t: typeof THREE): PartSpec[] => {
+  const lo = new t.SphereGeometry(1, 6, 4);
+  const parts: PartSpec[] = [{ geo: new t.CylinderGeometry(0.099, 0.096, 0.03, 16), matrix: mtx(t, [0, -0.006, 0]) }];
+  for (let i = 0; i < 6; i += 1) {
+    const a = i * 1.047;
+    parts.push({ geo: lo, matrix: mtx(t, [Math.cos(a) * 0.095, -0.006, Math.sin(a) * 0.095], [0, a, 0], [0.022, 0.016, 0.014]) });
+  }
+  return parts;
+};
+const lettuceParts = (t: typeof THREE): PartSpec[] => {
+  const lo = new t.SphereGeometry(1, 6, 4);
+  const parts: PartSpec[] = [];
+  for (let i = 0; i < 8; i += 1) {
+    const a = i * 0.785 + 0.2;
+    parts.push({
+      geo: lo,
+      matrix: mtx(t, [Math.cos(a) * 0.088, -0.021 + (i % 2) * 0.006, Math.sin(a) * 0.088], [i % 2 ? 0.4 : -0.35, a, 0.25], [0.03, 0.007, 0.022]),
+    });
+  }
+  return parts;
+};
+
+// ---- the held DRINK: two meshes, as before, but now a proper LIDDED cup —
+// tapered body with a rolled rim, a base ring and a printed band (one red
+// mesh), and the lid + straw as the second (one cream mesh). The old version
+// was a bare tapered tube with a white stick poking out of the open top.
+const cupParts = (t: typeof THREE): PartSpec[] => [
+  { geo: new t.CylinderGeometry(0.055, 0.039, 0.148, 16), matrix: mtx(t, [0, 0, 0]) },
+  { geo: new t.CylinderGeometry(0.058, 0.055, 0.014, 16), matrix: mtx(t, [0, 0.071, 0]) }, // rolled rim
+  { geo: new t.CylinderGeometry(0.042, 0.042, 0.009, 16), matrix: mtx(t, [0, -0.072, 0]) }, // base ring
+  { geo: new t.TorusGeometry(0.049, 0.004, 5, 16), matrix: mtx(t, [0, 0.012, 0], [Math.PI / 2, 0, 0]) }, // printed band
+];
+const lidParts = (t: typeof THREE): PartSpec[] => [
+  { geo: new t.CylinderGeometry(0.061, 0.059, 0.013, 16), matrix: mtx(t, [0, 0.083, 0]) }, // lid skirt
+  { geo: new t.CylinderGeometry(0.05, 0.058, 0.008, 16), matrix: mtx(t, [0, 0.093, 0]) }, // domed top
+  { geo: new t.CylinderGeometry(0.008, 0.008, 0.088, 8), matrix: mtx(t, [0.016, 0.128, 0], [0, 0, -0.2]) }, // straw
+];
+
+// ---- the leftovers CONTAINER: still ONE mesh, but a genuinely CRUSHED carton
+// — a stamped-flat base with two collapsed leaves folded over it and a corner
+// that survived — instead of a single rotated grey cube.
+const containerParts = (t: typeof THREE): PartSpec[] => {
+  const base = mtx(t, [0, -0.012, 0], [0.1, 0.5, -0.07]);
+  return [
+    { geo: new t.BoxGeometry(0.086, 0.022, 0.072), matrix: base },
+    { geo: new t.BoxGeometry(0.078, 0.006, 0.058), matrix: base.clone().multiply(mtx(t, [0.004, 0.016, 0.006], [0.45, 0.35, 0.28])) },
+    { geo: new t.BoxGeometry(0.058, 0.006, 0.05), matrix: base.clone().multiply(mtx(t, [-0.012, 0.03, -0.008], [-0.6, 0.9, 0.4])) },
+    { geo: new t.BoxGeometry(0.03, 0.026, 0.028), matrix: base.clone().multiply(mtx(t, [0.03, 0.02, -0.018], [0.3, 1.1, 0.25])) },
+  ];
+};
+
+// the three GENERIC consumables, each a Group of merged meshes at the hold
+// origin — `ensureHeld` only has to place and hide them. Exported so the render
+// harness can shoot the recipes in fixed orthographic views without standing up
+// a whole sim (a held item can otherwise only be seen on a walking guest).
+/** burger: 3 meshes (bun / patty / lettuce) */
+export function buildHeldFood(t: typeof THREE): THREE.Group {
+  const g = new t.Group();
+  g.name = 'heldFood';
+  g.add(fxMesh(t, 'bun', () => bunParts(t), 0xd9a961, { rough: 0.78 })); // crown + heel + sesame
+  g.add(fxMesh(t, 'patty', () => pattyParts(t), 0x6b3d1b, { rough: 0.85 })); // overhanging grilled patty
+  g.add(fxMesh(t, 'lettuce', () => lettuceParts(t), 0x74a53f, { rough: 0.7 })); // frill in the seam
+  return g;
+}
+/** lidded soda cup: 2 meshes (red cup / cream lid + straw) */
+export function buildHeldDrink(t: typeof THREE): THREE.Group {
+  const g = new t.Group();
+  g.name = 'heldDrink';
+  g.add(fxMesh(t, 'cup', () => cupParts(t), 0xc23028, { rough: 0.55 }));
+  g.add(fxMesh(t, 'lid', () => lidParts(t), 0xf2efe6, { rough: 0.5 }));
+  return g;
+}
+/** crushed leftovers carton: 1 mesh */
+export function buildHeldContainer(t: typeof THREE): THREE.Group {
+  const g = new t.Group();
+  g.name = 'heldContainer';
+  g.add(fxMesh(t, 'container', () => containerParts(t), 0x9c9c94, { rough: 0.92, flat: true }));
+  return g;
+}
+
+/**
+ * the balloon SILHOUETTE in ONE mesh: a pear body, a tapered NECK and the tied
+ * nub at its tip, so it reads as an inflated balloon on a string rather than a
+ * ball floating above a stick. `r` is the equatorial radius (0.17 held, 0.085
+ * airborne) and the whole profile scales with it; the neck tip lands at
+ * −1.265·r, which is where the string top should meet it. The caller owns the
+ * material because the airborne pool ANIMATES colour and opacity on it.
+ */
+export function buildBalloonBody(t: typeof THREE, r: number, material: THREE.Material): THREE.Mesh {
+  const k = r / 0.17;
+  const m = new t.Mesh(
+    fxGeo(t, `balloon:${r}`, () => {
+      const sph = new t.SphereGeometry(1, 16, 12);
+      return [
+        { geo: sph, matrix: mtx(t, [0, 0.03 * k, 0], [0, 0, 0], [0.168 * k, 0.185 * k, 0.168 * k]) },
+        // cone flipped apex-DOWN (rotZ π is a rotation, so normals stay out)
+        { geo: new t.ConeGeometry(0.055 * k, 0.105 * k, 12), matrix: mtx(t, [0, -0.145 * k, 0], [0, 0, Math.PI]) },
+        { geo: sph, matrix: mtx(t, [0, -0.2 * k, 0], [0, 0, 0], [0.017 * k, 0.021 * k, 0.017 * k]) }, // the knot
+      ];
+    }),
+    material,
+  );
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
+}
 
 // ---- flown balloons: pooled airborne rigs (cap 10, oldest reused) ----------
 // On release the balloon rises with ACCELERATING buoyancy (RCT2 balloons
@@ -109,18 +407,7 @@ export function createGuestFx(s: Sim) {
   // returns the slot record so throwLitter can fly its mesh in from the hand
   const dropLitter = (x: number, z: number, y: number, seed: number) => {
     if (litter.length < LITTER_CAP) {
-      const m = new t.Group();
-      const tints = [0xb0342a, 0xc8b898, 0x9a6a30, 0xd8d4c8]; // cup / wrapper / carton / paper
-      const n = 2 + Math.floor(hash01(seed) * 2); // 2–3 crumpled scraps
-      for (let k = 0; k < n; k += 1) {
-        const tint = tints[Math.floor(hash01(seed * 3.7 + k * 1.3) * tints.length)];
-        m.add(
-          box(t, [0.055, 0.028, 0.042], tint, [(hash01(seed + k * 9.1) - 0.5) * 0.16, 0.016, (hash01(seed + k * 4.3) - 0.5) * 0.16], {
-            rough: 0.92,
-            rotY: hash01(seed * 1.7 + k) * Math.PI,
-          }),
-        );
-      }
+      const m = buildLitterMesh(t, seed); // one merged mesh: cup / wrapper / carton / straw
       m.position.set(x, y, z);
       group.add(m);
       const rec = { mesh: m, x, z };
@@ -178,13 +465,7 @@ export function createGuestFx(s: Sim) {
   let vomitNext = 0;
   const dropVomit = (x: number, z: number, y: number) => {
     if (vomits.length < VOMIT_CAP) {
-      const m = new t.Group();
-      m.name = 'vomit';
-      const splat = ball(t, 0.09, 0x6f8f3e, [0, 0.008, 0], { rough: 0.5 });
-      splat.scale.set(1.25, 0.14, 1);
-      const lump = ball(t, 0.035, 0x86a24a, [0.05, 0.014, 0.03], { rough: 0.6 });
-      lump.scale.set(1, 0.4, 1);
-      m.add(splat, lump);
+      const m = buildVomitMesh(t); // wet puddle + lobes + chunks, ONE mesh
       m.position.set(x, y, z);
       group.add(m);
       vomits.push({ mesh: m, x, z });
@@ -197,16 +478,10 @@ export function createGuestFx(s: Sim) {
     }
   };
 
-  // ---- poop fallback mesh: 2 tiny stacked brown flattened balls (cap 8) -----
+  // ---- poop fallback mesh: ONE merged tapering coil on a smear (cap 8) ------
   const dropPoop = (x: number, z: number, y: number) => {
     if (poops.length < POOP_CAP) {
-      const m = new t.Group();
-      m.name = 'poop';
-      const lo = ball(t, 0.05, 0x5a3a1e, [0, 0.02, 0], { rough: 0.95 });
-      lo.scale.set(1, 0.55, 1);
-      const hi = ball(t, 0.034, 0x4c3018, [0, 0.05, 0], { rough: 0.95 });
-      hi.scale.set(1, 0.6, 1);
-      m.add(lo, hi);
+      const m = buildPoopMesh(t);
       m.position.set(x, y, z);
       group.add(m);
       poops.push({ mesh: m, x, z });
@@ -246,25 +521,14 @@ export function createGuestFx(s: Sim) {
       armOf(g, hand).add(m);
       return m;
     };
-    const food = hold(new t.Group()); // light-brown burger, fist-to-head sized
-    food.name = 'heldFood';
-    const bun = ball(t, 0.095, 0xd8a85e, [0, 0.052, 0], { rough: 0.8 });
-    bun.scale.set(1, 0.62, 1);
-    food.add(bun);
-    food.add(cyl(t, 0.098, 0.098, 0.035, 0x7a4a22, [0, 0, 0], { rough: 0.9, seg: 12 })); // patty
-    food.add(cyl(t, 0.088, 0.092, 0.032, 0xe2b26a, [0, -0.028, 0], { rough: 0.85, seg: 12 })); // base bun
-    const drink = hold(new t.Group(), 'drink'); // red cup + straw stub
-    drink.name = 'heldDrink';
-    drink.add(cyl(t, 0.06, 0.048, 0.165, 0xc23028, [0, 0, 0], { rough: 0.6, seg: 12 }));
-    drink.add(cyl(t, 0.01, 0.01, 0.095, 0xf0f0e8, [0.022, 0.115, 0], { rough: 0.7, seg: 6 }));
+    const food = hold(buildHeldFood(t)); // seeded burger, fist-to-head sized
+    const drink = hold(buildHeldDrink(t), 'drink'); // lidded red cup + straw
     // the container is much smaller than the burger, so the shared z 0.15
     // hold spot would leave a visible air gap ahead of the fist — its
     // holdSpot() case pulls it in to z 0.1 / y up to the hand-ball line so the
-    // crumpled box sits IN the grip (rotated half-depth ~0.063 overlaps the
+    // crumpled box sits IN the grip (rotated half-depth ~0.052 overlaps the
     // fist front at 0.05)
-    const container = hold(new t.Group(), 'container'); // crumpled leftovers: smaller, grey
-    container.name = 'heldContainer';
-    container.add(box(t, [0.1, 0.075, 0.088], 0x9c9c94, [0, 0, 0], { rough: 0.95, rotY: 0.5 }));
+    const container = hold(buildHeldContainer(t), 'container'); // crushed leftovers: smaller, grey
     if (hand === 'right') g.held = { food, drink, container };
     else g.heldL = { food, drink, container };
   };
@@ -343,10 +607,13 @@ export function createGuestFx(s: Sim) {
     const col = BALLOON_COLS[Math.floor(hash01(g.idx * 5.77 + (hand === 'left' ? 2.13 : 8.51)) * BALLOON_COLS.length) % BALLOON_COLS.length];
     const pivot = new t.Group();
     pivot.position.set(0, -0.32, 0); // the hand ball
-    pivot.add(cyl(t, 0.007, 0.007, 0.55, 0xd8d8d0, [0, 0.275, 0], { rough: 0.9, seg: 6 })); // string, straight up
-    pivot.add(ball(t, 0.02, dimCol(col, 0.7), [0, 0.02, 0], { rough: 0.6 })); // knot at the fist
-    const b = ball(t, 0.17, col, [0, 0.55 + 0.15, 0], { rough: 0.25, emissive: dimCol(col, 0.22) });
-    b.scale.set(1, 1.15, 1); // slightly egg-shaped, matching the stand's stock
+    pivot.add(cyl(t, 0.006, 0.006, 0.55, 0xd8d8d0, [0, 0.275, 0], { rough: 0.9, seg: 6 })); // string, straight up
+    // pear body + tapered neck + tied knot, ONE mesh (the old separate knot ball
+    // at the fist is gone — the knot belongs at the balloon's neck, and it now
+    // sits exactly where the string ends, so the rig reads as tied rather than
+    // as a ball hovering over a stick)
+    const b = buildBalloonBody(t, 0.17, mat(t, col, { rough: 0.25, emissive: dimCol(col, 0.22) }));
+    b.position.set(0, 0.55 + 0.17 * 1.265, 0);
     pivot.add(b);
     armOf(g, hand).add(pivot);
     // persists ~60–120 hashed sim-s, then the DROP event (RCT2 blows held
@@ -368,8 +635,7 @@ export function createGuestFx(s: Sim) {
       str.position.set(0, -0.2, 0); // string trails below the ball
       root.add(str);
       const ballMat = new t.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, transparent: true });
-      const bl = new t.Mesh(new t.SphereGeometry(0.085, 14, 10), ballMat);
-      bl.scale.set(1, 1.15, 1);
+      const bl = buildBalloonBody(t, 0.085, ballMat); // same pear+neck recipe, half size
       root.add(bl);
       group.add(root);
       a = { root, ball: bl, ballMat, strMat, active: false, x0: 0, y0: 0, z0: 0, t0: 0, seed: 0 };

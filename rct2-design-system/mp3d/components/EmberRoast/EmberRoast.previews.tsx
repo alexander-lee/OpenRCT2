@@ -111,9 +111,12 @@ const previews = {
     {
       name: '3D rig',
       description:
-        "Ember Roast: rough basalt block counter, an iron grate over a bed of glowing coals sunk into the slate top (near-black crust with emissive cracks, the Emberfall lava language), a canted soot-blackened chimney breast and banded stack, an iron rack of spare skewers, a scorched-sailcloth valance in the world's own canopy colours, a slate chalk menu board and one heroic charred skewer as the sign on the front gantry. Smoke and sparks lift off the whole grate; the gaslights hung from the lintel come up after dark while the coals keep burning.",
+        "Ember Roast: rough basalt block counter, an iron grate over a bed of glowing coals sunk into the slate top (near-black crust with emissive cracks, the Emberfall lava language), a canted soot-blackened chimney breast and banded stack, an iron rack of spare skewers, a scorched-sailcloth valance in the world's own canopy colours, a slate chalk menu board and — lifted clear above the stack so it silhouettes against SKY rather than against basalt — a GIANT charred skewer as the sign: 2.0 long with 0.52-diameter chunks, five of them at a 0.31 pitch, the two scorched peppers reading as the only saturated shapes the stall owns. Smoke and sparks lift off the whole grate; the gaslights hung from the lintel come up after dark while the coals keep burning.",
       render: () => (
-        <ScenePreview distance={4.4} targetY={0.8} autoRotate={false}>
+        // FRAMED FOR THE HERO SKEWER. At distance 4.4 / targetY 0.8 the giant
+        // skewer (now 2.0 long at y 1.90, topping out at 2.21) ran off the top of
+        // the canvas.
+        <ScenePreview distance={6.0} targetY={1.2} autoRotate={false}>
           <EmberRoast withGuest />
         </ScenePreview>
       ),

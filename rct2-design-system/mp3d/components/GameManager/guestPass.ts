@@ -72,7 +72,12 @@ export function createGuestPass(s: Sim) {
     }
     // per-second hashed chances
     const sec = Math.floor(s.simTime);
-    if (sec !== g.lastSec) {
+    // …and whether THIS frame is the one that crossed the boundary. Every roll
+    // below is keyed on `sec`, so it is constant for a whole second — anything
+    // that costs more than a hash to EVALUATE therefore only needs to run once
+    // per second, not on all ~60 frames of it (see the bench claim below).
+    const newSec = sec !== g.lastSec;
+    if (newSec) {
       g.lastSec = sec;
       // abandon a very old queue: 3.3%/s when unhappy (Guest.cpp:7535 region)
       if ((g.state === 'queuing' || g.state === 'queuingFront') && g.timeInQueue >= QUEUE_BALK_AT && g.happiness <= 65) {
@@ -97,10 +102,18 @@ export function createGuestPass(s: Sim) {
       if ((g.state === 'queuing' || g.state === 'queuingFront') && g.timeInQueue > 10 && !g.action) {
         if (hash01(g.idx * 61.7 + sec * 11.3) < 0.08) g.action = { kind: 'checkTime', until: s.simTime + 0.5 };
       }
-      // spontaneous dance when very happy near another walker
-      if (g.state === 'walking' && g.happiness > 165 && !g.action) {
+      // spontaneous dance when very happy near another walker.
+      //
+      // THE COIN IS ROLLED BEFORE THE SCAN, and that ordering is the whole
+      // reason this line is affordable at 500 guests. `guests.some` is O(the
+      // population) and `sec` is GLOBAL, so every guest crosses the same second
+      // boundary on the same frame: the old order spent up to 500 x 500 =
+      // 250 000 distance tests inside ONE frame, once per sim-second. Both
+      // halves are pure predicates, so testing the 10 % hash first is the same
+      // behaviour for a tenth of the work.
+      if (g.state === 'walking' && g.happiness > 165 && !g.action && hash01(g.idx * 19.1 + sec * 5.9) < 0.1) {
         const near = guests.some((o) => o !== g && !o.gone && !o.hidden && o.state === 'walking' && Math.hypot(o.x - g.x, o.z - g.z) < 1.0);
-        if (near && hash01(g.idx * 19.1 + sec * 5.9) < 0.1) g.action = { kind: 'dance', until: s.simTime + 2.4 };
+        if (near) g.action = { kind: 'dance', until: s.simTime + 2.4 };
       }
       // ATTENTION-ZONE interlude: a wanderer whose path crosses a registered
       // zone (registerDanceZone / registerWatchZone) stops there for a hashed
@@ -206,7 +219,16 @@ export function createGuestPass(s: Sim) {
       //
       // Reach 1.25: a seat sits `width/2 + 0.34` (≈ 0.89 on a 1.1 street) off
       // the centreline the guest walks, so anything tighter can never trigger.
+      //
+      // ONCE PER SECOND, not once per frame (`newSec`): the roll below is keyed
+      // on `Math.floor(s.simTime)`, so it held the same value for a whole second
+      // and a tired guest re-scanned EVERY registered seat on all ~60 frames of
+      // it. A lined park-scale street publishes one bench every ~4.8 u down both
+      // verges (hundreds of them), so at 500 guests that scan was the single
+      // biggest O(guests x benches) term in the pass. Rolling it on the frame the
+      // second turns over is strictly closer to the intent of a per-second coin.
       if (
+        newSec &&
         !g.gone &&
         !g.hidden &&
         !paused &&
@@ -474,18 +496,47 @@ export function createGuestPass(s: Sim) {
     // dancing wanderers run the pose 'dance' sequencer, and the post-ride
     // 'wow' is a real pose-layer JUMP (crouch → arc → landing recovery).
     const pg = g.peep.group;
-    pg.visible = !g.hidden && !g.gone;
+    // THE CLICK PROXY tracks the guest from OUTSIDE the rig (see spawn.ts), so a
+    // guest stays pickable at any level of detail. One assignment per guest.
+    //
+    // IT IS NEVER `visible` — it is a raycast target, and `Stage`'s `isDrawn`
+    // lets an invisible object through precisely when it is flagged
+    // `clickProxy`. (Setting `visible` here instead cost 503 draw calls and 507
+    // meshes on parkA-99: five hundred fat cylinders, measured.) What DOES have
+    // to follow the guest is whether the proxy is PICKABLE at all: as a sibling
+    // of the rig it no longer inherits the rig's visibility, so a guest hidden
+    // inside a hut/stall/restroom would otherwise still swallow clicks aimed at
+    // the pavement. `layers.disableAll()` takes it out of `Raycaster`'s
+    // `layers.test` (mask 0 never matches) without touching the scene graph.
+    g.proxy.position.set(g.x, g.baseY + 0.95 * GUEST_SCALE, g.z);
+    if (g.hidden || g.gone) g.proxy.layers.disableAll();
+    else g.proxy.layers.enable(0);
     if (g.hidden || g.gone) {
+      pg.visible = false;
+      s.crowd.clear(g);
       g.eatArm = null; // fresh arm baseline when the guest re-appears
       g.fling = null; // any half-played throw is abandoned out of sight
       return;
     }
-    const pose = g.peep.pose;
-    pose.seed = g.phase;
     const vWorld = dt > 1e-6 ? Math.hypot(g.x - px, g.z - pz) / dt : 0;
+    // LEVEL OF DETAIL, decided once: is this guest close enough to any live
+    // camera to be worth an articulated rig? Always true when no cameras were
+    // wired (every component preview — see GameManagerOpts.cameras).
+    const near = s.crowd.isNear(g);
 
+    // ---- TIMED EVENTS WITH SIM CONSEQUENCES ----------------------------------
+    // These three run for EVERY guest, near or far, and they run HERE — above
+    // the visual LOD gate — because each one changes state the sim reads: the
+    // fling drops litter, the vomit relieves nausea and marks the ground, the
+    // post-ride hop rolls a held balloon loose. If they sat below the gate the
+    // park would evolve differently depending on where the camera was pointing,
+    // which is exactly the determinism this sim guarantees (crowd.ts).
+    //
+    // Their VISUAL halves (the pose jump, the arm swing) are applied below, off
+    // the values computed here.
+    let hopNow = false;
     if (g.hopArmed && g.state === 'leavingRide' && g.exitDelay <= 0 && g.waypoints.length <= 1) {
-      pose.setState('jump'); // 'wow' hop on the exit apron
+      hopNow = true; // 'wow' hop on the exit apron
       g.hopArmed = false;
       // the hop can shake a held balloon loose (small hashed chance)
       (['left', 'right'] as HandSlot[]).forEach((h, hi) => {
@@ -493,6 +544,73 @@ export function createGuestPass(s: Sim) {
         if (b && hash01(g.idx * 8.3 + g.ridden * 5.1 + hi * 3.7) < 0.15) b.dropAt = Math.min(b.dropAt, s.simTime + 0.45);
       });
     }
+    // throw trash: 0.65 s eat-arm fling — wind-up back, sweep forward (release
+    // at 0.28 s), recover. Pure additive offset, 0 at both ends, peak ~7.8
+    // rad/s — under the pose layer's 8.5 rad/s limb continuity limit.
+    let flingOff = 0;
+    if (g.fling) {
+      const fl = g.fling;
+      fl.t += dt;
+      const T = fl.t;
+      if (T < 0.15) flingOff = 0.4 * smoothK(T / 0.15);
+      else if (T < 0.4) flingOff = 0.4 - 1.3 * smoothK((T - 0.15) / 0.25);
+      else flingOff = -0.9 * (1 - smoothK((T - 0.4) / 0.25));
+      if (!fl.released && T >= 0.28) {
+        fl.released = true;
+        s.fx.releaseThrow(g); // scraps leave the hand and arc to the ground spot
+      }
+      if (T >= 0.65) g.fling = null;
+    }
+    // vomit: droplet burst + ground splat at the deepest point of the hunch
+    if (g.action?.kind === 'vomit') {
+      const was = g.vomitT;
+      g.vomitT += dt;
+      if (was < 1.1 && g.vomitT >= 1.1) {
+        // MOUTH ORIGIN. A guest running the full rig has a live head matrix to
+        // sample; a far guest's rig is not in the scene at all, so the mouth is
+        // reconstructed from the sim's own position + facing (head at peep-local
+        // y 0.99, mouth 0.13 forward of it, both times GUEST_SCALE).
+        if (near) {
+          g.peep.head.updateWorldMatrix(true, false);
+          _hand.set(0, -0.02, 0.13).applyMatrix4(g.peep.head.matrixWorld); // mouth
+        } else {
+          _hand.set(
+            g.x + Math.sin(g.yaw) * 0.13 * GUEST_SCALE,
+            g.baseY + 0.97 * GUEST_SCALE,
+            g.z + Math.cos(g.yaw) * 0.13 * GUEST_SCALE,
+          );
+        }
+        s.fx.vomitFx.setOrigin(_hand.x, _hand.y, _hand.z);
+        s.fx.vomitFx.burst(12);
+        s.fx.dropVomit(g.x + Math.sin(g.yaw) * 0.32, g.z + Math.cos(g.yaw) * 0.32, g.baseY + 0.004);
+        g.nausea = Math.max(0, g.nausea - 130);
+        g.happiness = clamp255(g.happiness - 12); // RCT2-ish sick penalty
+        g.happinessTarget = clamp255(g.happinessTarget - 12);
+      }
+    }
+
+    // ---- THE VISUAL LOD GATE (crowd.ts) --------------------------------------
+    // Everything past this point is APPEARANCE ONLY. A guest outside the detail
+    // radius of every camera is drawn by eight shared InstancedMesh pools
+    // instead of its own 13-mesh rig, and its rig leaves the scene graph
+    // entirely — three.js then neither draws it nor walks it. Measured: the crowd
+    // at 500 guests costs 8 draw calls instead of ~4270.
+    if (!near) {
+      pg.visible = false;
+      if (pg.parent) pg.removeFromParent();
+      // proxy cadence for the stride table, from the displacement this frame —
+      // the same input the full rig's pose layer solves its cadence from
+      g.farCadence = vWorld * s.crowd.CADENCE_PER_SPEED;
+      s.crowd.place(g, g.moving && !paused, dt);
+      return;
+    }
+    if (!pg.parent) s.group.add(pg); // back inside the detail radius
+    s.crowd.clear(g);
+    pg.visible = true;
+    const pose = g.peep.pose;
+    pose.seed = g.phase;
+
+    if (hopNow) pose.setState('jump');
     if (g.action?.kind === 'dance') {
       pose.setDanceStyle(Math.floor(hash01(g.idx * 23.9 + 4.1) * 4));
       pose.setState('dance', 2.2);
@@ -639,39 +757,11 @@ export function createGuestPass(s: Sim) {
 
     // ---- event overlays (AFTER the final transform, so hand/mouth world
     // positions sample this frame's matrices) --------------------------------
-    // throw trash: 0.65 s eat-arm fling — wind-up back, sweep forward (release
-    // at 0.28 s), recover. Pure additive offset, 0 at both ends, peak ~7.8
-    // rad/s — under the pose layer's 8.5 rad/s limb continuity limit.
-    if (g.fling) {
-      const fl = g.fling;
-      fl.t += dt;
-      const T = fl.t;
-      let off = 0;
-      if (T < 0.15) off = 0.4 * smoothK(T / 0.15);
-      else if (T < 0.4) off = 0.4 - 1.3 * smoothK((T - 0.15) / 0.25);
-      else off = -0.9 * (1 - smoothK((T - 0.4) / 0.25));
-      eatArmPivot.rotation.x += off;
-      if (!fl.released && T >= 0.28) {
-        fl.released = true;
-        s.fx.releaseThrow(g); // scraps leave the hand and arc to the ground spot
-      }
-      if (T >= 0.65) g.fling = null;
-    }
-    // vomit: droplet burst + ground splat at the deepest point of the hunch
-    if (g.action?.kind === 'vomit') {
-      const was = g.vomitT;
-      g.vomitT += dt;
-      if (was < 1.1 && g.vomitT >= 1.1) {
-        g.peep.head.updateWorldMatrix(true, false);
-        _hand.set(0, -0.02, 0.13).applyMatrix4(g.peep.head.matrixWorld); // mouth
-        s.fx.vomitFx.setOrigin(_hand.x, _hand.y, _hand.z);
-        s.fx.vomitFx.burst(12);
-        s.fx.dropVomit(g.x + Math.sin(g.yaw) * 0.32, g.z + Math.cos(g.yaw) * 0.32, g.baseY + 0.004);
-        g.nausea = Math.max(0, g.nausea - 130);
-        g.happiness = clamp255(g.happiness - 12); // RCT2-ish sick penalty
-        g.happinessTarget = clamp255(g.happinessTarget - 12);
-      }
-    }
+    // the litter fling's ARM SWING — its timeline and the release itself were
+    // resolved above the LOD gate (they change sim state); this is the visible
+    // half, a pure additive offset that is 0 at both ends and peaks at ~7.8
+    // rad/s, under the pose layer's 8.5 rad/s limb continuity limit.
+    if (flingOff !== 0) eatArmPivot.rotation.x += flingOff;
     // poop squat: 0.8 s crouch — legs fold, body drops, skirt flares to cover
     if (g.action?.kind === 'squat') {
       g.squatT += dt;

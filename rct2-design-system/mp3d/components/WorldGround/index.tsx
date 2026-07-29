@@ -110,35 +110,71 @@ function tint(hex: number, amt: number): number {
 const TEXEL = 1.2;
 
 /**
- * How far the draped surface sits below the TERRAIN, measured vertically.
+ * How far the soil layer stands ABOVE the terrain surface. A LAYER OF SOIL LAID
+ * ON THE GROUND — that is the whole physical idea, and the sign of this number is
+ * the single most load-bearing thing in the file.
  *
- * NOTHING ELSE IN THE PARK MAY EVER Z-FIGHT WITH THE FLOOR. Everything walkable
- * is solved to stand PROUD of the ground it crosses — `PathNetwork` settles a
- * node at `corridorGroundMax + 0.03` and then renders its pavement top a further
- * `PATH_H + 0.006` up, so a street's surface is +0.126 over the highest ground
- * inside its own corridor and its slab UNDERSIDE is only +0.016. The floor has
- * to stay under that underside, not merely under the top.
+ * ⛔ IT WAS NEGATIVE (a 0.04 SINK) FOR THREE SHIPPED VERSIONS, AND A FLOOR UNDER
+ * THE TERRAIN RENDERS NOTHING. `<Terrain>` is a solid 0.45 u heightfield mesh
+ * across the whole plot; anything draped beneath its surface is simply occluded by
+ * it. MEASURED on `samples/w33a.tsx` with the sink at 0.04 and the mount datum
+ * corrected: 1805 of 1805 raycast samples across all five world rects came back
+ * with the floor BELOW the terrain mesh (probe-world-ground-datum.mjs — median
+ * floor − terrain = −0.0399, i.e. exactly the sink). The only reason the floor was
+ * ever visible at all was the mount-datum bug lifting it back out by +0.087…0.128,
+ * which is also what buried the paths. Fix the datum without fixing this sign and
+ * the component does nothing whatsoever.
  *
- * Because the surface FOLLOWS the terrain, this one constant holds on flat ground
- * and on a mountainside alike — there is no gradient at which it can be exceeded,
- * which is exactly what the flat-slab versions could not promise. 0.04 is
- * comfortably clear of depth-buffer error at park camera range and far too small
- * to read as a step at the world's edge.
+ * THE WINDOW, both ends measured rather than assumed:
  *
- * IT IS NOT THE THING TO WIDEN. Every time this floor has come out over a path
- * the cause has been a DATUM error — a lift added twice, or the wrong sampler —
- * and 40 mm against a 16 mm slab underside is already the right order. Measure
- * where the floor actually landed (`probe-world-ground-datum.mjs`) before
- * touching it.
+ *   FLOOR (must clear the terrain). The drape interpolates `heightAt` on a 1.2 u
+ *   grid, the terrain mesh on a 0.45 u one, so the two chord approximations
+ *   disagree by the difference of their sags. Measured against the terrain mesh
+ *   over 1805 samples, the drape sits between 0.036 BELOW and 0.038 ABOVE its own
+ *   nominal offset (p05 −0.006, p95 +0.006 — the tails are ridge crests and the
+ *   kinks `keepDry` cuts into a range). So the lift must beat ~0.036.
+ *
+ *   CEILING (must stay under the pavement). `PathNetwork` settles a node at
+ *   `corridorGroundMax + 0.03` and renders its pavement top a further
+ *   `PATH_H + 0.006` up: a street's surface is +0.126 over the highest ground in
+ *   its own corridor. Flat-ride pads are far easier at `groundAt + 0.22`. So the
+ *   lift plus the worst upward excursion must stay under 0.126.
+ *
+ * 0.05 sits in the middle of (0.036, 0.088): ≥95% of the floor clears the terrain
+ * by ~44 mm, the worst measured spot by 14 mm — some 26 depth-buffer steps at this
+ * stage's 0.1 near plane, so no z-fight — while the closest it can come to a
+ * pavement top is 0.088, leaving 38 mm even if the two extremes coincided. They
+ * cannot: a street is tightest where its corridor ground is at a local MAXIMUM,
+ * and a local maximum is convex, which is where this surface SAGS.
+ *
+ * DO NOT retune this to fix a floor that is over a path. Every time that has
+ * happened the cause was a DATUM error — a lift counted twice, or `floorAt` used
+ * where `groundAt` was meant. Measure where the floor actually landed first.
  */
-const TOP_CLEARANCE = 0.04;
+const SOIL_LIFT = 0.05;
+
+/**
+ * The rect's edge, feathered.
+ *
+ * A constant lift makes the rect's boundary a hard rectangular step, and a hard
+ * rectangular step is the "large hard-edged rectangular patches of slightly
+ * different green lying over the grass" that got reported alongside the buried
+ * paths — the drape has no side walls, so its hem reads as a plate floating over
+ * the terrain. Instead, taper the lift across the outermost rings from
+ * `SOIL_LIFT` down THROUGH zero to `-EDGE_SINK`: the outer ring is under the
+ * terrain and invisible, and the floor's apparent boundary is the contour where
+ * it crosses the ground — an irregular, terrain-following, jitter-broken line
+ * instead of a drawn rectangle. Costs nothing: same vertices, same draw calls.
+ */
+const EDGE_RINGS = 3;
+const EDGE_SINK = 0.05;
 
 /** micro height variation, applied PER VERTEX off its grid index so the surface
- *  stays continuous. MUST stay under TOP_CLEARANCE or the jitter lifts the
- *  surface back through the paths — the exact bug this constant pair prevents. */
+ *  stays continuous. MUST stay under SOIL_LIFT, or the jitter dips the floor back
+ *  under the terrain and punches holes in it. */
 const JITTER = 0.016;
-if (JITTER / 2 >= TOP_CLEARANCE)
-  console.error('<WorldGround>: JITTER exceeds TOP_CLEARANCE — the floor will z-fight the paths');
+if (JITTER / 2 >= SOIL_LIFT)
+  console.error('<WorldGround>: JITTER exceeds SOIL_LIFT — the floor will z-fight the terrain');
 
 /**
  * `<WorldGround plan={W} />` — the world's floor.
@@ -284,9 +320,9 @@ export function buildWorldGroundScene(
   // shipped and both were wrong, because the shape was wrong.
   //
   // So the floor is now a HEIGHTFIELD that follows the ground. Every vertex sits
-  // at `groundAt` minus a constant vertical drop, so the surface is parallel to
-  // the terrain everywhere and always the same distance under the path slabs
-  // laid on it — flat ground, hillside or summit, no special case.
+  // at `groundAt` plus a constant `SOIL_LIFT`, so the surface is parallel to the
+  // terrain everywhere: always clear OF it, and always the same distance under the
+  // path slabs laid on it — flat ground, hillside or summit, no special case.
   //
   // `vy` returns an ABSOLUTE world height, while the x/z pushed alongside it are
   // RELATIVE to the rect centre. That mixed frame is deliberate and it is why the
@@ -297,12 +333,23 @@ export function buildWorldGroundScene(
   // GRID INDEX alone, so two neighbouring quads in different tone bands compute
   // bit-identical positions on their shared edge and no crack can open between
   // them.
+  //
+  // The feather band is capped at a quarter of the SHORTER side, so a small rect
+  // still gets a lifted middle instead of being feathered away entirely.
+  const rings = Math.min(EDGE_RINGS, Math.floor(Math.min(cols, rows) / 4));
+  const liftAt = (i: number, j: number) => {
+    if (rings < 1) return SOIL_LIFT;
+    const e = Math.min(1, Math.min(i, cols - i, j, rows - j) / rings);
+    // smoothstep, so the band meets the lifted interior without a crease
+    const s = e * e * (3 - 2 * e);
+    return SOIL_LIFT * s - EDGE_SINK * (1 - s);
+  };
   const vy = (i: number, j: number) => {
     const x = cx - hx + tw * i;
     const z = cz - hz + td * j;
     // per-VERTEX jitter (not per tile) so the surface stays continuous
     const h = hash01(i * 17 + j * 251 + seedOff + 9001);
-    return fl(x, z) - TOP_CLEARANCE + (h - 0.5) * JITTER;
+    return fl(x, z) + liftAt(i, j) + (h - 0.5) * JITTER;
   };
 
   const BANDS = 8;

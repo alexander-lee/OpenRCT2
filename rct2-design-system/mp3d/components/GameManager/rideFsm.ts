@@ -1,8 +1,14 @@
 // ---------------------------------------------------------------------------
 // RIDE STATE MACHINE (Vehicle.h:123 status cycle) — the per-ride admission /
-// departure / travel / unload loop, the RCT2 exit-hut unload walk, the
-// deterministic breakdown schedule and the shared queue-drain used by both
-// crashes and breakdowns.
+// departure / travel / unload loop, the RCT2 exit-hut unload walk, the CRASH
+// transition and the queue-drain it uses.
+//
+// THERE IS NO BREAKDOWN SCHEDULE. RCT2 breaks rides down and sends a mechanic;
+// this design system deliberately does not (see `RideConfig.breakdownEvery` in
+// types.ts for the measurements behind that). The former `breakDown()`, the
+// `nextBreak` schedule that fired it and the repair countdown that reopened the
+// ride are all gone — not disarmed — so `updateRide` has exactly one way to
+// stop serving guests, and it is a CRASH.
 //
 // The FSM never touches guest geometry directly: riders are teleported INSIDE
 // the exit hut and walk out through its front doorway, exactly like RCT2's
@@ -10,9 +16,9 @@
 // createGameManager.
 // ---------------------------------------------------------------------------
 
-import { hash01, clamp255, BREAK_DOWN_SECS, REPAIR_SECS } from './types';
+import { hash01, clamp255 } from './types';
 import type { RideState, RideRec, RideStationRec, HandSlot } from './types';
-import { slotPos, breakIntervalOf } from './access';
+import { slotPos } from './access';
 import type { Sim } from './sim';
 
 export function createRideFsm(s: Sim) {
@@ -100,10 +106,13 @@ export function createRideFsm(s: Sim) {
     r.riders = [];
   };
 
-  // shared queue-drain (crash AND breakdown): guests think it's unsafe and
-  // walk away; anyone mid-doorway backs out; anyone aboard leaves via the exit
+  // THE QUEUE-DRAIN — a CRASH is now its only caller (it was shared with the
+  // removed breakdown path): guests think it's unsafe and walk away; anyone
+  // mid-doorway backs out; anyone aboard leaves via the exit. It stays a named
+  // function rather than being folded into `crashRide` because it is the
+  // "everybody off, nobody credited" primitive and `crashRide` is the policy.
   const drainRide = (r: RideRec) => {
-    // EVERY platform drains — a broken transport ride strands nobody
+    // EVERY platform drains — a wrecked transport ride strands nobody
     for (const st of r.stations) {
       // empty the queue — guests think it's unsafe and walk away
       [...st.queue].forEach((g) => {
@@ -137,39 +146,24 @@ export function createRideFsm(s: Sim) {
     unloadRiders(r, false); // anyone aboard escapes via the exit
   };
 
+  // A CRASH — a coaster derailing. This is NOT the removed breakdown: it is
+  // driven from OUTSIDE by the ride's own vehicle (`cfg.vehicleHandle.crashed()`,
+  // e.g. SplineRideKit's block-brake/overspeed model), it is permanent (nothing
+  // repairs a wreck here), and it is deliberately still enabled. `statusOf`
+  // reports it as `'closed'` (RCT2 draws "Crashed", Ride.cpp:528-564).
   const crashRide = (r: RideRec) => {
     setState(r, 'crashed', 0);
     drainRide(r);
   };
 
-  // deterministic breakdown: pause the FSM, drain everyone off through the
-  // crash-ish path, park the vehicle (movingToEndOfStation resets callbacks —
-  // e.g. a spin target) and hold until the repair completes
-  const breakDown = (r: RideRec) => {
-    r.brokenAt = s.simTime;
-    drainRide(r);
-    setState(r, 'movingToEndOfStation', 1.0);
-  };
-
   const updateRide = (r: RideRec, dt: number) => {
+    // THE ONLY WAY A RIDE STOPS SERVING GUESTS. There used to be a second one
+    // below this line — a deterministic breakdown schedule that parked the FSM
+    // for 18 s — and it is gone (see the module header). Nothing else in this
+    // function can take a ride out of service.
     if (r.state !== 'crashed' && r.cfg.vehicleHandle?.crashed?.()) {
       crashRide(r);
       return;
-    }
-    // ---- breakdown schedule (additive; deterministic — see breakIntervalOf)
-    if (r.state !== 'crashed') {
-      if (r.brokenAt >= 0) {
-        if (s.simTime - r.brokenAt >= BREAK_DOWN_SECS + REPAIR_SECS) {
-          r.brokenAt = -1; // repaired — reopen and rearm the schedule
-          r.breakN += 1;
-          r.nextBreak = s.simTime + breakIntervalOf(r);
-        } else {
-          return; // FSM paused: no admissions while broken / being repaired
-        }
-      } else if (s.simTime >= r.nextBreak) {
-        breakDown(r);
-        return;
-      }
     }
     const st = stationOf(r);
     const nStations = r.stations.length;
@@ -293,5 +287,6 @@ export function createRideFsm(s: Sim) {
     }
   };
 
-  return { occupancyOf, setState, unloadRiders, drainRide, crashRide, breakDown, updateRide };
+  // `breakDown` is deliberately absent from this surface — see the module header.
+  return { occupancyOf, setState, unloadRiders, drainRide, crashRide, updateRide };
 }

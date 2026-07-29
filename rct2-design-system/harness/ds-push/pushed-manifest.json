@@ -2,7 +2,7 @@
   "version": 1,
   "designSystemId": "ds-fbd20bf8-b16d-4cf1-8440-d20bc095fc4a",
   "note": "EMPTY BASELINE. No entry here means \"never pushed as far as this manifest knows\", so the first status run reports the whole tree. Bootstrap it ONCE, when no push is in flight, with:  node manifest.mjs reconcile --server-list=<get_design_system json> --assume-clean   (see ../README.md, FAST PUSH PROTOCOL / Bootstrapping). Thereafter only ever grow it via `commit`, after the final file-list check.",
-  "updatedAt": "2026-07-29T02:13:52.731Z",
+  "updatedAt": "2026-07-29T02:41:31.797Z",
   "files": {
     "components/AetherBalloons/AetherBalloons.previews.tsx": {
       "sha256": "f608fecc90623a3551d5eea95ea18e7012c780acbee614ad4e7b1eee201d7d8e",
@@ -84,9 +84,9 @@
       "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/BeachedGalleon/index.tsx": {
-      "sha256": "b829c17402ebd22d024e4dbdd2972d47fe10e839279933ddcea7ebe798470cd1",
-      "bytes": 15211,
-      "pushedAt": "2026-07-29T02:12:57.248Z"
+      "sha256": "83cf2ace2fb05815db0a4e680628b23a72c359cc1ef2c3b55e6ef89abc3e4746",
+      "bytes": 16181,
+      "pushedAt": "2026-07-29T02:41:31.795Z"
     },
     "components/BigPiano/BigPiano.previews.tsx": {
       "sha256": "05862b2af1e8e02884c296d13bc9e41c906604639d090eb49dbdf8c906949424",
@@ -387,9 +387,9 @@
       "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/DiscoBallFloor/index.tsx": {
-      "sha256": "9d4a52a1922b1e9357cd80264f9d1e4d9d2ed81629a2a416422ecf0d57359b8d",
-      "bytes": 12571,
-      "pushedAt": "2026-07-29T02:12:57.248Z"
+      "sha256": "605ee3cb82884466a288ce6102762c55ca33eb8cf34cd28fb05298e98d0564db",
+      "bytes": 13541,
+      "pushedAt": "2026-07-29T02:41:31.795Z"
     },
     "components/Discotron/Context.md": {
       "sha256": "cc978eb350982084355d11c03533dcd739fc2bb27917dac317e276fba6eaa888",
@@ -420,9 +420,9 @@
       "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/DragonRoost/index.tsx": {
-      "sha256": "d5fb112b535d93e3bc997f3777f9be6bc3e4fe107084b18b78f5b2df3a57259b",
-      "bytes": 9709,
-      "pushedAt": "2026-07-29T02:12:57.248Z"
+      "sha256": "f4e19d7052aaee63d9f20d108b2c0def72eb63c089e7a17b5a934ebeef3d0ccc",
+      "bytes": 10676,
+      "pushedAt": "2026-07-29T02:41:31.795Z"
     },
     "components/DropTower/Context.md": {
       "sha256": "dfedff57a56d39e6e0f9a935baca52b283f7d55f645c39e8d6b288999a992761",
@@ -627,10 +627,9 @@
       "source": "assumed"
     },
     "components/GameManager/guestFx.ts": {
-      "sha256": "ab18964e36bdd241f01d165d44990a4a78e7674aa6b5eb51e50513f6f2bb2de8",
-      "bytes": 21909,
-      "pushedAt": "2026-07-26T02:24:37.771Z",
-      "source": "assumed"
+      "sha256": "1de5f9cd9e24a54e90fe826a403d96190d168fa98bd1908cd511e2f70983cce2",
+      "bytes": 35896,
+      "pushedAt": "2026-07-29T02:41:31.795Z"
     },
     "components/GameManager/guestPass.ts": {
       "sha256": "a2aa2f05b55739185bce9d92185301e94a6c08122ec33e6f87970917e1e88893",
@@ -786,9 +785,9 @@
       "pushedAt": "2026-07-29T00:40:53.365Z"
     },
     "components/GreatZeppelin/index.tsx": {
-      "sha256": "798eaf020bebf445428effaf8c6cd04f19ed701f8456008177079c436b6ec837",
-      "bytes": 13886,
-      "pushedAt": "2026-07-29T02:12:57.248Z"
+      "sha256": "7dd8c5f363e86af6e3451b68956f514392a808b0263ba8a40dbd1682e0a262ab",
+      "bytes": 14855,
+      "pushedAt": "2026-07-29T02:41:31.795Z"
     },
     "components/Guest/Context.md": {
       "sha256": "1b2545f6bf40a21d0b157c567b4d9bd0634a20f129bb3731d3e13add35c2bd5f",
@@ -1285,9 +1284,9 @@
       "source": "assumed"
     },
     "components/Park/composable.tsx": {
-      "sha256": "e6685f3d089431b3b4279f005c44c5ad35719c6d81b3ad98718631b3b57e11ba",
-      "bytes": 12401,
-      "pushedAt": "2026-07-27T18:12:30.724Z"
+      "sha256": "ca7ac476c317f2645a1e452c607ed2619a319dfe7dcc3233f8a987ffd2df9b04",
+      "bytes": 13332,
+      "pushedAt": "2026-07-29T02:41:31.795Z"
     },
     "components/Park/configurableRide.tsx": {
       "sha256": "757271460ea21ff10940b3dae92083c33f7f9fac9176b457743b942b45b9a45f",
@@ -1395,9 +1394,9 @@
       "pushedAt": "2026-07-29T02:12:57.248Z"
     },
     "components/ParkBuilder/worlds.ts": {
-      "sha256": "af38578bb17b8486b5b9c8f07c28750005709366ef7ade97ef50d680faa750b0",
-      "bytes": 31390,
-      "pushedAt": "2026-07-28T23:50:40.212Z"
+      "sha256": "eb6f20df38a737fc4911db118d51ff9cf623999642a82f28f09d5ff6bf862f1d",
+      "bytes": 32147,
+      "pushedAt": "2026-07-29T02:41:31.795Z"
     },
     "components/ParkEntrance/Context.md": {
       "sha256": "cdf5adaee810a9986d079295fa56191732c8c33ac14781f2c71b2ef0be2022ce",
@@ -2428,9 +2427,9 @@
       "pushedAt": "2026-07-28T19:24:10.755Z"
     },
     "rules/setup.md": {
-      "sha256": "6cd59d3ab04bcb75bd7dee8be63f7adb5f81f36ea25e84ea2a415d9cc9d5a63b",
-      "bytes": 129686,
-      "pushedAt": "2026-07-29T02:13:52.731Z"
+      "sha256": "a047966f33614ebef09ab3ec05c731924ded52cd785df0473f204677549aadc5",
+      "bytes": 141192,
+      "pushedAt": "2026-07-29T02:41:31.795Z"
     },
     "rules/ui.md": {
       "sha256": "de5bd2fb1872dc81b87d8671f8f82c4a79f5a69d183887e1015c1a0842092412",

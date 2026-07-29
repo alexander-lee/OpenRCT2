@@ -29,12 +29,13 @@ const planFor = (themeId: string) => {
   });
 };
 
-// NO `ground`. <ScenePreview ground> lays Stage's grass disc at y −0.02, and
-// <WorldGround> deliberately sinks its tile TOPS to floorAt − TOP_CLEARANCE
-// (−0.04) so paths and ride pads never z-fight it. The lawn therefore sat 0.02
-// ABOVE the floor and hid it completely: all six swatches rendered as plain
-// municipal green — the exact thing this component exists to replace. The world
-// floor IS the ground here, so nothing else should draw one.
+// NO `ground`. <ScenePreview ground> lays Stage's grass disc at y −0.02, and the
+// floor used to be SUNK to `floorAt − 0.04`, so the lawn sat 0.02 ABOVE it and hid
+// it completely: all six swatches rendered as plain municipal green — the exact
+// thing this component exists to replace. That was the preview showing the same
+// defect a real park had (a floor under the terrain draws nothing), and the floor
+// now stands `SOIL_LIFT` (+0.05) PROUD of the ground instead. Keep `ground={false}`
+// regardless: the world floor IS the ground here, so nothing else should draw one.
 const shot = (themeId: string, night = false) => () => (
   <ScenePreview distance={34} targetY={0.3} autoRotate={false} ground={false} night={night} height={430}>
     <WorldGround plan={planFor(themeId) as any} />

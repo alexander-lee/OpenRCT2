@@ -205,6 +205,14 @@ export interface ParkValidationReport {
 /** structural view of the createGameManager return (only what's validated) */
 export interface ValidateParkManager {
   update(time: number, dt: number): void;
+  /** HEADLESS SWITCH (optional — older managers do not have it). The smoke run
+   *  below steps the WHOLE population ~2550 times with nothing rendered in
+   *  between, and at a 500-guest opening crowd the guests' VISUAL half (the pose
+   *  layer plus the instanced crowd's matrices) was the dominant cost of this
+   *  gate — 163 million array writes for frames that never happen. Everything
+   *  with a sim consequence keeps running either way; see GameManager/crowd.ts
+   *  `setVisuals` for exactly what is gated. */
+  setVisuals?(on: boolean): void;
   stats(): { riddenTotal: number; activeGuests: number };
   guests(): { id: number; state: string; position: [number, number, number]; hidden?: boolean; gone?: boolean }[];
   rides(): { name: string; status: string; queue: number; rideDuration?: number }[];
@@ -1829,6 +1837,8 @@ export function validatePark(t: typeof THREE, park: ValidateParkInput): ParkVali
     // queue-stall detector: a queue that stays ≥1 for >stallSecs continuous
     // sim-s without EVER shrinking has stalled (late-forming queues are fine)
     const rideSeen = new Map<string, { since: number; prev: number; stalled: boolean }>();
+    // ANIMATE NOBODY: this is a behaviour test, not a frame (see setVisuals)
+    park.manager.setVisuals?.(false);
     for (let s = 1; s <= steps; s += 1) {
       const time = s * dt;
       park.manager.update(time, dt);
@@ -1858,6 +1868,7 @@ export function validatePark(t: typeof THREE, park: ValidateParkInput): ParkVali
         rideSeen.set(r.name, rec);
       }
     }
+    park.manager.setVisuals?.(true);
     const st = park.manager.stats();
     if (st.riddenTotal < 1) fail('sim', `no guest completed a ride cycle in ${secs} sim-s`);
     stuck.forEach((id) => fail('sim', `guest ${id} stood still >25 sim-s while "walking" — stuck off the graph?`));

@@ -380,13 +380,68 @@ export function buildEmberRoast(three: typeof THREE, opts: EmberRoastOpts = {}):
     g.add(scallop);
   }
   g.add(box(t, [1.8, 0.03, 0.028], EMBERFALL.sulfur, [0, 1.005, 0.468], { tex: 'metal', repeat: [8, 1], rough: 0.85 })); // ochre binding along the head of the valance
-  // the SIGN: one heroic charred skewer standing on the lintel
-  [-0.4, 0.4].forEach((x, i) =>
-    g.add(cyl(t, 0.02, 0.024, 0.18, IRON, [x, 1.16, 0.42], { tex: 'metal', repeat: [1, 2], metal: 0.45, rough: 0.65, seg: 8, rotZ: (i ? -1 : 1) * 0.06 })),
+  // =========================================================================
+  //     THE GIANT SKEWER — the building says what it sells AT PARK SCALE
+  //
+  //     ⚠️ THE OLD SIGN WAS ALREADY CALLED "GIANT" AND WAS NOT. At len 1.15 /
+  //     chunkR 0.115 it sat at y 1.28, BELOW the 1.66 stack top, so from a high
+  //     park camera it was a dark lumpy bar lost inside the stall's own
+  //     silhouette — and every colour it owns (seared meat 0x5b3620, char
+  //     0x2b1c14) is the same value as the basalt, the slate and the ironwork
+  //     around it, so it had neither shape nor contrast to read by. The overhead
+  //     audit shot is a dark grey box with darker things on it.
+  //
+  //     Compare CottonCandyStand and BurgerShop, the two stalls that never have
+  //     this problem: THE SHOP IS THE ITEM at ~2 u across, so the SILHOUETTE
+  //     carries the message with no detail needing to resolve and no reliance on
+  //     hue. So the sign is rebuilt to that scale and, crucially, LIFTED ABOVE
+  //     THE STALL so it silhouettes against SKY rather than against basalt:
+  //
+  //       len 1.15 → 2.00   chunkR 0.115 → 0.26   y 1.28 → 1.90
+  //
+  //     which spans x ±1.00 (inside the 1.15-1.30 the swept cinder litter
+  //     already reaches, so the envelope does not grow), tops out at 2.21 —
+  //     0.55 clear of the stack — and puts five 0.52-diameter chunks with a
+  //     0.31 pitch into a nearly continuous 1.24-long bar. The two scorched
+  //     PEPPERS in the middle of the run are now 0.43-wide discs of green
+  //     0x4e7a2a and red 0x9c3218 with sky behind them: the only saturated
+  //     silhouette this world's stall has ever had.
+  //
+  //     Same `skewerProp` recipe as the grate, the rack and the held item — a
+  //     fourth scale, no new vocabulary and NO NEW DRAWS (10 meshes before,
+  //     10 after; only the numbers changed). The posts grow with it.
+  //
+  //     IT CASTS NO SHADOW. At 1.9 u up over a serving front a 2-u bar drops a
+  //     stripe of shade straight across the counter and the coals, which is this
+  //     component's own founding lesson ("nothing sits over the fire") — and it
+  //     saves 10 shadow-pass draws.
+  //
+  //     WHERE IT DOES *NOT* REACH: the chunks span z 0.11…0.73 at y 1.6…2.2. A
+  //     ~50° camera above and in +z sees an object at y 1.9 / z 0.42 covering
+  //     ground at z > ~2.0 — i.e. the apron IN FRONT of the stall, never the
+  //     grate at z −0.22…0.18. Checked in the render, not on paper.
+  // =========================================================================
+  [-0.55, 0.55].forEach((x, i) =>
+    g.add(cyl(t, 0.03, 0.038, 0.72, IRON, [x, 1.41, 0.42], { tex: 'metal', repeat: [1, 4], metal: 0.45, rough: 0.65, seg: 8, rotZ: (i ? -1 : 1) * 0.05 })),
   );
-  const sign = skewerProp(t, 1.15, 0.028, 0.115, 21.7);
-  sign.position.set(0, 1.28, 0.42);
+  const signMats: THREE.MeshStandardMaterial[] = [];
+  const sign = skewerProp(t, 2.0, 0.05, 0.26, 21.7);
+  sign.position.set(0, 1.9, 0.42);
   sign.rotation.z = 0.05;
+  sign.traverse((n) => {
+    const m = n as THREE.Mesh;
+    if (!(m as unknown as { isMesh?: boolean }).isMesh) return;
+    m.castShadow = false;
+    const mm = m.material as THREE.MeshStandardMaterial;
+    // A LIT SIGN AFTER DARK. Both real lights here are at y ≤ 0.83 with a 1.7-2.6
+    // range: the hero skewer is 1.9 u up and gets essentially nothing from
+    // either, so after dark the one thing that makes this stall findable would be
+    // the darkest object in the frame. `mat()` never shares a material instance,
+    // so a night-gated emissive on the sign's OWN materials costs no light and no
+    // draw. Ember-orange, because in this world a warm sign is a lit sign.
+    mm.emissive.setHex(0xff8a3c);
+    signMats.push(mm);
+  });
   g.add(sign);
 
   // =========================================================================
@@ -531,6 +586,11 @@ export function buildEmberRoast(three: typeof THREE, opts: EmberRoastOpts = {}):
     // 2. the gaslights: strictly after dark
     lampMat.emissiveIntensity = 0.12 + (1.25 + 0.08 * Math.sin(time * 3.1) - 0.12) * ease;
     counterLight.intensity = ease * 0.85;
+    // 2b. the GIANT SKEWER sign: a painted-and-lit board after dark, plain
+    //     roast meat by day. Kept LOW (0.3) and gated on `ease`, NOT on the
+    //     coals' `glow` — the sign is not hot, it is lit, and this file's whole
+    //     discipline is that those two are different (lava lerps, lamps gate).
+    for (const sm of signMats) sm.emissiveIntensity = 0.3 * ease;
     // 3. skewers turning on the grate — a slow deterministic roll each
     cooking.forEach((s, i) => {
       s.rotation.x = Math.sin(time * (0.5 + i * 0.11) + i * 2.1) * 0.5;
@@ -555,6 +615,9 @@ export function buildEmberRoast(three: typeof THREE, opts: EmberRoastOpts = {}):
       texes.forEach((x) => x.dispose());
       lavaMats.forEach((lm) => lm.m.dispose());
       lampMat.dispose();
+      // the hero skewer's materials are per-mesh instances this builder mutated,
+      // so they are OURS to drop (its geometries are `getGeo`-shared and are not)
+      signMats.forEach((m) => m.dispose());
       coalGeo.dispose();
       counterLight.dispose();
       emberLight.dispose();

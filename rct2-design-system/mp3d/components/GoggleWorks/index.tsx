@@ -412,12 +412,66 @@ export function buildGoggleWorks(three: typeof THREE, opts: GoggleWorksOpts = {}
     g.add(pair);
     display.push(pair);
   });
-  // ---- the SIGN: one heroic pair of goggles on a brass stand on the roof
-  [-0.16, 0.16].forEach((x) => g.add(cyl(t, 0.02, 0.024, 0.12, BRASS_D, [x, 1.06, -0.2], { tex: 'metal', repeat: [1, 2], metal: 0.26, rough: 0.48, seg: 8 })));
+  // =========================================================================
+  //     THE GIANT GOGGLES — the building says what it sells AT PARK SCALE
+  //
+  //     ⚠️ 2.2× WAS NOT A HERO PROP. At 2.2 the roof sign was ~0.56 u wide on a
+  //     1.84-u roof and topped out at 1.33: from a high park camera it read as
+  //     two brass buttons on a brown plate, the same value as the copper roof
+  //     they stand on, and this shop's whole identity — you can SEE what you buy
+  //     — was unreadable at exactly the distance a guest picks a shop from.
+  //     (The audit's own aesthetic note passes on a 26° close-up of the SERVING
+  //     FRONT; nothing in it measured the overhead read.)
+  //
+  //     CottonCandyStand and BurgerShop never have this problem because THE SHOP
+  //     IS THE ITEM at ~2 u across. Goggles are the luckiest article in the
+  //     catalog for that treatment: TWO BIG CIRCLES SIDE BY SIDE is an
+  //     unmistakable silhouette with zero detail resolved, and the pale grey-blue
+  //     lens glass (0x86aab4) is the one COOL colour in a shop made entirely of
+  //     warm brass, copper and soot — so it separates from its own building by
+  //     hue as well as by size.
+  //
+  //     So: scale 2.2 → 6.4 (1.64 u wide, spanning the roof plate almost exactly,
+  //     lens discs 0.55 across) and TIPPED BACK 0.5 rad, which is the whole
+  //     trick — `gogglesMesh`'s lens faces look down local +z, and a park camera
+  //     looks DOWN at ~50°, so a sign left plumb shows the camera its brass rims
+  //     edge-on. Tipped back the two lens discs face the camera nearly square.
+  //     Origin at (0, 1.48, −0.55): after the tilt the lens centres land at about
+  //     y 1.80 / z 0.03, the pair occupies y 1.37…2.10, and the front-most
+  //     geometry stops near z 0.2 — SHORT of the roof fascia at 0.16 plus a hair,
+  //     and well short of the counter nosing at z 0.50, so nothing new hangs over
+  //     the counter, the grinder, the gauges or the lens tray. That is this
+  //     component's founding rule ("a full-depth roof turns the whole shop into a
+  //     lid") applied to its own sign.
+  //
+  //     NO NEW DRAWS: the same 16-mesh `gogglesMesh` recipe as the worn pair and
+  //     the three display pairs — a fourth scale, only the numbers changed. The
+  //     two brass stand posts grow from 0.12 to 0.46 long and move out to ±0.34
+  //     to carry it. Shadows off (a 1.6-u prop 1.7 u up would stripe the counter,
+  //     and it saves 16 shadow-pass draws).
+  // =========================================================================
+  [-0.34, 0.34].forEach((x) => g.add(cyl(t, 0.026, 0.032, 0.46, BRASS_D, [x, 1.23, -0.42], { tex: 'metal', repeat: [1, 4], metal: 0.26, rough: 0.48, seg: 8 })));
+  const signMats: THREE.MeshStandardMaterial[] = [];
   const sign = new t.Group();
-  sign.position.set(0, 1.22, -0.18);
-  sign.scale.setScalar(2.2);
+  sign.position.set(0, 1.48, -0.55);
+  sign.rotation.x = -0.5; // tip the lens faces UP toward the park camera
+  sign.scale.setScalar(6.4);
   sign.add(gogglesMesh(t, { strap: false }));
+  sign.traverse((n) => {
+    const m = n as THREE.Mesh;
+    if (!(m as unknown as { isMesh?: boolean }).isMesh) return;
+    m.castShadow = false;
+    const mm = m.material as THREE.MeshStandardMaterial;
+    // A LIT SIGN AFTER DARK. Both PointLights here are at y ≤ 0.8 with a 2.2-2.8
+    // range and BOTH gate fully to zero by day (this shop has no fire in it), so
+    // after dark the sign 1.8 u up gets almost nothing and the one thing that
+    // makes the shop findable would be the darkest object in frame. `mat()` never
+    // shares a material instance, so a night-gated emissive on the sign's OWN
+    // materials costs no light and no draw — the same gaslight amber the shop's
+    // two lamps use, so it reads as gas-lit signage rather than as neon.
+    mm.emissive.setHex(0xffb050);
+    signMats.push(mm);
+  });
   g.add(sign);
   // an engraved brass nameplate on the front fascia (engraved bars, no text render)
   const plate = new t.Group();
@@ -500,6 +554,10 @@ export function buildGoggleWorks(three: typeof THREE, opts: GoggleWorksOpts = {}
     lampMat.emissiveIntensity = 0.12 + (1.3 + 0.09 * Math.sin(time * 2.7) - 0.12) * ease;
     gasLight.intensity = ease * 0.95;
     counterLight.intensity = ease * 0.5;
+    // 1b. the GIANT GOGGLES sign: gas-lit signage after dark, plain brass by day.
+    //     Kept LOW (0.3) and on the same `ease` as the two lamps — this shop has
+    //     nothing molten in it, so NOTHING here glows at noon.
+    for (const sm of signMats) sm.emissiveIntensity = 0.3 * ease;
     // 2. the grinding wheel and its flywheel: geared 3.2 : 1 off one clock, with
     //    a slow hashed duty cycle (the optician stops to check the lens)
     const duty = 0.55 + 0.45 * Math.sin(time * 0.31); // eases to a near-stop
@@ -524,6 +582,9 @@ export function buildGoggleWorks(three: typeof THREE, opts: GoggleWorksOpts = {}
     dispose() {
       steam?.dispose();
       lampMat.dispose();
+      // the sign's materials are per-mesh instances this builder mutated, so they
+      // are OURS to drop (its geometries are `getGeo`-shared and are not)
+      signMats.forEach((m) => m.dispose());
       gasLight.dispose();
       counterLight.dispose();
     },

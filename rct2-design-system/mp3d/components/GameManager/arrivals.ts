@@ -54,7 +54,45 @@ const RECALC_EVERY = 512 / RCT2_TICKS_PER_SEC; // 12.8 s
 /** RCT2's own "is this guest happy?" line — happiness > 128 (Park.cpp:404) */
 export const HAPPY_AT = 128;
 /** default hard ceiling when the caller gives none (`<Park>` always does) */
-const DEFAULT_CAP = 120;
+const DEFAULT_CAP = 600;
+
+/**
+ * THE HAPPINESS BAR — the share of the crowd that must be HAPPY for the gate to
+ * admit anybody at all. Below it the stream stops; above it RCT2's own rating
+ * curve sets the rate, unchanged.
+ *
+ * WHY A BAR AT ALL. RCT2's curve never fully closes: at the rating floor it
+ * still rolls 50/0xFFFF, i.e. ~1.8 arrivals a minute, so a miserable park keeps
+ * trickling people in for ever. That makes happiness a soft influence rather
+ * than a feedback loop, and a park that OPENS with 500 guests needs the
+ * difference between "fills up" and "empties out" to be visible. RCT2 agrees
+ * that a failing park should stop taking money at the gate — `Objective::
+ * CheckGuestsAndRating` (scenario/ScenarioObjective.cpp:107-140) starts counting
+ * park-rating warning days the moment the rating drops under 700 and CLOSES THE
+ * PARK outright 29 days later (STR_PARK_HAS_BEEN_CLOSED_DOWN, clearing
+ * PARK_FLAGS_PARK_OPEN) — it just does it on a calendar this sim has no room for.
+ *
+ * WHY THE HAPPY SHARE AND NOT THE RATING. The rating is the RIGHT signal for the
+ * RATE and the wrong one for an on/off bar, because two of its five terms are
+ * BOOKKEEPING rather than park quality: a park whose author never measured ride
+ * ratings scores `rated === 0`, forfeits the +100 balance bonus AND the whole
+ * `(exc + int)/10` credit, and lands ~200 points lower for reasons a guest
+ * cannot feel. A rating bar would therefore have held the gate shut on perfectly
+ * happy parks. The happy share is the same quantity the rating's guest term is
+ * built out of (Park.cpp:404-415: a flat −500 bought back at
+ * 2·min(250, happy·300/N)) with none of that coupling.
+ *
+ * WHY 0.5. It is RCT2's own definition of a happy guest (`happiness > 128`,
+ * :404) applied to a MAJORITY: the gate is open while the park is doing more
+ * good than harm. On the rating's own curve that is exactly the point where the
+ * crowd has bought back 300 of the −500 penalty, and it sits well clear of both
+ * ends — a fresh arrival spawns at happiness 204-255, so a functioning park
+ * holds a share near 1.0 and only a genuinely soured one falls under half.
+ *
+ * The share is recomputed on RCT2's own 512-tick cadence (`RECALC_EVERY`,
+ * 12.8 s), so the gate opens and closes slowly rather than flickering.
+ */
+export const ADMIT_HAPPY_SHARE = 0.5;
 
 /** BonusValue per open ride, RCT2's `suggestedGuestMaximum` summand
  *  (Park.cpp:107-140). RCT2 reads it off the ride TYPE descriptor; this sim
@@ -75,6 +113,7 @@ export function createArrivals(s: Sim) {
   let rating = 0;
   let probability = 0;
   let suggestedMax = 0;
+  let happyShare = 1; // share of the crowd over HAPPY_AT — the admission bar
   let arrived = 0; // guests admitted THROUGH the gate since opening
 
   // ---- park rating (CalculateParkRating, Park.cpp:375-483) ------------------
@@ -86,7 +125,8 @@ export function createArrivals(s: Sim) {
   //     a park where nobody is happy keeps the -500, one where 5/6 are gets it
   //     all back. NOT modelled: the lost-guest penalty (:418-421, needs
   //     `guestIsLostCountdown`) and `ratingCasualtyPenalty`.
-  //   RIDES (:424-470) — uptime from the sim's REAL breakdown state, plus
+  //   RIDES (:424-470) — uptime, which here is 100 for every ride that has not
+  //     CRASHED (no ride can break down — GameManager/access.ts `statusOf`), plus
   //     RCT2's two excitement/intensity terms. RCT2 only counts a ride in
   //     those if `RideHasRatings` (:435): an untested ride contributes nothing
   //     but still costs the park the -100/-200 baselines. This sim's rides
@@ -114,9 +154,12 @@ export function createArrivals(s: Sim) {
     let totInt = 0;
     for (const ride of s.rides) {
       // RCT2 sums `100 - ride.downtime` (:441). This sim has no downtime
-      // history, but it does know the ride's live state: open = 100, broken
-      // down / being repaired = 25, crashed = 0.
-      uptime += ride.state === 'crashed' ? 0 : ride.brokenAt >= 0 ? 25 : 100;
+      // history and, since no ride can break down, only two of RCT2's cases can
+      // occur: a wreck (0) and a working ride (100). The `brokenDown` = 25 arm
+      // this used to carry became unreachable when the breakdown schedule was
+      // removed, so it is gone — leaving it would have been a live-looking
+      // rating term that no park can ever reach.
+      uptime += ride.state === 'crashed' ? 0 : 100;
       const rt = ride.cfg.ratings;
       if (!rt) continue; // RCT2's `RideHasRatings` gate (:435)
       totExc += (rt.excitement * 100) / 8; // (:437-438)
@@ -140,19 +183,26 @@ export function createArrivals(s: Sim) {
     return Math.max(0, Math.min(999, Math.round(r)));
   };
 
-  /** RCT2's suggestedGuestMaximum — Σ BonusValue over OPEN, unbroken rides
-   *  (Park.cpp:107-140: closed / broken down / crashed rides contribute 0) */
+  /** RCT2's suggestedGuestMaximum — Σ BonusValue over OPEN rides
+   *  (Park.cpp:107-140: closed / broken down / crashed rides contribute 0).
+   *  Only the CRASHED case can occur here — nothing can break down. */
   const suggestedMaxOf = () => {
     let sum = 0;
     for (const r of s.rides) {
-      if (r.state === 'crashed' || r.brokenAt >= 0) continue;
+      if (r.state === 'crashed') continue;
       sum += bonusOf(r.intensity);
     }
     return sum;
   };
 
-  /** calculateGuestGenerationProbability (Park.cpp:168-218), out of 0xFFFF */
-  const probabilityOf = (rate: number, numGuests: number, sugg: number) => {
+  /** calculateGuestGenerationProbability (Park.cpp:168-218), out of 0xFFFF —
+   *  plus THE HAPPINESS BAR: under `ADMIT_HAPPY_SHARE` of the crowd happy the
+   *  gate closes outright instead of trickling (see the constant). Above it the
+   *  RCT2 curve is untouched. `share` is `happy / active`, and an EMPTY park is
+   *  always admitting: with nobody inside there is no unhappiness to judge it on,
+   *  and a park that emptied itself has to be able to refill. */
+  const probabilityOf = (rate: number, numGuests: number, sugg: number, share = 1) => {
+    if (numGuests > 0 && share < ADMIT_HAPPY_SHARE) return 0;
     let p = 50 + Math.max(0, Math.min(650, rate - 200));
     // "The more guests, the lower the chance of a new one" (:173-183)
     if (numGuests > sugg) p = Math.floor(p / 4);
@@ -175,9 +225,10 @@ export function createArrivals(s: Sim) {
     }
     rating = parkRatingOf(active, happy);
     suggestedMax = suggestedMaxOf();
+    happyShare = active > 0 ? happy / active : 1;
     // RCT2 counts guests IN the park plus those heading for it (:174); here the
     // walk-in from the gate is already an active guest, so `active` is both.
-    probability = probabilityOf(rating, active, suggestedMax);
+    probability = probabilityOf(rating, active, suggestedMax, happyShare);
     return active;
   };
 
@@ -217,6 +268,12 @@ export function createArrivals(s: Sim) {
     guestCap: cap,
     arrivals: arrived,
     gateStream: enabled && !!s.parkEntrance,
+    /** the feedback loop, readable in three fields: what share of the crowd is
+     *  happy, the bar it has to clear, and whether the gate is consequently
+     *  admitting at all (it also reads false at the hard `cap`). */
+    happyShare: +happyShare.toFixed(3),
+    admitBar: ADMIT_HAPPY_SHARE,
+    admitting: probability > 0 && activeCount() < cap,
   });
 
   return { update, snapshot, recalc, parkRatingOf, probabilityOf, cap, enabled };

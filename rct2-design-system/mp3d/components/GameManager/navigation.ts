@@ -22,6 +22,32 @@ const RIDE_SEEK_NEW = 0.45;
 const RIDE_SEEK_REPEAT = 0.12;
 /** energy at or below which a guest starts actively hunting for a bench */
 const REST_SEEK = 110;
+/**
+ * APPETITE SEEK THRESHOLDS — thirst / hunger (both stored RCT2-style INVERTED:
+ * 255 = fully sated, 0 = starving) at or below which an aimless guest walks to a
+ * stall on purpose instead of waiting to happen past one.
+ *
+ * These sit deliberately BETWEEN RCT2's two published numbers:
+ *
+ *   * the COUNTER GATE, `hunger > 75` / `thirst > 75` (DecideAndBuyItem,
+ *     Guest.cpp:1574, 1580) — above it the shop refuses the sale, so a seek
+ *     threshold above 75 would send guests on trips that end in "I'm not
+ *     hungry";
+ *   * the THOUGHT TRIGGERS, `hunger <= 10` / `thirst <= 25` (:1098, :1103) —
+ *     the point at which a guest starts COMPLAINING, which is far too late to
+ *     start walking. That is what this used to seek on, and it is why hunger and
+ *     thirst barely drove navigation at all: a guest reached 10 only after ~5
+ *     minutes of walking, by which time most had left.
+ *
+ * 60 gives the loop a rhythm instead of a permanent errand: a finished meal
+ * leaves hunger at ~175 (75 + a 12-16-bite refill at +7 each) and the passive
+ * drain is 2 per 3.2 s, so a guest goes looking for food roughly every three
+ * minutes and spends the time in between riding — which is the priority order
+ * this park wants (thirsty → drink, hungry → food, otherwise ride).
+ */
+const THIRST_SEEK = 60;
+/** …and hunger, on the same reasoning (the two drain at the same rate here) */
+const HUNGER_SEEK = 60;
 /** …and the impulse budget that hunt gets on the arrival roll. The plain whim
  *  owns p < 0.16; a tired guest keeps looking all the way to 0.30, which eats
  *  into the watch/balloon whims exactly as a worn-out guest's priorities do. */
@@ -83,7 +109,9 @@ export function createNavigation(s: Sim) {
     const fresh: RideRec[] = [];
     const again: RideRec[] = [];
     for (const r of rides) {
-      if (r.state === 'crashed' || r.brokenAt >= 0) continue; // closed: not a candidate
+      // a WRECK is the only ride that is not a candidate; nothing can be broken
+      // down (GameManager/access.ts `statusOf`)
+      if (r.state === 'crashed') continue;
       if (g.lastRide === r && s.simTime - g.lastRideT < LAST_RIDE_TIMEOUT) continue; // RCT2 previous_ride_time_out
       if (!r.stations.some((st) => st.queueAttach)) continue; // no reachable platform
       (g.riddenIds.has(r.idx) ? again : fresh).push(r);
@@ -204,13 +232,23 @@ export function createNavigation(s: Sim) {
       const rr = s.registry.nearestRestroom(g);
       if (rr && rr.attach) g.goal = { kind: 'restroom', node: rr.attach.node, restroom: rr };
     }
-    // decisions when aimless
+    // ---- decisions when aimless: PRESSING NEEDS, THEN RIDES, THEN WHIMS -------
+    // The order is the one a guest actually feels: a pressing restroom need was
+    // already handled above (TOILET_SEEK), then THIRST, then HUNGER, and only a
+    // guest with nothing pressing goes looking for a ride to enjoy. Thirst wins
+    // the tie with hunger because a drink is the quicker, cheaper fix and the two
+    // needs drain at the same rate here (needs.ts), so they come due together and
+    // the tie has to break somewhere.
+    //
+    // `!g.holding` gates both: a guest already carrying a burger or a cup would
+    // only earn RCT2's "I haven't finished my drink yet" at the counter
+    // (Guest.cpp:1553), so the trip would be wasted.
     if (!g.goal) {
-      if (g.hunger <= 10 && stalls.some((st) => st.cfg.item === 'food')) {
-        const st = s.needs.nearestStall(g, 'food');
-        if (st && st.attach) g.goal = { kind: 'stall', node: st.attach.node, stall: st };
-      } else if (g.thirst <= 25 && stalls.some((st) => st.cfg.item === 'drink')) {
+      if (!g.holding && g.thirst <= THIRST_SEEK && stalls.some((st) => st.cfg.item === 'drink')) {
         const st = s.needs.nearestStall(g, 'drink');
+        if (st && st.attach) g.goal = { kind: 'stall', node: st.attach.node, stall: st };
+      } else if (!g.holding && g.hunger <= HUNGER_SEEK && stalls.some((st) => st.cfg.item === 'food')) {
+        const st = s.needs.nearestStall(g, 'food');
         if (st && st.attach) g.goal = { kind: 'stall', node: st.attach.node, stall: st };
       } else {
         // RIDES ARE SOUGHT FIRST, off their OWN draw (see seekRide) — a guest who
@@ -243,8 +281,21 @@ export function createNavigation(s: Sim) {
             g.waypoints = [{ x: seat.x, z: seat.z, y: seat.y - SIT_DROP }];
             return;
           }
-          // no bench within reach (or a park with none registered at all): the
-          // original in-place pause, unchanged
+          // NO BENCH WITHIN REACH — a worn-out guest EATS rather than stand in
+          // the street. RCT2 pauses the day's energy drain for as long as a guest
+          // is working through a meal (needs.ts `energyTarget -= 2` is gated on
+          // `holding !== 'food' && holding !== 'drink'`), so food is the other
+          // half of "I need a rest" when there is nowhere to sit — and it is what
+          // a real park does with a tired crowd.
+          if (!g.holding && g.hunger <= HUNGER_SEEK && stalls.some((st) => st.cfg.item === 'food')) {
+            const fs = s.needs.nearestStall(g, 'food');
+            if (fs && fs.attach) {
+              g.goal = { kind: 'stall', node: fs.attach.node, stall: fs };
+              chooseNext(g, prev);
+              return;
+            }
+          }
+          // …otherwise the original in-place pause, unchanged
           g.state = 'sitting';
           g.timer = 3 + s.fx.draw(g, 18) * 3;
           return;
@@ -340,8 +391,10 @@ export function createNavigation(s: Sim) {
         g.restroom = rr;
         g.timer = -1;
         g.waypoints = [{ ...rr.doorway }];
-      } else if (g.hunger <= 10 && s.needs.nearestStall(g, 'food')) s.needs.startBuying(g, s.needs.nearestStall(g, 'food')!);
-      else if (g.thirst <= 25 && s.needs.nearestStall(g, 'drink')) s.needs.startBuying(g, s.needs.nearestStall(g, 'drink')!);
+      } else if (!g.holding && g.thirst <= THIRST_SEEK && s.needs.nearestStall(g, 'drink'))
+        s.needs.startBuying(g, s.needs.nearestStall(g, 'drink')!);
+      else if (!g.holding && g.hunger <= HUNGER_SEEK && s.needs.nearestStall(g, 'food'))
+        s.needs.startBuying(g, s.needs.nearestStall(g, 'food')!);
       else if (s.fx.draw(g, 24) < 0.3 && rides.length) {
         const r = rides[Math.floor(s.fx.draw(g, 25) * rides.length) % rides.length];
         if (r.state !== 'crashed') s.needs.tryJoinQueue(g, r);
